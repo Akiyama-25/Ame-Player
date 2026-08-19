@@ -1,6 +1,21 @@
-# AmePlayer
+<div align="center">
+  <img src="assets/icon.jpg" width="160" height="160" alt="AmePlayer Icon" style="border-radius: 50%" />
+  <h1>AmePlayer</h1>
+  <p>基于 Jetpack Compose 与 Media3 (ExoPlayer) 构建的高品质 Android 音乐播放器，支持网易云音乐在线播放、本地音频管理与 NCM 加密文件解密，深度集成 Material 3 Adaptive 自适应布局与 USB DAC 硬件直通输出。</p>
+</div>
 
-> 基于 Jetpack Compose 与 Media3 (ExoPlayer) 构建的高品质 Android 音乐播放器，支持网易云音乐在线播放、本地音频管理与 NCM 加密文件解密，深度集成 Material 3 Adaptive 自适应布局与 USB DAC 硬件直通输出。
+<p align="center">
+  <img src="assets/screenshot_1.jpg" width="22%" />
+  <img src="assets/screenshot_2.jpg" width="22%" />
+  <img src="assets/screenshot_3.jpg" width="22%" />
+  <img src="assets/screenshot_4.jpg" width="22%" />
+</p>
+<p align="center">
+  <img src="assets/screenshot_5.jpg" width="22%" />
+  <img src="assets/screenshot_6.jpg" width="22%" />
+  <img src="assets/screenshot_7.png" width="22%" />
+  <img src="assets/screenshot_8.png" width="22%" />
+</p>
 
 ---
 
