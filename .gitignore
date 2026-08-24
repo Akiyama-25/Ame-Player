@@ -20,3 +20,10 @@ output*.txt
 test_out.txt
 test.kt
 app/build/
+
+# Local Agent Memory & Notes
+CLAUDE.md
+GEMINI.md
+STATUS.md
+PROJECT.md
+Lyric.md
