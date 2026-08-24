@@ -177,6 +177,7 @@ app/src/main/java/Akari/NCM/player/
 ### 测试
 - Robolectric（本地 JVM 环境下的 Compose UI 自动化测试）
 - AndroidX Compose UI Test (JUnit 4)
+- Pixel 10 Pro Fold JVM (SDK 37)
 
 ---
 
