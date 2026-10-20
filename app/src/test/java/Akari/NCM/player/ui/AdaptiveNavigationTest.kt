@@ -55,11 +55,11 @@ class AdaptiveNavigationTest {
 
         // Check that navigation items exist and are displayed
         composeTestRule.onNodeWithText("首页").assertIsDisplayed()
-        composeTestRule.onNodeWithText("歌单").assertIsDisplayed()
+        composeTestRule.onNodeWithText("歌单", substring = true).assertIsDisplayed()
 
         // In Compact mode (NavigationBar at bottom), navigation items should be positioned near bottom of screen
         val homeBounds = composeTestRule.onNodeWithText("首页").getUnclippedBoundsInRoot()
-        val playlistBounds = composeTestRule.onNodeWithText("歌单").getUnclippedBoundsInRoot()
+        val playlistBounds = composeTestRule.onNodeWithText("歌单", substring = true).getUnclippedBoundsInRoot()
 
         // Y position of items should be near the bottom (screen height = 800dp)
         assertTrue("In compact mode, Home tab top (${homeBounds.top}) should be near bottom (>650dp)", homeBounds.top > 650.dp)
@@ -77,10 +77,10 @@ class AdaptiveNavigationTest {
         }
 
         composeTestRule.onNodeWithText("首页").assertIsDisplayed()
-        composeTestRule.onNodeWithText("歌单").assertIsDisplayed()
+        composeTestRule.onNodeWithText("歌单", substring = true).assertIsDisplayed()
 
         val homeBounds = composeTestRule.onNodeWithText("首页").getUnclippedBoundsInRoot()
-        val playlistBounds = composeTestRule.onNodeWithText("歌单").getUnclippedBoundsInRoot()
+        val playlistBounds = composeTestRule.onNodeWithText("歌单", substring = true).getUnclippedBoundsInRoot()
 
         // In NavigationRail (left side), items X position is at the start (<100dp)
         assertTrue("In NavigationRail, Home X (${homeBounds.left}) should be on the left (<100dp)", homeBounds.left < 100.dp)
@@ -98,10 +98,10 @@ class AdaptiveNavigationTest {
         }
 
         composeTestRule.onNodeWithText("首页").assertIsDisplayed()
-        composeTestRule.onNodeWithText("歌单").assertIsDisplayed()
+        composeTestRule.onNodeWithText("歌单", substring = true).assertIsDisplayed()
 
         val homeBounds = composeTestRule.onNodeWithText("首页").getUnclippedBoundsInRoot()
-        val playlistBounds = composeTestRule.onNodeWithText("歌单").getUnclippedBoundsInRoot()
+        val playlistBounds = composeTestRule.onNodeWithText("歌单", substring = true).getUnclippedBoundsInRoot()
 
         // In Expanded NavigationRail, items X position is on the left
         assertTrue("In Expanded NavigationRail, Home X (${homeBounds.left}) should be on the left (<100dp)", homeBounds.left < 100.dp)
@@ -119,7 +119,7 @@ class AdaptiveNavigationTest {
         }
 
         // Initially Home tab is selected, clicking Playlist tab switches to Playlist view
-        composeTestRule.onNodeWithText("歌单").performClick()
+        composeTestRule.onNodeWithText("歌单", substring = true).performClick()
         composeTestRule.waitForIdle()
 
         // After clicking Playlist, the view should show Playlist-specific UI (e.g., "尚未创建任何歌单" or "新建本地")

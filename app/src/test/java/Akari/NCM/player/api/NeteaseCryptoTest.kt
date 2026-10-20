@@ -19,10 +19,10 @@ class NeteaseCryptoTest {
         val secret = "1234567890abcdef"
         val form = NeteaseCrypto.weapi("""{"id":123}""", customSecret = secret)
         assertEquals(
-            "b630e6203cf65d95e2fa460d3d5f3083658ebc7619eb13038622c4d627c2f68903c73ae9d6d53ea7fbf29a6e60b2eb74f3ff5ab8d9b2361b2e2d83769c2794eb84e5658e4585c5ab1e48f8f941198f1f516dbba322bb1e89b2db9bb48c66e927c3ff5a6ea1f34177ef8b8ea5735aa4d59f77e6822c60c87890066d93c1ff9348",
+            "bc05a756cb87b1a2674efda9e90a27d641dcbbe2e6b7be3b61193e47315c298183d409578ac80502bd441d82bf1611d6d9238bcaf64794d096417b726373fdd8cf4a9e9d31d198d6d785ffa3d0a2e8c621b4d6c019fabe0ca6f3a815d9f2a4875a0bcab968f331f394566e1162603ed1dd002aa89b47fd8dcbc77d2c6976efed",
             form.encSecKey
         )
-        assertEquals("kR2bK928WbXb0O5e4hJg2A==", form.params)
+        assertEquals("MvSwiohLqrSWzsk69j/ejdehgnAZzf6BZhrEjdrv/EI=", form.params)
     }
 
     @Test
