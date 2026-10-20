@@ -1,0 +1,124 @@
+name: Build Signed APK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and test release variant
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle 9.5.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Run unit tests
+        run: gradle testReleaseUnitTest --no-daemon --stacktrace
+
+      - name: Assemble unsigned release APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: Upload unsigned APK (PR validation / fallback)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ame-player-unsigned-${{ github.run_number }}
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload release APK for signing
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    name: Sign and verify APK
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download unsigned APK
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-release-apk
+          path: unsigned
+
+      - name: Prepare private signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::Missing SIGNING_KEYSTORE_BASE64 repository/environment secret"
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/ame-player-signing.p12"
+          test -s "$RUNNER_TEMP/ame-player-signing.p12"
+          : "${STORE_PASSWORD:?Missing SIGNING_STORE_PASSWORD secret}"
+          : "${KEY_ALIAS:?Missing SIGNING_KEY_ALIAS secret}"
+          keytool -list -storetype PKCS12 -keystore "$RUNNER_TEMP/ame-player-signing.p12" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          echo "KEYSTORE_PATH=$RUNNER_TEMP/ame-player-signing.p12" >> "$GITHUB_ENV"
+
+      - name: Align, sign, and verify APK
+        env:
+          STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          : "${STORE_PASSWORD:?Missing SIGNING_STORE_PASSWORD secret}"
+          KEY_PASSWORD="${KEY_PASSWORD:-$STORE_PASSWORD}"
+          KEY_ALIAS="${KEY_ALIAS:-key0}"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          APK="$(find unsigned -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          mkdir -p signed
+          ALIGNED="signed/ame-player-release-aligned.apk"
+          SIGNED="signed/ame-player-release-signed.apk"
+          "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE_PATH" \
+            --ks-type PKCS12 \
+            --ks-pass env:STORE_PASSWORD \
+            --key-pass env:KEY_PASSWORD \
+            --ks-key-alias "$KEY_ALIAS" \
+            --out "$SIGNED" "$ALIGNED"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED"
+          sha256sum "$SIGNED" | tee signed/SHA256SUMS.txt
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ame-player-release-signed-${{ github.run_number }}
+          path: signed/ame-player-release-signed.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove temporary keystore
+        if: always()
+        run: rm -f "${{ runner.temp }}/ame-player-signing.p12"
