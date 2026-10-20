@@ -2,14 +2,19 @@ package Akari.NCM.player.data
 
 import Akari.NCM.player.core.PlayableMedia
 import Akari.NCM.player.core.AudioFormat
+import android.content.ContentResolver
 import android.net.Uri
 
 object NcmFileScanner {
 
-    fun scanUri(uri: Uri, displayName: String): PlayableMedia? {
+    fun scanUri(
+        uri: Uri,
+        displayName: String,
+        contentResolver: ContentResolver? = null
+    ): PlayableMedia? {
         val ext = displayName.substringAfterLast('.', "").lowercase()
         val isNcm = ext == "ncm"
-        val format = when (ext) {
+        var format = when (ext) {
             "flac" -> AudioFormat.FLAC
             "mp3", "wav", "ogg", "opus", "aac", "m4a", "ncm" -> AudioFormat.MP3
             else -> return null
@@ -29,13 +34,47 @@ object NcmFileScanner {
             title = parts[1].trim()
         }
 
+        var musicIdStr: String? = null
+        var coverUrl: String? = null
+        var album = ""
+        var durationMs = 0L
+
+        // 优先提取 NCM 文件内嵌的网易云歌曲 ID 与元数据
+        if (isNcm && contentResolver != null) {
+            try {
+                val scanResult = NcmDataSource.scanMetadata(contentResolver, uri)
+                if (scanResult != null) {
+                    val meta = scanResult.first
+                    if (meta.musicId > 0L) {
+                        musicIdStr = meta.musicId.toString()
+                    }
+                    format = scanResult.second
+                    if (meta.albumPic.isNotBlank()) {
+                        coverUrl = meta.albumPic
+                    }
+                    if (meta.album.isNotBlank()) {
+                        album = meta.album
+                    }
+                    if (meta.duration > 0L) {
+                        durationMs = meta.duration
+                    }
+                    if (artist == "Unknown" && meta.artists.isNotEmpty()) {
+                        artist = meta.artists.joinToString("/")
+                    }
+                    if (title.isBlank() && meta.musicName.isNotBlank() && meta.musicName != "Unknown") {
+                        title = meta.musicName
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
         return PlayableMedia.LocalNcm(
-            id = uri.toString().hashCode().toString(),
+            id = musicIdStr ?: uri.toString().hashCode().toString(),
             title = title,
             artist = artist,
-            album = "",
-            coverUrl = null,
-            durationMs = 0L,
+            album = album,
+            coverUrl = coverUrl,
+            durationMs = durationMs,
             uri = uri.toString(),
             format = format,
             isNcm = isNcm

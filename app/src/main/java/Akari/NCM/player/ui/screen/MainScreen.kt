@@ -421,7 +421,7 @@ fun MainScreen(
                                                     style = MaterialTheme.typography.bodyMedium,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
-                                                if (currentPlaylist.ncmPlaylistId != null) {
+                                                if (currentPlaylist.ncmPlaylistId != null && currentPlaylist.ncmPlaylistId != -9999L) {
                                                     Spacer(modifier = Modifier.width(8.dp))
                                                     SuggestionChip(
                                                         onClick = {},
@@ -762,7 +762,7 @@ private fun PlaylistsView(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    if (playlist.ncmPlaylistId != null) {
+                                    if (playlist.ncmPlaylistId != null && playlist.ncmPlaylistId != -9999L) {
                                         Spacer(modifier = Modifier.width(8.dp))
                                         SuggestionChip(
                                             onClick = {},

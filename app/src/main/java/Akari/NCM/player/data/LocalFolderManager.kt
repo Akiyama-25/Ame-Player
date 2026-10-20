@@ -70,7 +70,7 @@ class LocalFolderManager @Inject constructor(
                 }
 
                 for (file in audioFiles) {
-                    val media = NcmFileScanner.scanUri(file.uri, file.name ?: "")
+                    val media = NcmFileScanner.scanUri(file.uri, file.name ?: "", cr)
                     if (media != null) {
                         allMedia.add(media)
                     }

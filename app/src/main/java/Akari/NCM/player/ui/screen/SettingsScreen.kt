@@ -102,7 +102,6 @@ fun SettingsScreen(
         }
     }
 
-    var showApiDialog by remember { mutableStateOf(false) }
     var showQrDialog by remember { mutableStateOf(false) }
     var showCustomAccentDialog by remember { mutableStateOf(false) }
     var showThemeModeDialog by remember { mutableStateOf(false) }
@@ -145,19 +144,7 @@ fun SettingsScreen(
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
             // ── 账号与网易云 API 服务 ──
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("网易云账号 & API 服务") }
-
-            // API 域名设置
-            item {
-                SettingItem(
-                    icon = Icons.Rounded.Dns,
-                    title = "API 服务地址",
-                    subtitle = if (hasApi) {
-                        if (apiBaseUrl == UserSessionManager.DEFAULT_API_BASE_URL) "内置直连 (官方网易云接口)" else apiBaseUrl
-                    } else "未配置 (点击配置解锁在线功能)",
-                    onClick = { showApiDialog = true }
-                )
-            }
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("网易云账号") }
 
             if (hasApi) {
                 // 登录状态卡片 (精简为仅展示头像、名称、VIP 标志与跳转箭头)
@@ -696,19 +683,6 @@ if (showFoldersDialog) {
         )
     }
 
-    // API 地址设置对话框
-    if (showApiDialog) {
-        ApiBaseUrlDialog(
-            currentUrl = apiBaseUrl,
-            onDismiss = { showApiDialog = false },
-            onSave = { newUrl ->
-                sessionManager.saveApiBaseUrl(newUrl)
-                showApiDialog = false
-                Toast.makeText(context, "API 地址已保存", Toast.LENGTH_SHORT).show()
-            }
-        )
-    }
-
     // 扫码登录对话框
     if (showQrDialog) {
         QrLoginDialog(
@@ -877,48 +851,6 @@ private fun UserProfileDetailDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("关闭")
-            }
-        }
-    )
-}
-
-@Composable
-private fun ApiBaseUrlDialog(
-    currentUrl: String,
-    onDismiss: () -> Unit,
-    onSave: (String) -> Unit
-) {
-    var text by remember { mutableStateOf(currentUrl) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("自定义 API 服务地址") },
-        text = {
-            Column {
-                Text(
-                    "请输入 NeteaseCloudMusicApi 服务的 Base URL",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { onSave(text) }),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onSave(text) }) {
-                Text("保存")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
             }
         }
     )

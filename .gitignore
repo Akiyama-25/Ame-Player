@@ -13,9 +13,12 @@ local.properties
 .kotlin/
 gradle-9-bin/
 gradle-bin/
-*.zip
-*.png
-*.py
+# Ignore root loose png/py/zip, but allow res and assets
+/*.png
+/*.zip
+/*.py
+!app/src/main/res/**
+!assets/**
 output*.txt
 test_out.txt
 test.kt
