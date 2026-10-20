@@ -45,9 +45,6 @@ jobs:
           ref: ${{ steps.ref.outputs.tag }}
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
