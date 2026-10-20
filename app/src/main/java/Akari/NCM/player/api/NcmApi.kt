@@ -27,10 +27,17 @@ private val JsonElement?.asJsonObjectOrNull: JsonObject?
 
 @Singleton
 class NcmApi @Inject constructor(
-    private val sessionManager: UserSessionManager? = null
+    private val sessionManager: UserSessionManager? = null,
+    private val directClient: NeteaseDirectClient = NeteaseDirectClient(sessionManager)
 ) {
     private val baseUrl: String
         get() = sessionManager?.getApiBaseUrl() ?: UserSessionManager.DEFAULT_API_BASE_URL
+
+    val isDirectMode: Boolean
+        get() {
+            val url = sessionManager?.getApiBaseUrl() ?: UserSessionManager.DEFAULT_API_BASE_URL
+            return url.isBlank() || url.contains("music.163.com")
+        }
 
     private val jsonSerializer = Json {
         ignoreUnknownKeys = true
@@ -48,13 +55,14 @@ class NcmApi @Inject constructor(
             header("Accept", "application/json")
         }
     }.apply {
-        // 动态标头拦截器：抓取洗净后的合法 Cookie Header
+        // 动态标头拦截器：若请求未显式配置 Cookie，抓取洗净后的合法 Cookie Header
         plugin(HttpSend).intercept { request ->
-            val rawCookie = sessionManager?.getCookie()
-            val cleanCookie = UserSessionManager.cleanCookieString(rawCookie ?: "")
-            if (cleanCookie.isNotBlank()) {
-                request.headers.remove("Cookie")
-                request.headers.append("Cookie", cleanCookie)
+            if (!request.headers.contains("Cookie")) {
+                val rawCookie = sessionManager?.getCookie()
+                val cleanCookie = UserSessionManager.cleanCookieString(rawCookie ?: "")
+                if (cleanCookie.isNotBlank()) {
+                    request.headers.append("Cookie", cleanCookie)
+                }
             }
             execute(request)
         }
@@ -72,6 +80,33 @@ class NcmApi @Inject constructor(
     }
 
     suspend fun searchSongs(keyword: String, limit: Int = 30): List<PlayableMedia.Online> {
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject {
+                    put("s", keyword)
+                    put("type", 1)
+                    put("limit", limit)
+                    put("offset", 0)
+                    put("total", true)
+                }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_CLOUDSEARCH,
+                    NeteaseEndpoints.PATH_EAPI_CLOUDSEARCH,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val songs = json?.get("result")?.asJsonObjectOrNull?.get("songs")?.jsonArray
+                    ?: json?.get("songs")?.jsonArray
+                if (songs != null) {
+                    val list = songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    if (list.isNotEmpty()) return list
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_NCM_API", "Direct search failed: ${e.message}")
+            }
+        }
         return try {
             val response = client.get("$baseUrl/search") {
                 parameter("keywords", keyword)
@@ -79,7 +114,7 @@ class NcmApi @Inject constructor(
             }
             val body = response.bodyAsText()
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull ?: return emptyList()
-            val songs = json["result"].asJsonObjectOrNull?.get("songs")?.jsonArray ?: return emptyList()
+            val songs = json["result"]?.asJsonObjectOrNull?.get("songs")?.jsonArray ?: return emptyList()
             songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
         } catch (_: Exception) {
             emptyList()
@@ -88,6 +123,36 @@ class NcmApi @Inject constructor(
 
     suspend fun getSongDetails(songIds: List<String>): List<PlayableMedia.Online> {
         if (songIds.isEmpty()) return emptyList()
+        if (isDirectMode) {
+            try {
+                val cArray = buildJsonArray {
+                    songIds.forEach { idStr ->
+                        val idLong = idStr.toLongOrNull()
+                        if (idLong != null) {
+                            add(buildJsonObject { put("id", idLong) })
+                        }
+                    }
+                }.toString()
+                val payload = buildJsonObject {
+                    put("c", cArray)
+                }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_SONG_DETAIL,
+                    NeteaseEndpoints.PATH_EAPI_SONG_DETAIL,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val songs = json?.get("songs")?.jsonArray
+                if (songs != null) {
+                    val list = songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    if (list.isNotEmpty()) return list
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_NCM_API", "Direct getSongDetails failed: ${e.message}")
+            }
+        }
         return try {
             val response = client.get("$baseUrl/song/detail") {
                 parameter("ids", songIds.joinToString(","))
@@ -102,13 +167,48 @@ class NcmApi @Inject constructor(
     }
 
     /**
-     * 获取歌曲播放链接 (自动匹配账号最高可用音�?
+     * 获取歌曲播放链接 (自动匹配账号最高可用音质)
      */
     suspend fun getSongUrl(song: PlayableMedia.Online, quality: QualityLevel? = null): String? {
-        Log.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (Follow Account Highest Quality)")
+        Log.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (isDirectMode=$isDirectMode)")
 
         // 默认按账号可获取的最高级别链依次尝试: HIRES -> LOSSLESS -> EXHIGH -> STANDARD
-        val qualitiesToTry = listOf(QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+        val qualitiesToTry = if (quality != null) {
+            listOf(quality)
+        } else {
+            listOf(QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+        }
+
+        if (isDirectMode) {
+            for (q in qualitiesToTry) {
+                try {
+                    val startTime = System.currentTimeMillis()
+                    val payload = buildJsonObject {
+                        put("ids", "[${song.id}]")
+                        put("level", q.value)
+                        put("encodeType", "flac")
+                    }.toString()
+                    val body = directClient.postEapi(
+                        client,
+                        NeteaseEndpoints.URL_EAPI_SONG_URL,
+                        NeteaseEndpoints.PATH_EAPI_SONG_URL,
+                        payload
+                    )
+                    val cost = System.currentTimeMillis() - startTime
+                    val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                    val data = json?.get("data")?.jsonArray?.firstOrNull()?.asJsonObjectOrNull
+                    val url = data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+
+                    if (url != null) {
+                        Log.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Direct resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms): $url")
+                        return url
+                    }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    Log.d("[AME_ONLINE_PLAY]", "--- Direct quality level ${q.value} try failed: ${e.message}")
+                }
+            }
+        }
 
         for (q in qualitiesToTry) {
             try {
@@ -121,18 +221,19 @@ class NcmApi @Inject constructor(
                 val body = response.bodyAsText()
 
                 val json = Json.parseToJsonElement(body).asJsonObjectOrNull
-                val data = json?.get("data")?.jsonArray?.firstOrNull().asJsonObjectOrNull
+                val data = json?.get("data")?.jsonArray?.firstOrNull()?.asJsonObjectOrNull
                 val url = data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
 
                 if (url != null) {
                     Log.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Successfully resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms): $url")
                     return url
                 }
-            } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.d("[AME_ONLINE_PLAY]", "--- Quality level ${q.value} try failed: ${e.message}")
             }
         }
-        
+
         // 兜底退回旧接口 /song/url
         Log.w("[AME_ONLINE_PLAY]", "--- Trying legacy fallback for '${song.title}' (id=${song.id}) ---")
         for (br in listOf(320000, 128000)) {
@@ -152,7 +253,7 @@ class NcmApi @Inject constructor(
             }
             val body = response.bodyAsText()
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull
-            val data = json?.get("data")?.jsonArray?.firstOrNull().asJsonObjectOrNull
+            val data = json?.get("data")?.jsonArray?.firstOrNull()?.asJsonObjectOrNull
             data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
         } catch (_: Exception) {
             null
@@ -160,14 +261,41 @@ class NcmApi @Inject constructor(
     }
 
     suspend fun getLyric(songId: String): Pair<String?, String?>? {
+        if (isDirectMode) {
+            try {
+                val songIdLong = songId.toLongOrNull() ?: 0L
+                val payload = buildJsonObject {
+                    put("id", songIdLong)
+                    put("cp", false)
+                    put("tv", 0)
+                    put("lv", 0)
+                    put("rv", 0)
+                    put("kv", 0)
+                    put("yv", 0)
+                }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_SONG_LYRIC,
+                    NeteaseEndpoints.PATH_EAPI_SONG_LYRIC,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val lrc = json?.get("lrc")?.asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val tlyric = json?.get("tlyric")?.asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                if (lrc != null || tlyric != null) return Pair(lrc, tlyric)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_NCM_API", "Direct getLyric failed: ${e.message}")
+            }
+        }
         return try {
             val response = client.get("$baseUrl/lyric") {
                 parameter("id", songId)
             }
             val body = response.bodyAsText()
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull ?: return null
-            val lrc = json["lrc"].asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-            val tlyric = json["tlyric"].asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+            val lrc = json["lrc"]?.asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+            val tlyric = json["tlyric"]?.asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
             if (lrc != null || tlyric != null) Pair(lrc, tlyric) else null
         } catch (_: Exception) {
             null
@@ -179,23 +307,51 @@ class NcmApi @Inject constructor(
     // ==========================================
 
     suspend fun getQrKey(): String? {
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject {
+                    put("type", 1)
+                    put("csrf_token", "")
+                }.toString()
+                val (body, _) = directClient.postWeapi(
+                    client,
+                    NeteaseEndpoints.URL_WEAPI_LOGIN_QR_KEY,
+                    payload,
+                    isQrLogin = true
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val key = json?.get("data")?.asJsonObjectOrNull?.get("unikey")?.jsonPrimitive?.contentOrNull
+                    ?: json?.get("unikey")?.jsonPrimitive?.contentOrNull
+                Log.i("AME_QR_DEBUG", "Direct getQrKey result: $key")
+                if (!key.isNullOrBlank()) return key
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.e("AME_QR_DEBUG", "Direct getQrKey failed", e)
+            }
+        }
         return try {
             val response = client.get("$baseUrl/login/qr/key") {
                 parameter("timestamp", System.currentTimeMillis())
             }
             val body = response.bodyAsText()
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull
-            val key = json?.get("data").asJsonObjectOrNull?.get("unikey")?.jsonPrimitive?.contentOrNull
+            val key = json?.get("data")?.asJsonObjectOrNull?.get("unikey")?.jsonPrimitive?.contentOrNull
                 ?: json?.get("unikey")?.jsonPrimitive?.contentOrNull
             Log.i("AME_QR_DEBUG", "getQrKey result: $key")
             key?.takeIf { it.isNotBlank() }
-        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e("AME_QR_DEBUG", "getQrKey failed", e)
             null
         }
     }
 
     suspend fun createQrUrl(key: String): Pair<String?, String?>? {
+        if (isDirectMode) {
+            val qrUrl = NeteaseEndpoints.QR_LOGIN_URL_PREFIX + key
+            Log.i("AME_QR_DEBUG", "Direct createQrUrl: qrurl=$qrUrl")
+            return Pair(null, qrUrl)
+        }
         return try {
             val response = client.get("$baseUrl/login/qr/create") {
                 parameter("key", key)
@@ -204,18 +360,62 @@ class NcmApi @Inject constructor(
             }
             val body = response.bodyAsText()
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull
-            val dataObj = json?.get("data").asJsonObjectOrNull
+            val dataObj = json?.get("data")?.asJsonObjectOrNull
             val qrimg = dataObj?.get("qrimg")?.jsonPrimitive?.contentOrNull
             val qrurl = dataObj?.get("qrurl")?.jsonPrimitive?.contentOrNull
             Log.i("AME_QR_DEBUG", "createQrUrl result length: ${qrimg?.length ?: 0}, hasUrl: ${qrurl != null}")
             Pair(qrimg, qrurl)
-        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e("AME_QR_DEBUG", "createQrUrl failed", e)
             null
         }
     }
 
     suspend fun checkQrStatus(key: String): QrCheckResult {
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject {
+                    put("key", key)
+                    put("type", 1)
+                    put("csrf_token", "")
+                }.toString()
+                val (body, setCookies) = directClient.postWeapi(
+                    client,
+                    NeteaseEndpoints.URL_WEAPI_LOGIN_QR_CHECK,
+                    payload,
+                    isQrLogin = true
+                )
+                val json = try { Json.parseToJsonElement(body).asJsonObjectOrNull } catch (_: Exception) { null }
+                val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
+                val message = json?.get("message")?.jsonPrimitive?.contentOrNull ?: ""
+
+                val status = when (code) {
+                    800 -> QrStatus.EXPIRED
+                    801 -> QrStatus.WAITING
+                    802 -> QrStatus.SCANNING
+                    803 -> {
+                        var cookieStr = json?.get("cookie")?.jsonPrimitive?.contentOrNull ?: ""
+                        if (cookieStr.isBlank() && setCookies.isNotEmpty()) {
+                            cookieStr = setCookies.joinToString("; ")
+                        }
+                        val cleanedCookie = UserSessionManager.cleanCookieString(cookieStr)
+                        Log.i("AME_LOGIN_DEBUG", "803 Success! Extracted & Cleaned cookie: $cleanedCookie")
+                        if (cleanedCookie.isNotBlank()) {
+                            sessionManager?.saveCookie(cleanedCookie)
+                            getUserProfile()
+                        }
+                        QrStatus.SUCCESS
+                    }
+                    else -> QrStatus.UNKNOWN
+                }
+                return QrCheckResult(status = status, message = message, cookie = sessionManager?.getCookie() ?: "")
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.e("AME_LOGIN_DEBUG", "Direct checkQrStatus exception", e)
+                return QrCheckResult(status = QrStatus.UNKNOWN, message = e.message ?: "Network error")
+            }
+        }
         return try {
             val response = client.get("$baseUrl/login/qr/check") {
                 parameter("key", key)
@@ -249,17 +449,79 @@ class NcmApi @Inject constructor(
                 else -> QrStatus.UNKNOWN
             }
             QrCheckResult(status = status, message = message, cookie = sessionManager?.getCookie() ?: "")
-        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e("AME_LOGIN_DEBUG", "checkQrStatus exception", e)
             QrCheckResult(status = QrStatus.UNKNOWN, message = e.message ?: "Network error")
         }
     }
 
     // ==========================================
-    // 用户个人中心与歌�?API 支持
+    // 用户个人中心与歌单 API 支持
     // ==========================================
 
     suspend fun getUserProfile(): UserProfile? {
+        if (isDirectMode) {
+            try {
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_USER_ACCOUNT,
+                    NeteaseEndpoints.PATH_EAPI_USER_ACCOUNT,
+                    "{}"
+                )
+                val rootObj = try { Json.parseToJsonElement(body).asJsonObjectOrNull } catch (_: Exception) { null }
+
+                val profileObj = rootObj?.get("profile")?.asJsonObjectOrNull
+                    ?: rootObj?.get("account")?.asJsonObjectOrNull
+                    ?: rootObj?.get("data")?.asJsonObjectOrNull?.get("profile")?.asJsonObjectOrNull
+                    ?: rootObj?.get("data")?.asJsonObjectOrNull?.get("account")?.asJsonObjectOrNull
+
+                var userId = profileObj?.get("userId")?.jsonPrimitive?.longOrNull
+                    ?: profileObj?.get("id")?.jsonPrimitive?.longOrNull
+                    ?: rootObj?.get("account")?.asJsonObjectOrNull?.get("id")?.jsonPrimitive?.longOrNull ?: 0L
+
+                var nickname = profileObj?.get("nickname")?.jsonPrimitive?.contentOrNull
+                    ?: profileObj?.get("userName")?.jsonPrimitive?.contentOrNull ?: ""
+                var avatarUrl = profileObj?.get("avatarUrl")?.jsonPrimitive?.contentOrNull ?: ""
+                var vipType = profileObj?.get("vipType")?.jsonPrimitive?.intOrNull ?: 0
+                var signature = profileObj?.get("signature")?.jsonPrimitive?.contentOrNull ?: ""
+
+                if (userId > 0L) {
+                    try {
+                        val detailBody = directClient.postEapi(
+                            client,
+                            NeteaseEndpoints.URL_EAPI_USER_DETAIL,
+                            NeteaseEndpoints.PATH_EAPI_USER_DETAIL,
+                            """{"userId":$userId}"""
+                        )
+                        val detailJson = Json.parseToJsonElement(detailBody).asJsonObjectOrNull
+                        val detailProfile = detailJson?.get("profile")?.asJsonObjectOrNull
+                        if (detailProfile != null) {
+                            nickname = detailProfile["nickname"]?.jsonPrimitive?.contentOrNull ?: nickname
+                            avatarUrl = detailProfile["avatarUrl"]?.jsonPrimitive?.contentOrNull ?: avatarUrl
+                            vipType = detailProfile["vipType"]?.jsonPrimitive?.intOrNull ?: vipType
+                            signature = detailProfile["signature"]?.jsonPrimitive?.contentOrNull ?: signature
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                if (nickname.isNotBlank() || userId > 0L) {
+                    val profile = UserProfile(
+                        userId = userId,
+                        nickname = nickname.ifBlank { "网易云用户$userId" },
+                        avatarUrl = avatarUrl,
+                        vipType = vipType,
+                        signature = signature
+                    )
+                    Log.i("AME_LOGIN_DEBUG", "Direct getUserProfile success: userId=$userId, nickname=${profile.nickname}")
+                    sessionManager?.saveUserProfile(profile)
+                    return profile
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_LOGIN_DEBUG", "Direct getUserProfile failed: ${e.message}")
+            }
+        }
         return try {
             val response = client.get("$baseUrl/user/account") {
                 parameter("timestamp", System.currentTimeMillis())
@@ -268,14 +530,14 @@ class NcmApi @Inject constructor(
             Log.i("AME_LOGIN_DEBUG", "/user/account body: $body")
             val rootObj = try { Json.parseToJsonElement(body).asJsonObjectOrNull } catch (_: Exception) { null }
 
-            val profileObj = rootObj?.get("profile").asJsonObjectOrNull
-                ?: rootObj?.get("account").asJsonObjectOrNull
-                ?: rootObj?.get("data").asJsonObjectOrNull?.get("profile").asJsonObjectOrNull
-                ?: rootObj?.get("data").asJsonObjectOrNull?.get("account").asJsonObjectOrNull
+            val profileObj = rootObj?.get("profile")?.asJsonObjectOrNull
+                ?: rootObj?.get("account")?.asJsonObjectOrNull
+                ?: rootObj?.get("data")?.asJsonObjectOrNull?.get("profile")?.asJsonObjectOrNull
+                ?: rootObj?.get("data")?.asJsonObjectOrNull?.get("account")?.asJsonObjectOrNull
 
             var userId = profileObj?.get("userId")?.jsonPrimitive?.longOrNull
                 ?: profileObj?.get("id")?.jsonPrimitive?.longOrNull
-                ?: rootObj?.get("account").asJsonObjectOrNull?.get("id")?.jsonPrimitive?.longOrNull ?: 0L
+                ?: rootObj?.get("account")?.asJsonObjectOrNull?.get("id")?.jsonPrimitive?.longOrNull ?: 0L
 
             var nickname = profileObj?.get("nickname")?.jsonPrimitive?.contentOrNull
                 ?: profileObj?.get("userName")?.jsonPrimitive?.contentOrNull ?: ""
@@ -291,14 +553,15 @@ class NcmApi @Inject constructor(
                     }
                     val detailBody = detailResp.bodyAsText()
                     val detailJson = Json.parseToJsonElement(detailBody).asJsonObjectOrNull
-                    val detailProfile = detailJson?.get("profile").asJsonObjectOrNull
+                    val detailProfile = detailJson?.get("profile")?.asJsonObjectOrNull
                     if (detailProfile != null) {
                         nickname = detailProfile["nickname"]?.jsonPrimitive?.contentOrNull ?: nickname
                         avatarUrl = detailProfile["avatarUrl"]?.jsonPrimitive?.contentOrNull ?: avatarUrl
                         vipType = detailProfile["vipType"]?.jsonPrimitive?.intOrNull ?: vipType
                         signature = detailProfile["signature"]?.jsonPrimitive?.contentOrNull ?: signature
                     }
-                } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     Log.e("AME_LOGIN_DEBUG", "fetch /user/detail failed", e)
                 }
             }
@@ -310,9 +573,9 @@ class NcmApi @Inject constructor(
                     }
                     val statusBody = statusResp.bodyAsText()
                     val statusRoot = Json.parseToJsonElement(statusBody).asJsonObjectOrNull
-                    val statusData = statusRoot?.get("data").asJsonObjectOrNull
-                    val statusProfile = statusData?.get("profile").asJsonObjectOrNull
-                        ?: statusRoot?.get("profile").asJsonObjectOrNull
+                    val statusData = statusRoot?.get("data")?.asJsonObjectOrNull
+                    val statusProfile = statusData?.get("profile")?.asJsonObjectOrNull
+                        ?: statusRoot?.get("profile")?.asJsonObjectOrNull
                     if (statusProfile != null) {
                         userId = statusProfile["userId"]?.jsonPrimitive?.longOrNull ?: userId
                         nickname = statusProfile["nickname"]?.jsonPrimitive?.contentOrNull ?: nickname
@@ -326,7 +589,7 @@ class NcmApi @Inject constructor(
             if (nickname.isNotBlank() || userId > 0L) {
                 val profile = UserProfile(
                     userId = userId,
-                    nickname = nickname.ifBlank { "网易云用�?$userId" },
+                    nickname = nickname.ifBlank { "网易云用户$userId" },
                     avatarUrl = avatarUrl,
                     vipType = vipType,
                     signature = signature
@@ -336,13 +599,40 @@ class NcmApi @Inject constructor(
                 return profile
             }
             null
-        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e("AME_LOGIN_DEBUG", "getUserProfile Exception", e)
             null
         }
     }
 
     suspend fun getHomepageDragonBalls(): List<HomepageDragonBall> {
+        if (isDirectMode) {
+            try {
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_HOMEPAGE_DRAGON_BALL,
+                    NeteaseEndpoints.PATH_EAPI_HOMEPAGE_DRAGON_BALL,
+                    "{}"
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val data = json?.get("data")?.jsonArray
+                if (data != null && data.isNotEmpty()) {
+                    return data.mapNotNull {
+                        val obj = it.asJsonObjectOrNull ?: return@mapNotNull null
+                        HomepageDragonBall(
+                            id = obj["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                            name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
+                            iconUrl = obj["iconUrl"]?.jsonPrimitive?.contentOrNull ?: "",
+                            url = obj["url"]?.jsonPrimitive?.contentOrNull ?: ""
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_HOMEPAGE", "Direct getHomepageDragonBalls failed: ${e.message}")
+            }
+        }
         return try {
             val response = client.get("$baseUrl/homepage/dragon/ball") {
                 parameter("timestamp", System.currentTimeMillis())
@@ -365,35 +655,56 @@ class NcmApi @Inject constructor(
     }
 
     suspend fun getHomepageBlocks(): List<HomepageBlock> {
-        return try {
+        val bodyText = if (isDirectMode) {
+            try {
+                directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_HOMEPAGE_BLOCK,
+                    NeteaseEndpoints.PATH_EAPI_HOMEPAGE_BLOCK,
+                    """{"refresh":true}"""
+                )
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_HOMEPAGE", "Direct getHomepageBlocks failed: ${e.message}")
+                null
+            }
+        } else null
+
+        val body = bodyText ?: try {
             val response = client.get("$baseUrl/homepage/block/page") {
                 parameter("refresh", true)
                 parameter("timestamp", System.currentTimeMillis())
             }
-            val body = response.bodyAsText()
+            response.bodyAsText()
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            return emptyList()
+        }
+
+        return try {
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull
-            val data = json?.get("data").asJsonObjectOrNull
+            val data = json?.get("data")?.asJsonObjectOrNull
             val blocks = data?.get("blocks")?.jsonArray ?: return emptyList()
             blocks.mapNotNull { blockElement ->
                 val block = blockElement.asJsonObjectOrNull ?: return@mapNotNull null
                 val blockCode = block["blockCode"]?.jsonPrimitive?.contentOrNull ?: ""
-                val uiElement = block["uiElement"].asJsonObjectOrNull
-                val title = uiElement?.get("subTitle").asJsonObjectOrNull?.get("title")?.jsonPrimitive?.contentOrNull ?: ""
-                
+                val uiElement = block["uiElement"]?.asJsonObjectOrNull
+                val title = uiElement?.get("subTitle")?.asJsonObjectOrNull?.get("title")?.jsonPrimitive?.contentOrNull ?: ""
+
                 val creativesElement = block["creatives"]?.jsonArray ?: return@mapNotNull null
                 val creativesList = creativesElement.mapNotNull { creativeElement ->
                     val creative = creativeElement.asJsonObjectOrNull ?: return@mapNotNull null
                     val creativeType = creative["creativeType"]?.jsonPrimitive?.contentOrNull ?: ""
                     val resources = creative["resources"]?.jsonArray ?: return@mapNotNull null
                     if (resources.isEmpty()) return@mapNotNull null
-                    
+
                     val resource = resources[0].asJsonObjectOrNull ?: return@mapNotNull null
                     val resourceId = resource["resourceId"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val resourceUiElement = resource["uiElement"].asJsonObjectOrNull
-                    val creativeTitle = resourceUiElement?.get("mainTitle").asJsonObjectOrNull?.get("title")?.jsonPrimitive?.contentOrNull ?: ""
-                    val imageUrl = resourceUiElement?.get("image").asJsonObjectOrNull?.get("imageUrl")?.jsonPrimitive?.contentOrNull ?: ""
-                    val playCount = resource["resourceExtInfo"].asJsonObjectOrNull?.get("playCount")?.jsonPrimitive?.longOrNull ?: 0L
-                    
+                    val resourceUiElement = resource["uiElement"]?.asJsonObjectOrNull
+                    val creativeTitle = resourceUiElement?.get("mainTitle")?.asJsonObjectOrNull?.get("title")?.jsonPrimitive?.contentOrNull ?: ""
+                    val imageUrl = resourceUiElement?.get("image")?.asJsonObjectOrNull?.get("imageUrl")?.jsonPrimitive?.contentOrNull ?: ""
+                    val playCount = resource["resourceExtInfo"]?.asJsonObjectOrNull?.get("playCount")?.jsonPrimitive?.longOrNull ?: 0L
+
                     HomepageBlock.Creative(
                         creativeType = creativeType,
                         title = creativeTitle,
@@ -402,20 +713,49 @@ class NcmApi @Inject constructor(
                         playCount = playCount
                     )
                 }
-                
+
                 HomepageBlock(
                     blockCode = blockCode,
                     title = title,
                     creatives = creativesList
                 )
             }
-        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e("AME_HOMEPAGE", "getHomepageBlocks Error", e)
             emptyList()
         }
     }
 
     suspend fun getDailyRecommendPlaylists(): List<NcmUserPlaylist> {
+        if (isDirectMode) {
+            try {
+                val (body, _) = directClient.postWeapi(
+                    client,
+                    NeteaseEndpoints.URL_WEAPI_RECOMMEND_RESOURCE,
+                    """{"csrf_token":""}"""
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val recommend = json?.get("recommend")?.jsonArray
+                if (recommend != null) {
+                    return recommend.mapNotNull {
+                        val obj = it.asJsonObjectOrNull ?: return@mapNotNull null
+                        NcmUserPlaylist(
+                            id = obj["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                            name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
+                            coverImgUrl = obj["picUrl"]?.jsonPrimitive?.contentOrNull ?: "",
+                            trackCount = obj["trackCount"]?.jsonPrimitive?.intOrNull ?: 0,
+                            playCount = obj["playcount"]?.jsonPrimitive?.longOrNull ?: 0L,
+                            creatorName = obj["creator"]?.asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
+                            description = obj["copywriter"]?.jsonPrimitive?.contentOrNull ?: ""
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_PLAYLIST_DEBUG", "Direct getDailyRecommendPlaylists failed: ${e.message}")
+            }
+        }
         return try {
             val response = client.get("$baseUrl/recommend/resource") {
                 parameter("timestamp", System.currentTimeMillis())
@@ -431,16 +771,52 @@ class NcmApi @Inject constructor(
                     coverImgUrl = obj["picUrl"]?.jsonPrimitive?.contentOrNull ?: "",
                     trackCount = obj["trackCount"]?.jsonPrimitive?.intOrNull ?: 0,
                     playCount = obj["playcount"]?.jsonPrimitive?.longOrNull ?: 0L,
-                    creatorName = obj["creator"].asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
+                    creatorName = obj["creator"]?.asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
                     description = obj["copywriter"]?.jsonPrimitive?.contentOrNull ?: ""
                 )
             }
-        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             emptyList()
         }
     }
 
     suspend fun getHighQualityPlaylists(): List<NcmUserPlaylist> {
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject {
+                    put("cat", "全部")
+                    put("limit", 30)
+                    put("lasttime", 0)
+                    put("total", true)
+                    put("csrf_token", "")
+                }.toString()
+                val (body, _) = directClient.postWeapi(
+                    client,
+                    NeteaseEndpoints.URL_WEAPI_TOP_PLAYLIST_HIGHQUALITY,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val playlists = json?.get("playlists")?.jsonArray
+                if (playlists != null) {
+                    return playlists.mapNotNull {
+                        val obj = it.asJsonObjectOrNull ?: return@mapNotNull null
+                        NcmUserPlaylist(
+                            id = obj["id"]?.jsonPrimitive?.longOrNull ?: 0L,
+                            name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
+                            coverImgUrl = obj["coverImgUrl"]?.jsonPrimitive?.contentOrNull ?: "",
+                            trackCount = obj["trackCount"]?.jsonPrimitive?.intOrNull ?: 0,
+                            playCount = obj["playCount"]?.jsonPrimitive?.longOrNull ?: 0L,
+                            creatorName = obj["creator"]?.asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
+                            description = obj["copywriter"]?.jsonPrimitive?.contentOrNull ?: ""
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_PLAYLIST_DEBUG", "Direct getHighQualityPlaylists failed: ${e.message}")
+            }
+        }
         return try {
             val response = client.get("$baseUrl/top/playlist/highquality") {
                 parameter("limit", 30)
@@ -457,23 +833,45 @@ class NcmApi @Inject constructor(
                     coverImgUrl = obj["coverImgUrl"]?.jsonPrimitive?.contentOrNull ?: "",
                     trackCount = obj["trackCount"]?.jsonPrimitive?.intOrNull ?: 0,
                     playCount = obj["playCount"]?.jsonPrimitive?.longOrNull ?: 0L,
-                    creatorName = obj["creator"].asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
+                    creatorName = obj["creator"]?.asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
                     description = obj["copywriter"]?.jsonPrimitive?.contentOrNull ?: ""
                 )
             }
-        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             emptyList()
         }
     }
 
     suspend fun getDailyRecommendSongs(): List<PlayableMedia.Online> {
+        if (isDirectMode) {
+            try {
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_RECOMMEND_SONGS,
+                    NeteaseEndpoints.PATH_EAPI_RECOMMEND_SONGS,
+                    "{}"
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val data = json?.get("data")?.asJsonObjectOrNull
+                val dailySongs = data?.get("dailySongs")?.jsonArray
+                    ?: json?.get("recommend")?.jsonArray
+                if (dailySongs != null) {
+                    val list = dailySongs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    if (list.isNotEmpty()) return list
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_PLAYLIST_DEBUG", "Direct getDailyRecommendSongs failed: ${e.message}")
+            }
+        }
         return try {
             val response = client.get("$baseUrl/recommend/songs") {
                 parameter("timestamp", System.currentTimeMillis())
             }
             val body = response.bodyAsText()
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull
-            val data = json?.get("data").asJsonObjectOrNull
+            val data = json?.get("data")?.asJsonObjectOrNull
             val dailySongs = data?.get("dailySongs")?.jsonArray ?: return emptyList()
             dailySongs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
         } catch (_: Exception) {
@@ -482,6 +880,42 @@ class NcmApi @Inject constructor(
     }
 
     suspend fun getUserPlaylists(uid: Long): List<NcmUserPlaylist> {
+        if (isDirectMode) {
+            try {
+                val targetUid = if (uid > 0L) uid else (sessionManager?.getUserProfile()?.userId ?: 0L)
+                val payload = buildJsonObject {
+                    put("uid", targetUid)
+                    put("limit", 100)
+                    put("offset", 0)
+                }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_USER_PLAYLIST,
+                    NeteaseEndpoints.PATH_EAPI_USER_PLAYLIST,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val playlists = json?.get("playlist")?.jsonArray
+                if (playlists != null) {
+                    return playlists.mapNotNull {
+                        val obj = it.asJsonObjectOrNull ?: return@mapNotNull null
+                        val id = obj["id"]?.jsonPrimitive?.longOrNull ?: return@mapNotNull null
+                        NcmUserPlaylist(
+                            id = id,
+                            name = obj["name"]?.jsonPrimitive?.contentOrNull ?: "",
+                            coverImgUrl = obj["coverImgUrl"]?.jsonPrimitive?.contentOrNull ?: "",
+                            trackCount = obj["trackCount"]?.jsonPrimitive?.intOrNull ?: 0,
+                            playCount = obj["playCount"]?.jsonPrimitive?.longOrNull ?: 0L,
+                            creatorName = obj["creator"]?.asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
+                            description = obj["description"]?.jsonPrimitive?.contentOrNull ?: ""
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_PLAYLIST_DEBUG", "Direct getUserPlaylists failed: ${e.message}")
+            }
+        }
         return try {
             Log.i("AME_PLAYLIST_DEBUG", "getUserPlaylists requesting with uid=$uid")
             val response = client.get("$baseUrl/user/playlist") {
@@ -501,24 +935,69 @@ class NcmApi @Inject constructor(
                     coverImgUrl = obj["coverImgUrl"]?.jsonPrimitive?.contentOrNull ?: "",
                     trackCount = obj["trackCount"]?.jsonPrimitive?.intOrNull ?: 0,
                     playCount = obj["playCount"]?.jsonPrimitive?.longOrNull ?: 0L,
-                    creatorName = obj["creator"].asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
+                    creatorName = obj["creator"]?.asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
                     description = obj["description"]?.jsonPrimitive?.contentOrNull ?: ""
                 )
             }
-        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e("AME_PLAYLIST_DEBUG", "getUserPlaylists Exception", e)
             emptyList()
         }
     }
 
     /**
-     * 全量循环分页拉取歌单曲目，带 10s 超时防护与实�?(fetched/total) 进度回调
+     * 全量循环分页拉取歌单曲目，带 10s 超时防护与实时 (fetched/total) 进度回调
      */
     suspend fun getPlaylistTracks(
         playlistId: Long,
         totalCount: Int = 0,
         onProgress: ((fetched: Int, total: Int) -> Unit)? = null
     ): List<PlayableMedia.Online> {
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject {
+                    put("id", playlistId)
+                    put("n", 100000)
+                    put("s", 8)
+                }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_PLAYLIST_DETAIL,
+                    NeteaseEndpoints.PATH_EAPI_PLAYLIST_DETAIL,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val playlist = json?.get("playlist")?.asJsonObjectOrNull
+                val trackIdsArray = playlist?.get("trackIds")?.jsonArray
+                val tracksArray = playlist?.get("tracks")?.jsonArray
+
+                if (tracksArray != null && (trackIdsArray == null || tracksArray.size >= trackIdsArray.size)) {
+                    val songs = tracksArray.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    val expectedTotal = if (totalCount > 0) totalCount else songs.size
+                    onProgress?.invoke(songs.size, expectedTotal)
+                    return songs
+                }
+
+                if (trackIdsArray != null && trackIdsArray.isNotEmpty()) {
+                    val allTrackIds = trackIdsArray.mapNotNull { it.asJsonObjectOrNull?.get("id")?.jsonPrimitive?.longOrNull?.toString() }
+                    val allSongs = mutableListOf<PlayableMedia.Online>()
+                    val chunkSize = 200
+                    for (i in allTrackIds.indices step chunkSize) {
+                        val chunk = allTrackIds.subList(i, minOf(i + chunkSize, allTrackIds.size))
+                        val fetched = getSongDetails(chunk)
+                        allSongs.addAll(fetched)
+                        val expectedTotal = if (totalCount > 0) totalCount else allTrackIds.size
+                        onProgress?.invoke(allSongs.size, expectedTotal)
+                    }
+                    if (allSongs.isNotEmpty()) return allSongs
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_PLAYLIST_DEBUG", "Direct getPlaylistTracks failed: ${e.message}")
+            }
+        }
+
         val allSongs = mutableListOf<PlayableMedia.Online>()
         val limit = 100
         var offset = 0
@@ -556,7 +1035,7 @@ class NcmApi @Inject constructor(
                         }
                         val detailBody = detailResp?.bodyAsText() ?: ""
                         val detailJson = Json.parseToJsonElement(detailBody).asJsonObjectOrNull
-                        val tracks = detailJson?.get("playlist").asJsonObjectOrNull?.get("tracks")?.jsonArray
+                        val tracks = detailJson?.get("playlist")?.asJsonObjectOrNull?.get("tracks")?.jsonArray
                         tracks?.mapNotNull { parseSong(it.asJsonObjectOrNull) }?.let { allSongs.addAll(it) }
                     }
                     hasMore = false
@@ -572,7 +1051,8 @@ class NcmApi @Inject constructor(
                         offset += limit
                     }
                 }
-            } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.e("AME_PLAYLIST_DEBUG", "getPlaylistTracks offset=$offset Exception", e)
                 hasMore = false
             }
@@ -587,6 +1067,28 @@ class NcmApi @Inject constructor(
      * 云端喜欢 / 取消喜欢歌曲 (Netease API: GET /like?id=xxx&like=true/false)
      */
     suspend fun likeSong(songId: String, like: Boolean): Boolean {
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject {
+                    put("trackId", songId)
+                    put("like", like)
+                    put("time", 3)
+                    put("csrf_token", "")
+                }.toString()
+                val (body, _) = directClient.postWeapi(
+                    client,
+                    NeteaseEndpoints.URL_WEAPI_SONG_LIKE,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
+                Log.i("AME_CLOUD_SYNC", "Direct likeSong songId=$songId, like=$like, code=$code")
+                if (code == 200) return true
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.e("AME_CLOUD_SYNC", "Direct likeSong failed for id=$songId", e)
+            }
+        }
         return try {
             val response = client.get("$baseUrl/like") {
                 parameter("id", songId)
@@ -598,7 +1100,8 @@ class NcmApi @Inject constructor(
             val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
             Log.i("AME_CLOUD_SYNC", "likeSong songId=$songId, like=$like, code=$code")
             code == 200
-        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e("AME_CLOUD_SYNC", "likeSong failed for id=$songId", e)
             false
         }
@@ -608,6 +1111,28 @@ class NcmApi @Inject constructor(
      * 云端歌单添加 / 移除歌曲 (Netease API: GET /playlist/tracks?op=add/del&pid=xxx&tracks=xxx)
      */
     suspend fun updatePlaylistTracks(op: String, playlistId: Long, songId: String): Boolean {
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject {
+                    put("op", op)
+                    put("pid", playlistId)
+                    put("trackIds", "[$songId]")
+                    put("csrf_token", "")
+                }.toString()
+                val (body, _) = directClient.postWeapi(
+                    client,
+                    NeteaseEndpoints.URL_WEAPI_PLAYLIST_MANIPULATE,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
+                Log.i("AME_CLOUD_SYNC", "Direct updatePlaylistTracks op=$op, playlistId=$playlistId, songId=$songId, code=$code")
+                if (code == 200) return true
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.e("AME_CLOUD_SYNC", "Direct updatePlaylistTracks failed op=$op, pid=$playlistId, songId=$songId", e)
+            }
+        }
         return try {
             val response = client.get("$baseUrl/playlist/tracks") {
                 parameter("op", op) // "add" or "del"
@@ -620,7 +1145,8 @@ class NcmApi @Inject constructor(
             val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
             Log.i("AME_CLOUD_SYNC", "updatePlaylistTracks op=$op, playlistId=$playlistId, songId=$songId, code=$code")
             code == 200
-        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e;
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e("AME_CLOUD_SYNC", "updatePlaylistTracks failed op=$op, pid=$playlistId, songId=$songId", e)
             false
         }
@@ -638,7 +1164,7 @@ class NcmApi @Inject constructor(
                     it.asJsonObjectOrNull?.get("name")?.jsonPrimitive?.contentOrNull
                 }?.joinToString("/") ?: ""
 
-            val albumObj = json["al"].asJsonObjectOrNull ?: json["album"].asJsonObjectOrNull
+            val albumObj = json["al"]?.asJsonObjectOrNull ?: json["album"]?.asJsonObjectOrNull
             val albumName = albumObj?.get("name")?.jsonPrimitive?.contentOrNull ?: ""
             val picUrl = albumObj?.get("picUrl")?.jsonPrimitive?.contentOrNull
 

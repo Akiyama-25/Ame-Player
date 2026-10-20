@@ -152,7 +152,9 @@ fun SettingsScreen(
                 SettingItem(
                     icon = Icons.Rounded.Dns,
                     title = "API 服务地址",
-                    subtitle = if (hasApi) apiBaseUrl else "未配置 (点击配置解锁在线功能)",
+                    subtitle = if (hasApi) {
+                        if (apiBaseUrl == UserSessionManager.DEFAULT_API_BASE_URL) "内置直连 (官方网易云接口)" else apiBaseUrl
+                    } else "未配置 (点击配置解锁在线功能)",
                     onClick = { showApiDialog = true }
                 )
             }
@@ -1062,6 +1064,28 @@ private fun QrLoginDialog(
                         } else {
                             Text("二维码解析失败", color = MaterialTheme.colorScheme.error)
                         }
+                    } else if (!qrLoginUrl.isNullOrBlank()) {
+                        val bitmap = remember(qrLoginUrl) { generateQrCodeBitmap(qrLoginUrl!!) }
+                        if (bitmap != null) {
+                            Image(
+                                bitmap = bitmap,
+                                contentDescription = "QR Code",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clickable {
+                                        qrLoginUrl?.let { url ->
+                                            try {
+                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                                context.startActivity(intent)
+                                            } catch (e: Exception) {
+                                                android.widget.Toast.makeText(context, "无法拉起浏览器或应用", android.widget.Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                            )
+                        } else {
+                            Text("二维码生成失败", color = MaterialTheme.colorScheme.error)
+                        }
                     } else {
                         Text("无二维码数据", color = MaterialTheme.colorScheme.error)
                     }
@@ -1102,6 +1126,32 @@ private fun QrLoginDialog(
             }
         }
     )
+}
+
+private fun generateQrCodeBitmap(content: String, size: Int = 512): ImageBitmap? {
+    return try {
+        val bitMatrix = com.google.zxing.qrcode.QRCodeWriter().encode(
+            content,
+            com.google.zxing.BarcodeFormat.QR_CODE,
+            size,
+            size
+        )
+        val width = bitMatrix.width
+        val height = bitMatrix.height
+        val pixels = IntArray(width * height)
+        for (y in 0 until height) {
+            val offset = y * width
+            for (x in 0 until width) {
+                pixels[offset + x] = if (bitMatrix.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+            }
+        }
+        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        bitmap.asImageBitmap()
+    } catch (e: Exception) {
+        android.util.Log.e("AME_QR_DEBUG", "generateQrCodeBitmap failed", e)
+        null
+    }
 }
 
 private fun parseQrBitmap(dataUriOrBase64: String): ImageBitmap? {

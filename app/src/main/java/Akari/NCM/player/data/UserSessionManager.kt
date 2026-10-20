@@ -100,13 +100,15 @@ class UserSessionManager @Inject constructor(
     }
 
     fun getApiBaseUrl(): String {
-        return prefs.getString(KEY_API_BASE_URL, DEFAULT_API_BASE_URL) ?: DEFAULT_API_BASE_URL
+        val saved = prefs.getString(KEY_API_BASE_URL, null)
+        return if (saved.isNullOrBlank()) DEFAULT_API_BASE_URL else saved
     }
 
     fun saveApiBaseUrl(url: String) {
-        val formatted = url.trim().removeSuffix("/")
-        prefs.edit().putString(KEY_API_BASE_URL, formatted).apply()
-        _apiBaseUrlState.value = formatted
+        val trimmed = url.trim().removeSuffix("/")
+        val toSave = if (trimmed.isBlank() || trimmed == DEFAULT_API_BASE_URL) DEFAULT_API_BASE_URL else trimmed
+        prefs.edit().putString(KEY_API_BASE_URL, toSave).apply()
+        _apiBaseUrlState.value = toSave
     }
 
     fun getHomepageMode(): HomepageMode {
@@ -126,7 +128,7 @@ class UserSessionManager @Inject constructor(
         private const val KEY_USER_PROFILE = "user_profile"
         private const val KEY_API_BASE_URL = "api_base_url"
         private const val KEY_HOMEPAGE_MODE = "homepage_mode"
-        const val DEFAULT_API_BASE_URL = ""
+        const val DEFAULT_API_BASE_URL = "https://interface.music.163.com"
 
         /**
          * 净化 Cookie 字符串：只保留合法的名值对 (key=value)，彻底过滤 Path, Max-Age, Expires 等服务端指令

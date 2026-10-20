@@ -113,6 +113,9 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.json)
 
+    // ZXing for QR code rendering
+    implementation(libs.zxing.core)
+
     // Coil (image loading)
     implementation(libs.coil.compose)
 
