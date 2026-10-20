@@ -51,6 +51,32 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Set up Android Platform SDK 37
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f -print -quit || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$ANDROID_HOME/tools/bin/sdkmanager"
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          if "$SDKMANAGER" --install "platforms;android-37" > /tmp/sdk.log 2>&1; then
+            echo "Installed platforms;android-37 directly"
+          else
+            echo "Direct install of android-37 failed, trying platforms;android-37.0"
+            "$SDKMANAGER" --install "platforms;android-37.0" > /tmp/sdk.log 2>&1 || {
+              cat /tmp/sdk.log
+              exit 1
+            }
+            P37="${ANDROID_HOME}/platforms/android-37"
+            P370="${ANDROID_HOME}/platforms/android-37.0"
+            if [ -d "$P370" ] && [ ! -d "$P37" ]; then
+              cp -r "$P370" "$P37"
+              sed -i 's/PlatformVersion=37\.0/PlatformVersion=37/' "$P37/source.properties" || true
+              sed -i 's/AndroidVersion.ApiLevel=37\.0/AndroidVersion.ApiLevel=37/' "$P37/source.properties" || true
+            fi
+          fi
+          ls -la "${ANDROID_HOME}/platforms/"
+
       - name: Set up Gradle 9.5.0
         uses: gradle/actions/setup-gradle@v4
         with:
