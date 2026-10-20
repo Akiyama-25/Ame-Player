@@ -98,6 +98,7 @@ jobs:
           path: unsigned
 
       - name: Prepare private signing key
+        id: prepare-key
         env:
           KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
@@ -105,8 +106,9 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$KEYSTORE_B64" ]; then
-            echo "::error::Missing SIGNING_KEYSTORE_BASE64 repository/environment secret"
-            exit 1
+            echo "::warning::Missing SIGNING_KEYSTORE_BASE64 secret. Skipping APK signing and retaining unsigned release APK."
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           umask 077
           printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/ame-player-signing.p12"
@@ -115,8 +117,10 @@ jobs:
           : "${KEY_ALIAS:?Missing SIGNING_KEY_ALIAS secret}"
           keytool -list -storetype PKCS12 -keystore "$RUNNER_TEMP/ame-player-signing.p12" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
           echo "KEYSTORE_PATH=$RUNNER_TEMP/ame-player-signing.p12" >> "$GITHUB_ENV"
+          echo "has_key=true" >> "$GITHUB_OUTPUT"
 
       - name: Align, sign, and verify APK
+        if: steps.prepare-key.outputs.has_key == 'true'
         env:
           STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
@@ -144,10 +148,20 @@ jobs:
           sha256sum "$SIGNED" | tee signed/SHA256SUMS.txt
 
       - name: Upload signed APK artifact
+        if: steps.prepare-key.outputs.has_key == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ame-player-release-signed-${{ github.run_number }}
           path: signed/ame-player-release-signed.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload unsigned release APK (fallback when secrets unset)
+        if: steps.prepare-key.outputs.has_key != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ame-player-release-unsigned-${{ github.run_number }}
+          path: unsigned/*.apk
           if-no-files-found: error
           retention-days: 30
 
