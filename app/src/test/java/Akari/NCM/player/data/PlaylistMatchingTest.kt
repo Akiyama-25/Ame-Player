@@ -283,11 +283,17 @@ class PlaylistMatchingTest {
             displayName = "愛美 伊藤美来 小笠原仁 梶原岳人 鈴木愛理 DIALOGUE＋ TrySail 仲村宗悟 花澤香菜 halca - Sparkle.mp3"
         ) as PlayableMedia.LocalNcm
 
+        // 场景 3：云端为直双引号 ("Don't say \"lazy\"")，本地文件名为弯双引号 ("Don't say ”lazy”")
+        val localLazy = NcmFileScanner.scanUri(
+            uri = android.net.Uri.parse("file:///storage/emulated/0/Music/DontSayLazy.flac"),
+            displayName = "桜高軽音部 - Don't say ”lazy”.flac"
+        ) as PlayableMedia.LocalNcm
+
         playlistManager.saveOrUpdateSyncedPlaylist(
             ncmPlaylistId = -9999L,
             name = "本地扫描文件夹",
             coverImgUrl = null,
-            songs = listOf(localDna, localSparkle)
+            songs = listOf(localDna, localSparkle, localLazy)
         )
 
         val onlineDna = PlayableMedia.Online(
@@ -302,8 +308,15 @@ class PlaylistMatchingTest {
             artist = "愛美/伊藤美来/小笠原仁/梶原岳人/鈴木愛理/DIALOGUE+/TrySail/仲村宗悟/花澤香菜/halca",
             album = "Sparkle"
         )
+        val onlineLazy = PlayableMedia.Online(
+            id = "66603",
+            title = "Don't say \"lazy\"",
+            artist = "桜高軽音部",
+            album = "Don't say \"lazy\""
+        )
 
         assertNotNull(playlistManager.findLocalMatch(onlineDna))
         assertNotNull(playlistManager.findLocalMatch(onlineSparkle))
+        assertNotNull(playlistManager.findLocalMatch(onlineLazy))
     }
 }

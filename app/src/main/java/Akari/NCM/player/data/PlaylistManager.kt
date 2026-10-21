@@ -209,6 +209,13 @@ class PlaylistManager(private val context: Context) {
         private fun unifyFullWidth(input: String): String {
             return java.text.Normalizer.normalize(input, java.text.Normalizer.Form.NFKC)
                 .replace('\u301C', '~') // 兼容日文波浪号 〜 与全角/半角 ~
+                .replace(Regex("[\u201C\u201D\u201E\u201F\u2033\uFF02]"), "\"") // 兼容中文/弯双引号 “ ” 等转标准双引号
+                .replace(Regex("[\u2018\u2019\u201A\u201B\u2032\uFF07\u0060\u00B4]"), "'") // 兼容弯单引号 ‘ ’ 等转标准单引号
+                .replace(Regex("[\uFF0F\u2215\u2044]"), "/") // 兼容全角/特殊斜杠
+                .replace(Regex("[\uFF3C\u2216]"), "\\") // 兼容全角/特殊反斜杠
+                .replace(Regex("[\uFF1A\u2236\uA789]"), ":") // 兼容特殊冒号
+                .replace(Regex("[\uFF0A\u2217\u204E]"), "*") // 兼容特殊星号
+                .replace(Regex("[\uFF5C\u2223\u00A6]"), "|") // 兼容特殊竖线
         }
 
         fun normalizeArtistLayer2(artist: String): String {
