@@ -8,6 +8,7 @@ import Akari.NCM.player.data.LyricsManager
 import Akari.NCM.player.data.LocalFolderManager
 import Akari.NCM.player.data.NcmFileScanner
 import Akari.NCM.player.data.PlaylistManager
+import Akari.NCM.player.data.ThemePrefs
 import Akari.NCM.player.data.UserSessionManager
 import Akari.NCM.player.player.AmePlayerEngine
 import Akari.NCM.player.ui.component.AddToPlaylistDialog
@@ -25,6 +26,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -118,6 +120,8 @@ fun MainScreen(
         }
     }
     val customPlaylists by playlistManager.playlists.collectAsState()
+    val showMatchStatusPreference by ThemePrefs.showMatchStatusFlow.collectAsState()
+    var matchFilterMode by remember { mutableStateOf(0) } // 0: 全部, 1: 仅已匹配, 2: 仅未匹配
     val apiBaseUrl by sessionManager.apiBaseUrlState.collectAsState()
     val hasApi = apiBaseUrl.isNotBlank()
     val isLoggedIn = sessionManager.isLoggedIn()
@@ -474,40 +478,96 @@ fun MainScreen(
                                             )
                                         }
                                     } else {
-                                        LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                            itemsIndexed(currentPlaylist.songs) { index, songDto ->
+                                        val songMatchTriples = remember(currentPlaylist.songs, customPlaylists) {
+                                            currentPlaylist.songs.mapIndexed { index, songDto ->
                                                 val media = songDto.toPlayableMedia()
                                                 val localMatch = if (media is PlayableMedia.Online) playlistManager.findLocalMatch(media) else null
-                                                val isLocalMatch = localMatch != null
-                                                SongItem(
-                                                    media = media,
-                                                    isCurrentTrack = currentMedia?.id == media.id,
-                                                    isPlaying = isPlaying && currentMedia?.id == media.id,
-                                                    isLocalMatch = isLocalMatch,
-                                                    onClick = {
-                                                        val playableList = currentPlaylist.songs.map { dto ->
-                                                            val m = dto.toPlayableMedia()
-                                                            if (m is PlayableMedia.Online) {
-                                                                playlistManager.findLocalMatch(m) ?: m
-                                                            } else m
-                                                        }
-                                                        playerEngine.loadPlaylist(playableList, index)
-                                                        playerEngine.play()
-                                                    },
-                                                    onActionClick = {
-                                                        actionMedia = media
-                                                        actionPlaylistContext = currentPlaylist
-                                                        actionRemoveCallback = {
-                                                            playlistManager.removeSongFromPlaylist(currentPlaylist.id, media.id)
-                                                            selectedPlaylistForDetail = playlistManager.playlists.value.find { it.id == currentPlaylist.id }
-                                                            if (currentPlaylist.ncmPlaylistId != null) {
-                                                                scope.launch(Dispatchers.IO) {
-                                                                    ncmApi.updatePlaylistTracks("del", currentPlaylist.ncmPlaylistId, media.id)
+                                                Triple(index, songDto, localMatch != null)
+                                            }
+                                        }
+                                        val matchedCount = remember(songMatchTriples) { songMatchTriples.count { it.third } }
+                                        val unmatchedCount = remember(songMatchTriples) { songMatchTriples.size - matchedCount }
+
+                                        if (showMatchStatusPreference) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                FilterChip(
+                                                    selected = matchFilterMode == 0,
+                                                    onClick = { matchFilterMode = 0 },
+                                                    label = { Text("全部 (${songMatchTriples.size})") }
+                                                )
+                                                FilterChip(
+                                                    selected = matchFilterMode == 1,
+                                                    onClick = { matchFilterMode = 1 },
+                                                    label = { Text("已匹配 ($matchedCount)") }
+                                                )
+                                                FilterChip(
+                                                    selected = matchFilterMode == 2,
+                                                    onClick = { matchFilterMode = 2 },
+                                                    label = { Text("未匹配 ($unmatchedCount)") }
+                                                )
+                                            }
+                                        }
+
+                                        val displayedSongs = remember(songMatchTriples, matchFilterMode, showMatchStatusPreference) {
+                                            if (!showMatchStatusPreference || matchFilterMode == 0) {
+                                                songMatchTriples
+                                            } else if (matchFilterMode == 1) {
+                                                songMatchTriples.filter { it.third }
+                                            } else {
+                                                songMatchTriples.filter { !it.third }
+                                            }
+                                        }
+
+                                        if (displayedSongs.isEmpty()) {
+                                            Box(
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    if (matchFilterMode == 1) "暂无已匹配的歌曲" else "暂无未匹配的歌曲",
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        } else {
+                                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                                items(displayedSongs, key = { it.second.id }) { (origIndex, songDto, isMatched) ->
+                                                    val media = songDto.toPlayableMedia()
+                                                    SongItem(
+                                                        media = media,
+                                                        isCurrentTrack = currentMedia?.id == media.id,
+                                                        isPlaying = isPlaying && currentMedia?.id == media.id,
+                                                        isLocalMatch = isMatched,
+                                                        onClick = {
+                                                            val playableList = currentPlaylist.songs.map { dto ->
+                                                                val m = dto.toPlayableMedia()
+                                                                if (m is PlayableMedia.Online) {
+                                                                    playlistManager.findLocalMatch(m) ?: m
+                                                                } else m
+                                                            }
+                                                            playerEngine.loadPlaylist(playableList, origIndex)
+                                                            playerEngine.play()
+                                                        },
+                                                        onActionClick = {
+                                                            actionMedia = media
+                                                            actionPlaylistContext = currentPlaylist
+                                                            actionRemoveCallback = {
+                                                                playlistManager.removeSongFromPlaylist(currentPlaylist.id, media.id)
+                                                                selectedPlaylistForDetail = playlistManager.playlists.value.find { it.id == currentPlaylist.id }
+                                                                if (currentPlaylist.ncmPlaylistId != null) {
+                                                                    scope.launch(Dispatchers.IO) {
+                                                                        ncmApi.updatePlaylistTracks("del", currentPlaylist.ncmPlaylistId, media.id)
+                                                                    }
                                                                 }
                                                             }
                                                         }
-                                                    }
-                                                )
+                                                    )
+                                                }
                                             }
                                         }
                                     }

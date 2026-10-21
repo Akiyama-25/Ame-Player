@@ -21,6 +21,7 @@ object ThemePrefs {
     private const val KEY_CUSTOM_BG_S = "custom_bg_s"
     private const val KEY_CUSTOM_BG_L = "custom_bg_l"
     private const val KEY_GRID_COLUMNS = "settings_grid_columns"
+    private const val KEY_SHOW_MATCH_STATUS = "show_match_status"
 
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
@@ -68,6 +69,9 @@ object ThemePrefs {
     private val _gridColumnsFlow = MutableStateFlow(2)
     val gridColumnsFlow: StateFlow<Int> = _gridColumnsFlow.asStateFlow()
 
+    private val _showMatchStatusFlow = MutableStateFlow(false)
+    val showMatchStatusFlow: StateFlow<Boolean> = _showMatchStatusFlow.asStateFlow()
+
     fun init(context: Context) {
         prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
         _themeFlow.value = themeMode
@@ -82,6 +86,7 @@ object ThemePrefs {
         _bgSFlow.value = customBgS
         _bgLFlow.value = customBgL
         _gridColumnsFlow.value = gridColumns
+        _showMatchStatusFlow.value = showMatchStatus
     }
 
     var themeMode: String
@@ -166,5 +171,12 @@ object ThemePrefs {
         set(value) {
             prefs.edit().putInt(KEY_GRID_COLUMNS, value).apply()
             _gridColumnsFlow.value = value
+        }
+
+    var showMatchStatus: Boolean
+        get() = prefs.getBoolean(KEY_SHOW_MATCH_STATUS, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_SHOW_MATCH_STATUS, value).apply()
+            _showMatchStatusFlow.value = value
         }
 }
