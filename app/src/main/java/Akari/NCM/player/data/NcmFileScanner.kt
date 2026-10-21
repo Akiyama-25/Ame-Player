@@ -21,8 +21,8 @@ object NcmFileScanner {
         }
 
         val baseName = displayName.substringBeforeLast('.')
-        // 清理文件名开头的序号 (如 "01. " 或 "12 "), 避免它污染歌手名或曲名导致搜索全军覆没
-        val cleanBaseName = baseName.replace(Regex("^\\d+\\.?\\s*"), "").trim()
+        // 仅清理带明确点号与空格分隔的曲目序号 (如 "01. ")，避免误删以数字开头的曲师/歌手名 (如 "7_7"、"164"、"40mP")
+        val cleanBaseName = baseName.replace(Regex("^\\d{1,3}\\.\\s+"), "").trim()
         
         var artist = "Unknown"
         var title = cleanBaseName

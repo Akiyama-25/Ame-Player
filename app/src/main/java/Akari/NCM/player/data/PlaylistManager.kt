@@ -108,9 +108,11 @@ class PlaylistManager(private val context: Context) {
     private var nonNcmLayer1Cache: Map<String, PlayableMedia.LocalNcm> = emptyMap()
     private var nonNcmLayer2Cache: Map<String, PlayableMedia.LocalNcm> = emptyMap()
     private var nonNcmLayer3Cache: Map<String, PlayableMedia.LocalNcm> = emptyMap()
+    private var nonNcmLayer4Cache: Map<String, PlayableMedia.LocalNcm> = emptyMap()
     private var allLayer1Cache: Map<String, PlayableMedia.LocalNcm> = emptyMap()
     private var allLayer2Cache: Map<String, PlayableMedia.LocalNcm> = emptyMap()
     private var allLayer3Cache: Map<String, PlayableMedia.LocalNcm> = emptyMap()
+    private var allLayer4Cache: Map<String, PlayableMedia.LocalNcm> = emptyMap()
 
     private fun updateLocalMatchCache(list: List<CustomPlaylist>) {
         val localPlaylist = list.find { it.ncmPlaylistId == -9999L }
@@ -119,9 +121,11 @@ class PlaylistManager(private val context: Context) {
             nonNcmLayer1Cache = emptyMap()
             nonNcmLayer2Cache = emptyMap()
             nonNcmLayer3Cache = emptyMap()
+            nonNcmLayer4Cache = emptyMap()
             allLayer1Cache = emptyMap()
             allLayer2Cache = emptyMap()
             allLayer3Cache = emptyMap()
+            allLayer4Cache = emptyMap()
             return
         }
 
@@ -129,40 +133,45 @@ class PlaylistManager(private val context: Context) {
         val nonNcmL1 = mutableMapOf<String, PlayableMedia.LocalNcm>()
         val nonNcmL2 = mutableMapOf<String, PlayableMedia.LocalNcm>()
         val nonNcmL3 = mutableMapOf<String, PlayableMedia.LocalNcm>()
+        val nonNcmL4 = mutableMapOf<String, PlayableMedia.LocalNcm>()
         val allL1 = mutableMapOf<String, PlayableMedia.LocalNcm>()
         val allL2 = mutableMapOf<String, PlayableMedia.LocalNcm>()
         val allL3 = mutableMapOf<String, PlayableMedia.LocalNcm>()
+        val allL4 = mutableMapOf<String, PlayableMedia.LocalNcm>()
 
         for (dto in localPlaylist.songs) {
             val media = dto.toPlayableMedia() as? PlayableMedia.LocalNcm ?: continue
+
+            val k1 = layer1Key(media.title, media.artist)
+            val k2 = layer2Key(media.title, media.artist)
+            val k3 = layer3Key(media.title, media.artist)
+            val k4 = layer4Key(media.title, media.artist)
 
             // 优先记录具有 NCM ID 的项
             if (media.isNcm) {
                 idMap[media.id] = media
             } else {
-                val k1 = layer1Key(media.title, media.artist)
-                val k2 = layer2Key(media.title, media.artist)
-                val k3 = layer3Key(media.title, media.artist)
                 nonNcmL1.putIfAbsent(k1, media)
                 nonNcmL2.putIfAbsent(k2, media)
                 nonNcmL3.putIfAbsent(k3, media)
+                nonNcmL4.putIfAbsent(k4, media)
             }
 
-            val k1 = layer1Key(media.title, media.artist)
-            val k2 = layer2Key(media.title, media.artist)
-            val k3 = layer3Key(media.title, media.artist)
             allL1.putIfAbsent(k1, media)
             allL2.putIfAbsent(k2, media)
             allL3.putIfAbsent(k3, media)
+            allL4.putIfAbsent(k4, media)
         }
 
         ncmIdMatchCache = idMap
         nonNcmLayer1Cache = nonNcmL1
         nonNcmLayer2Cache = nonNcmL2
         nonNcmLayer3Cache = nonNcmL3
+        nonNcmLayer4Cache = nonNcmL4
         allLayer1Cache = allL1
         allLayer2Cache = allL2
         allLayer3Cache = allL3
+        allLayer4Cache = allL4
     }
 
     fun findLocalMatch(onlineMedia: PlayableMedia.Online): PlayableMedia.LocalNcm? {
@@ -172,6 +181,7 @@ class PlaylistManager(private val context: Context) {
         val k1 = layer1Key(onlineMedia.title, onlineMedia.artist)
         val k2 = layer2Key(onlineMedia.title, onlineMedia.artist)
         val k3 = layer3Key(onlineMedia.title, onlineMedia.artist)
+        val k4 = layer4Key(onlineMedia.title, onlineMedia.artist)
 
         // 2. 对非 NCM 文件使用歌曲名多重匹配
         // 第一层：按照原始格式匹配，不忽略任何特殊字符与空格
@@ -183,10 +193,14 @@ class PlaylistManager(private val context: Context) {
         // 第三层：在第二层的基础上，额外将制作人部分的特殊符号（如“*”）替换为空格后匹配
         nonNcmLayer3Cache[k3]?.let { return it }
 
+        // 第四层：兼容首部数字/序号被截断或带曲目编号的情况（如 "7_7" -> "_7"、"164 GUMI" -> "GUMI"）
+        nonNcmLayer4Cache[k4]?.let { return it }
+
         // 3. 兜底：若非 NCM 文件未命中，允许对其他本地项同样按多重层级顺序匹配
         allLayer1Cache[k1]?.let { return it }
         allLayer2Cache[k2]?.let { return it }
         allLayer3Cache[k3]?.let { return it }
+        allLayer4Cache[k4]?.let { return it }
 
         return null
     }
@@ -205,6 +219,12 @@ class PlaylistManager(private val context: Context) {
                 .trim()
         }
 
+        fun normalizeArtistLayer4(artist: String): String {
+            val base = normalizeArtistLayer3(artist)
+            val stripped = base.replace(Regex("^\\d+\\.?\\s*"), "").trim()
+            return stripped.ifEmpty { base }
+        }
+
         fun normalizeTitleLayer3(title: String): String {
             return title.replace(Regex("[*\"<>?\\\\|:]"), " ")
                 .replace(Regex("\\s+"), " ")
@@ -221,6 +241,10 @@ class PlaylistManager(private val context: Context) {
 
         fun layer3Key(title: String, artist: String): String {
             return "${normalizeTitleLayer3(title).lowercase()} - ${normalizeArtistLayer3(artist).lowercase()}"
+        }
+
+        fun layer4Key(title: String, artist: String): String {
+            return "${normalizeTitleLayer3(title).lowercase()} - ${normalizeArtistLayer4(artist).lowercase()}"
         }
     }
 

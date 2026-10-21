@@ -178,4 +178,94 @@ class PlaylistMatchingTest {
         val matched = playlistManager.findLocalMatch(online)
         assertNull(matched)
     }
+
+    @Test
+    fun testNumericArtistScanAndMatch() {
+        val localBuzz = NcmFileScanner.scanUri(
+            uri = android.net.Uri.parse("file:///storage/emulated/0/Music/BUZZ_CUTZ.flac"),
+            displayName = "7_7 A2 akimalo Aquestion Chinatsu DJ Raisei fuluca maezawa Negimiso Sar7 - BUZZ CUTZ.flac"
+        ) as PlayableMedia.LocalNcm
+
+        val localAmanojaku = NcmFileScanner.scanUri(
+            uri = android.net.Uri.parse("file:///storage/emulated/0/Music/Amanojaku.flac"),
+            displayName = "164 GUMI - 天ノ弱.flac"
+        ) as PlayableMedia.LocalNcm
+
+        assertEquals(
+            "7_7 A2 akimalo Aquestion Chinatsu DJ Raisei fuluca maezawa Negimiso Sar7",
+            localBuzz.artist
+        )
+        assertEquals("BUZZ CUTZ", localBuzz.title)
+        assertEquals("164 GUMI", localAmanojaku.artist)
+        assertEquals("天ノ弱", localAmanojaku.title)
+
+        playlistManager.saveOrUpdateSyncedPlaylist(
+            ncmPlaylistId = -9999L,
+            name = "本地扫描文件夹",
+            coverImgUrl = null,
+            songs = listOf(localBuzz, localAmanojaku)
+        )
+
+        val onlineBuzz = PlayableMedia.Online(
+            id = "55551",
+            title = "BUZZ CUTZ",
+            artist = "7_7/A2/akimalo/Aquestion/Chinatsu/DJ Raisei/fuluca/maezawa/Negimiso/Sar7",
+            album = "BUZZ CUTZ"
+        )
+        val onlineAmanojaku = PlayableMedia.Online(
+            id = "55552",
+            title = "天ノ弱",
+            artist = "164/GUMI",
+            album = "THEORY"
+        )
+
+        assertNotNull(playlistManager.findLocalMatch(onlineBuzz))
+        assertNotNull(playlistManager.findLocalMatch(onlineAmanojaku))
+    }
+
+    @Test
+    fun testLayer4LegacyTruncatedNumericArtistMatch() {
+        // 兼容旧版扫描器已将开头数字截断后缓存在 custom_playlists.json 中的情况
+        val legacyLocalBuzz = PlayableMedia.LocalNcm(
+            id = "legacy_buzz",
+            title = "BUZZ CUTZ",
+            artist = "_7 A2 akimalo Aquestion Chinatsu DJ Raisei fuluca maezawa Negimiso Sar7",
+            album = "",
+            uri = "file:///storage/emulated/0/Music/BUZZ_CUTZ.flac",
+            format = AudioFormat.FLAC,
+            isNcm = false
+        )
+        val legacyLocalAmanojaku = PlayableMedia.LocalNcm(
+            id = "legacy_amanojaku",
+            title = "天ノ弱",
+            artist = "GUMI",
+            album = "",
+            uri = "file:///storage/emulated/0/Music/Amanojaku.flac",
+            format = AudioFormat.FLAC,
+            isNcm = false
+        )
+
+        playlistManager.saveOrUpdateSyncedPlaylist(
+            ncmPlaylistId = -9999L,
+            name = "本地扫描文件夹",
+            coverImgUrl = null,
+            songs = listOf(legacyLocalBuzz, legacyLocalAmanojaku)
+        )
+
+        val onlineBuzz = PlayableMedia.Online(
+            id = "55551",
+            title = "BUZZ CUTZ",
+            artist = "7_7/A2/akimalo/Aquestion/Chinatsu/DJ Raisei/fuluca/maezawa/Negimiso/Sar7",
+            album = "BUZZ CUTZ"
+        )
+        val onlineAmanojaku = PlayableMedia.Online(
+            id = "55552",
+            title = "天ノ弱",
+            artist = "164/GUMI",
+            album = "THEORY"
+        )
+
+        assertEquals("legacy_buzz", playlistManager.findLocalMatch(onlineBuzz)?.id)
+        assertEquals("legacy_amanojaku", playlistManager.findLocalMatch(onlineAmanojaku)?.id)
+    }
 }
