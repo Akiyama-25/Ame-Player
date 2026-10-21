@@ -616,8 +616,8 @@ fun SettingsScreen(
 
             item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
 
-            // ── 灵动岛与实况歌词 ──
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("灵动岛与实况歌词") }
+            // ── 灵动岛与实时播放控制窗 ──
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("灵动岛与实时播放控制") }
 
             item {
                 val toggleLiveIsland: (Boolean) -> Unit = { enabled ->
@@ -641,7 +641,7 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Rounded.Lyrics,
+                        imageVector = Icons.Rounded.MusicNote,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp)
@@ -649,13 +649,13 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "启用实况歌词上岛",
+                            text = "启用播放状态与快捷控制实时窗",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "通过 Android 16 Live Updates、vivo 原子岛扩展与 Flyme Ticker 实时推送顶部胶囊歌词",
+                            text = "通过标准 MediaSession 实时同步高清专辑封面、播放进度条与上一首/暂停/下一首快捷控制（适配澎湃焦点岛、流体云、原子岛等）",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

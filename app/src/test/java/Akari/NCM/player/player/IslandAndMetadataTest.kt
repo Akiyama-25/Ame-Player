@@ -196,7 +196,7 @@ class IslandAndMetadataTest {
         }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithText("灵动岛与实况歌词").assertIsDisplayed()
+        composeTestRule.onNodeWithText("灵动岛与实时播放控制").assertIsDisplayed()
         composeTestRule.onNodeWithTag("setting_live_island").assertIsDisplayed()
         assertTrue(ThemePrefs.liveIslandEnabled)
 

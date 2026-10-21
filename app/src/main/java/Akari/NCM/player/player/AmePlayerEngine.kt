@@ -319,6 +319,24 @@ class AmePlayerEngine @Inject constructor(
                     Player.STATE_ENDED -> PlaybackState.ENDED
                     else -> PlaybackState.IDLE
                 }
+                if (playbackState == Player.STATE_READY) {
+                    val realDuration = exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
+                    if (realDuration > 0L) {
+                        _durationMs.value = realDuration
+                        val currentItem = exoPlayer.currentMediaItem
+                        val existingDuration = currentItem?.mediaMetadata?.durationMs ?: 0L
+                        if (currentItem != null && existingDuration <= 0L) {
+                            val updatedMeta = currentItem.mediaMetadata.buildUpon()
+                                .setDurationMs(realDuration)
+                                .build()
+                            MediaMetadataHelper.updateCurrentPlayingMetadata(
+                                player = exoPlayer,
+                                mediaId = currentItem.mediaId,
+                                updatedMetadata = updatedMeta
+                            )
+                        }
+                    }
+                }
                 if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                     islandManager.cancelIsland()
                 }
@@ -364,22 +382,15 @@ class AmePlayerEngine @Inject constructor(
             }
         })
 
-        // Position ticker & real-time island lyric/progress sync
+        // Position ticker & in-app lyric sync
         scope.launch {
-            var tickCounter = 0
             while (isActive) {
                 if (_isPlaying.value) {
                     val pos = exoPlayer.currentPosition
                     _currentPositionMs.value = pos
                     _durationMs.value = exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L
                     updateAudioFormatFromExo(exoPlayer.audioFormat)
-
-                    val lyricChanged = updateCurrentLyricForPosition(pos)
-                    tickCounter++
-                    if (lyricChanged || tickCounter >= 5) {
-                        tickCounter = 0
-                        syncIslandState()
-                    }
+                    updateCurrentLyricForPosition(pos)
                 }
                 delay(200.milliseconds)
             }
@@ -440,18 +451,17 @@ class AmePlayerEngine @Inject constructor(
             return
         }
 
-        // 1. 异步加载当前曲目的歌词（供后台灵动岛与播放页同步使用）
+        // 1. 异步加载当前曲目的歌词（供播放页同步使用）
         lyricLoadJob = scope.launch {
             val loaded = runCatching { lyricsManager.loadLyrics(currentMedia) }
                 .getOrDefault(LyricResult(emptyList(), LyricSource.NONE))
             if (_currentMedia.value?.id == currentMedia.id) {
                 _currentLyricsResult.value = loaded
                 updateCurrentLyricForPosition(exoPlayer.currentPosition)
-                syncIslandState()
             }
         }
 
-        // 2. 异步解析封面（含本地 .ncm 字节、ID3 内嵌封面或云端匹配封面）并刷新 MediaSession 与灵动岛
+        // 2. 异步解析封面（含本地 .ncm 字节、ID3 内嵌封面或云端匹配封面）并写入 MediaSession MediaMetadata
         artworkLoadJob = scope.launch(Dispatchers.IO) {
             try {
                 var finalCoverUrl: String? = currentMedia.coverUrl
@@ -540,7 +550,7 @@ class AmePlayerEngine @Inject constructor(
                     }
                 }
 
-                // 解码 Bitmap 供灵动岛与通知使用
+                // 解码 Bitmap 并生成压缩字节，确保 MediaSession 的 artworkData 与 artworkUri 同时就绪
                 val bitmap: Bitmap? = when {
                     localCoverBytes != null && localCoverBytes.isNotEmpty() -> {
                         MediaMetadataHelper.decodeSafeBitmap(localCoverBytes)
@@ -557,17 +567,20 @@ class AmePlayerEngine @Inject constructor(
                     else -> null
                 }
 
+                val artworkBytes = localCoverBytes?.takeIf { it.isNotEmpty() }
+                    ?: bitmap?.let { MediaMetadataHelper.bitmapToCompressedBytes(it) }
+
                 withContext(Dispatchers.Main) {
                     if (_currentMedia.value?.id == currentMedia.id) {
                         currentArtworkBitmap = bitmap
-                        if (localCoverBytes != null || finalCoverUrl != currentMedia.coverUrl) {
+                        if (artworkBytes != null || finalCoverUrl != currentMedia.coverUrl) {
                             val updatedMetadata = MediaMetadataHelper.buildTrackMediaMetadata(
                                 title = currentMedia.title,
                                 artist = currentMedia.artist,
                                 album = currentMedia.album,
                                 durationMs = _durationMs.value.takeIf { it > 0 } ?: currentMedia.durationMs,
                                 remoteArtworkUrl = finalCoverUrl,
-                                localArtworkBytes = localCoverBytes
+                                localArtworkBytes = artworkBytes
                             )
                             MediaMetadataHelper.updateCurrentPlayingMetadata(
                                 player = exoPlayer,
@@ -575,47 +588,25 @@ class AmePlayerEngine @Inject constructor(
                                 updatedMetadata = updatedMetadata
                             )
                         }
-                        syncIslandState()
                     }
                 }
             } catch (e: Exception) {
-                Log.e("[AME_ONLINE_PLAY]", "Failed to resolve cover/metadata for island", e)
+                Log.e("[AME_ONLINE_PLAY]", "Failed to resolve cover/metadata for media session", e)
             }
         }
     }
 
     /**
-     * 统一的灵动岛/实况通知状态同步入口（在歌词行刷新、切歌、播放状态改变时调用）
+     * 统一的媒体实时窗状态同步入口：
+     * 确保取消多余的独立横幅通知（NOTIFICATION_ID = 2002），统一由原生 MediaSession 驱动播放状态展示与快捷控制实时窗。
      */
     fun syncIslandState() {
-        if (!isLiveIslandEnabled || !exoPlayer.isPlaying) {
-            islandManager.cancelIsland()
-            return
+        islandManager.cancelIsland()
+        if (isLiveIslandEnabled && exoPlayer.isPlaying) {
+            runCatching {
+                context.startService(Intent(context, AmePlaybackService::class.java))
+            }
         }
-
-        val mediaMetadata = exoPlayer.currentMediaItem?.mediaMetadata ?: return
-        val title = mediaMetadata.title?.toString().orEmpty().ifBlank { _currentMedia.value?.title.orEmpty() }
-        val artist = mediaMetadata.artist?.toString().orEmpty().ifBlank { _currentMedia.value?.artist.orEmpty() }
-        if (title.isBlank()) return
-
-        val currentLyric = _currentLyricState.value?.text.orEmpty()
-        val currentTrans = _currentLyricState.value?.translation
-
-        val duration = exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0 }
-            ?: _durationMs.value.takeIf { it > 0 }
-            ?: _currentMedia.value?.durationMs?.takeIf { it > 0 }
-            ?: 0L
-
-        islandManager.postOrUpdateIsland(
-            songTitle = title,
-            artist = artist,
-            currentLyric = currentLyric,
-            currentTranslation = currentTrans,
-            currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
-            durationMs = duration.coerceAtLeast(0L),
-            coverBitmap = currentArtworkBitmap,
-            contentIntent = buildOpenPlayerPendingIntent()
-        )
     }
 
     private fun buildOpenPlayerPendingIntent(): PendingIntent {
@@ -728,6 +719,10 @@ class AmePlayerEngine @Inject constructor(
             exoPlayer.seekToNext()
             exoPlayer.prepare()
             exoPlayer.play()
+        } else if (exoPlayer.mediaItemCount > 0) {
+            exoPlayer.seekToDefaultPosition(0)
+            exoPlayer.prepare()
+            exoPlayer.play()
         }
     }
 
@@ -736,6 +731,11 @@ class AmePlayerEngine @Inject constructor(
             exoPlayer.seekTo(0)
         } else if (exoPlayer.hasPreviousMediaItem()) {
             exoPlayer.seekToPrevious()
+            exoPlayer.prepare()
+            exoPlayer.play()
+        } else if (exoPlayer.mediaItemCount > 0) {
+            val lastIdx = (exoPlayer.mediaItemCount - 1).coerceAtLeast(0)
+            exoPlayer.seekToDefaultPosition(lastIdx)
             exoPlayer.prepare()
             exoPlayer.play()
         }
