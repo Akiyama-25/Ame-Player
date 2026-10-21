@@ -184,6 +184,7 @@ app/src/main/java/Akari/NCM/player/
 ## 鸣谢
 
 - **[NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)** — 提供网易云音乐 API 服务封装，本项目的云端交互、音轨解析及账号能力依赖于该开源项目。
+- **[rinchao0721/Melodia]**(https://github.com/rinchao0721/Melodia)  提供了APP内嵌API服务，而非由云端发起请求的思路
 - **应用图标来源** — [kanae3792 (Pinterest)](https://jp.pinterest.com/kanae3792/)
 
 ---
