@@ -687,57 +687,58 @@ item(span = { GridItemSpan(maxLineSpan) }) {
     }
 
     if (showLogSizeDialog) {
-        var sizeInput by remember { mutableStateOf(maxFileSizeKb.toString()) }
+        var selectedSizeKb by remember { mutableStateOf(maxFileSizeKb) }
+        val presets = listOf(64L, 256L, 512L, 1024L, 2048L, 4096L)
         AlertDialog(
             onDismissRequest = { showLogSizeDialog = false },
             title = { Text("自定义日志大小上限", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
             text = {
-                Column {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "请输入单个日志文件的大小限制（单位 KB，最小 64 KB）：",
+                        text = "当前设置上限: $selectedSizeKb KB（最小 64 KB，默认 1024 KB）",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 12.dp)
+                        modifier = Modifier.padding(bottom = 8.dp)
                     )
-                    OutlinedTextField(
-                        value = sizeInput,
-                        onValueChange = { value ->
-                            if (value.all { it.isDigit() }) {
-                                sizeInput = value
-                            }
-                        },
-                        label = { Text("大小上限 (KB)") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = {
-                                val parsed = sizeInput.toLongOrNull()
-                                if (parsed != null && parsed > 0) {
-                                    AppLogger.setMaxFileSizeKb(context, parsed)
-                                    showLogSizeDialog = false
-                                }
-                            }
-                        ),
+                    Slider(
+                        value = selectedSizeKb.toFloat().coerceIn(64f, 4096f),
+                        onValueChange = { selectedSizeKb = (it.toLong() / 64L).coerceAtLeast(1L) * 64L },
+                        valueRange = 64f..4096f,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("input_log_max_size_kb")
                     )
+                    presets.forEach { preset ->
+                        val label = if (preset == 1024L) "$preset KB (默认)" else "$preset KB"
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { selectedSizeKb = preset }
+                                .padding(vertical = 6.dp, horizontal = 8.dp)
+                                .testTag("log_size_option_$preset"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = selectedSizeKb == preset,
+                                onClick = { selectedSizeKb = preset }
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = if (selectedSizeKb == preset) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
                 }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val parsed = sizeInput.toLongOrNull()
-                        if (parsed != null && parsed > 0) {
-                            AppLogger.setMaxFileSizeKb(context, parsed)
-                            Toast.makeText(context, "日志上限已设为 ${AppLogger.maxFileSizeKb.value} KB", Toast.LENGTH_SHORT).show()
-                            showLogSizeDialog = false
-                        } else {
-                            Toast.makeText(context, "请输入有效的 KB 数值", Toast.LENGTH_SHORT).show()
-                        }
+                        AppLogger.setMaxFileSizeKb(context, selectedSizeKb)
+                        Toast.makeText(context, "日志上限已设为 ${AppLogger.maxFileSizeKb.value} KB", Toast.LENGTH_SHORT).show()
+                        showLogSizeDialog = false
                     },
                     modifier = Modifier.testTag("btn_save_log_size")
                 ) {

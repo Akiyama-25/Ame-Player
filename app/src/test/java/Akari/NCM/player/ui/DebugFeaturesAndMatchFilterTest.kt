@@ -179,11 +179,11 @@ class DebugFeaturesAndMatchFilterTest {
         composeTestRule.onNodeWithTag("setting_log_record").performSemanticsAction(SemanticsActions.OnLongClick)
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("自定义日志大小上限").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("input_log_max_size_kb").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("btn_save_log_size").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("log_size_option_256").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("btn_save_log_size").performClick()
+        composeTestRule.waitForIdle()
 
-        // Directly test setMaxFileSizeKb and persistence to avoid infinite cursor animation idling issue in Robolectric
-        AppLogger.setMaxFileSizeKb(context, 256L)
         assertEquals(256L, AppLogger.maxFileSizeKb.value)
 
         AppLogger.init(context)

@@ -86,7 +86,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Run release unit tests
-        run: ./gradlew test --no-daemon --stacktrace
+        run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
       - name: Assemble release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace

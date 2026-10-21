@@ -96,6 +96,7 @@ dependencies {
     // Testing
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.ui.test.junit4)
+    testImplementation(libs.androidx.ui.test.manifest)
 
     // Media3 (ExoPlayer)
     implementation(libs.media3.exoplayer)
