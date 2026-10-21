@@ -88,8 +88,15 @@ jobs:
       - name: Run release unit tests
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
-      - name: Assemble release APK
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Assemble release APKs (arm64-v8a, armeabi-v7a, universal)
+        run: ./gradlew assembleRelease -PenableAbiSplits=true --no-daemon --stacktrace
+
+      - name: Verify armeabi-v7a (32-bit) and arm64-v8a APKs exist
+        run: |
+          set -euo pipefail
+          ls -lh app/build/outputs/apk/release/
+          test -f app/build/outputs/apk/release/app-armeabi-v7a-release-unsigned.apk
+          test -f app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk
 
       - name: Prepare private signing key
         env:
@@ -110,7 +117,7 @@ jobs:
           keytool -list -storetype PKCS12 -keystore "$RUNNER_TEMP/ame-player-signing.p12" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
           echo "KEYSTORE_PATH=$RUNNER_TEMP/ame-player-signing.p12" >> "$GITHUB_ENV"
 
-      - name: Align, sign, verify, and checksum
+      - name: Align, sign, verify, and checksum APKs
         env:
           STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
@@ -121,22 +128,36 @@ jobs:
           KEY_PASSWORD="${KEY_PASSWORD:-$STORE_PASSWORD}"
           KEY_ALIAS="${KEY_ALIAS:-key0}"
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          APK="$(find app/build/outputs/apk/release -type f -name '*.apk' -print -quit)"
-          test -n "$APK"
+          shopt -s nullglob
+          APKS=(app/build/outputs/apk/release/*.apk)
+          test "${#APKS[@]}" -gt 0
           mkdir -p dist
-          ALIGNED="dist/ame-player-release-aligned.apk"
-          SIGNED="dist/Ame-Player-${{ steps.ref.outputs.tag }}-signed.apk"
-          "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "$ALIGNED"
-          "$BUILD_TOOLS/apksigner" sign \
-            --ks "$KEYSTORE_PATH" \
-            --ks-type PKCS12 \
-            --ks-pass env:STORE_PASSWORD \
-            --key-pass env:KEY_PASSWORD \
-            --ks-key-alias "$KEY_ALIAS" \
-            --out "$SIGNED" "$ALIGNED"
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED"
-          sha256sum "$SIGNED" > dist/SHA256SUMS.txt
-          rm -f "$ALIGNED"
+          : > dist/SHA256SUMS.txt
+          for APK in "${APKS[@]}"; do
+            BASENAME="$(basename "$APK")"
+            ABI_TAG="${BASENAME#app-}"
+            ABI_TAG="${ABI_TAG%-release-unsigned.apk}"
+            ABI_TAG="${ABI_TAG%-unsigned.apk}"
+            ABI_TAG="${ABI_TAG%.apk}"
+            if [ "$ABI_TAG" = "release" ]; then
+              SIGNED_NAME="Ame-Player-${{ steps.ref.outputs.tag }}-signed.apk"
+            else
+              SIGNED_NAME="Ame-Player-${{ steps.ref.outputs.tag }}-${ABI_TAG}-signed.apk"
+            fi
+            ALIGNED="dist/aligned-${ABI_TAG}.apk"
+            SIGNED="dist/${SIGNED_NAME}"
+            "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "$ALIGNED"
+            "$BUILD_TOOLS/apksigner" sign \
+              --ks "$KEYSTORE_PATH" \
+              --ks-type PKCS12 \
+              --ks-pass env:STORE_PASSWORD \
+              --key-pass env:KEY_PASSWORD \
+              --ks-key-alias "$KEY_ALIAS" \
+              --out "$SIGNED" "$ALIGNED"
+            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED"
+            rm -f "$ALIGNED"
+            (cd dist && sha256sum "$SIGNED_NAME" | tee -a SHA256SUMS.txt)
+          done
 
       - name: Upload signed APK workflow artifact
         uses: actions/upload-artifact@v4

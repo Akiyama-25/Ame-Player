@@ -1,0 +1,636 @@
+# Ame-Player 定制 Android「灵动岛 / 实况胶囊」完整适配方案
+
+## 1. 概述与适配矩阵
+
+本方案针对 **Ame-Player**（基础包名 `Akari.NCM.player`，`compileSdk = 37`，`targetSdk = 35`，`minSdk = 26`）设计，采用 **Media3 标准元数据修正 + 方案一（Android 16 原生 Live Updates）+ 方案二（精选厂商专有协议与白名单构建变体）** 的组合架构，**不包含** HarmonyOS 与 HyperOS 焦点通知进阶适配。
+
+### 各定制 OS 最终达成效果矩阵
+
+| 定制系统 | 目标形态 | 媒体控制上岛（封面/声波/切歌）实现路径 | 实时歌词/进度胶囊实现路径 |
+| :--- | :--- | :--- | :--- |
+| **Xiaomi HyperOS 2 / 3** | 超级岛 / 音频岛 | 依托完善的 Media3 `MediaSession` 直接上岛 | Android 16 `Live Updates API` (HyperOS 3+) |
+| **OPPO ColorOS 16+** | 流体云 (Fluid Cloud) | `fluidCloud` 包名变体 **或** Root `Asteria` 模块 | Android 16 `Live Updates API`（系统级双兼容直通） |
+| **OPPO ColorOS 14 / 15** | 流体云 (Fluid Cloud) | `fluidCloud` 包名变体 **或** Root `Asteria` 模块 | 依赖流体云原生音频胶囊 |
+| **vivo OriginOS 5 / 6** | 原子岛 (Atomic Island) | `fluidCloud` 包名变体（触发原子随身听） | `notification.superx.*` 本地扩展 + `Live Updates` |
+| **Samsung One UI 7 / 8** | Now Bar & 状态栏胶囊 | 依托完善的 Media3 `MediaSession` 直接上岛 | Android 16 `Live Updates API` (One UI 8+) |
+| **Meizu Flyme & 类原生** | 实况胶囊 / 状态栏歌词 | 依托完善的 Media3 `MediaSession` | Flyme `Ticker` 私有 Flag 协议 (`0x01000000`) |
+| **Google Pixel / AOSP** | Status Bar Chip | 标准锁屏/通知栏媒体卡片 | Android 16 `Live Updates API` |
+
+---
+
+## 2. 基础层：检查并完善 `AmePlayerEngine` 的 Media3 `MediaMetadata` 构建逻辑
+
+### 2.1 为什么要先修 `MediaMetadata`？
+无论是小米超级岛、OPPO 流体云、vivo 原子岛还是三星 Now Bar，系统媒体控制器（如 `com.oplus.mediacontroller`）在生成音频胶囊时，都会从 `MediaSession` 当前播放项的 `MediaMetadata` 中读取**封面图**（用于绘制岛左侧封面并提取胶囊动态背景色）和**曲目时长**。
+如果封面缺失、URI 无法被系统进程访问，或图片尺寸过大导致跨进程 `Bundle` 传输失败，系统灵动岛会出现**空白图标、不弹出胶囊甚至引发 `BadParcelableException` / `StrictMode` 警告**。
+
+### 2.2 在线播放与本地 `.ncm` 解密封面的标准化写入
+
+请在 `app/src/main/java/Akari/NCM/player/player/` 下检查 `AmePlayerEngine` 构建 `MediaItem` 的逻辑，按以下规范重构：
+
+#### 规范要领：
+1. **在线歌曲封面（HTTP/HTTPS）**：通过 `setArtworkUri()` 传入，但**必须附加网易云 CDN 缩略图参数 `?param=512y512`**（避免 2000x2000 原图在 Android 16 下触发系统降采样耗时与内存问题）。
+2. **本地 `.ncm` 解密封面或内嵌封面（ByteArray / 本地文件）**：
+   * 不要直接将未经压缩的大体积 `ByteArray` 塞入 `setArtworkData()`，否则跨进程传递给 SystemUI 时极易触发 `TransactionTooLargeException`（上限约 1MB，建议控制在 150KB 以内）。
+   * **最佳实践**：将 `.ncm` 解密出的封面压缩至 `512x512`（JPEG, 85% 质量），调用 `setArtworkData()` 保证各厂商 SystemUI 100% 读到字节流。
+3. **异步匹配封面后的动态刷新**：`Ame-Player` 支持对缺失元数据的本地文件通过 API 异步兜底补全。异步拿到封面后，必须调用 `exoPlayer.replaceMediaItem()` 原地更新当前 `MediaItem`，通知系统灵动岛刷新封面。
+
+#### 代码实现 (`MediaMetadataHelper.kt`)：
+
+```kotlin
+package Akari.NCM.player.player
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import androidx.media3.exoplayer.ExoPlayer
+import java.io.ByteArrayOutputStream
+import kotlin.math.max
+
+object MediaMetadataHelper {
+
+    private const val MAX_ARTWORK_DIMENSION = 512
+    private const val JPEG_QUALITY = 85
+
+    /**
+     * 构建标准化的 MediaMetadata，确保各厂商灵动岛均能正常读取封面与歌曲信息
+     *
+     * @param title 歌曲标题
+     * @param artist 歌手名
+     * @param album 专辑名
+     * @param durationMs 歌曲时长（毫秒，部分厂商岛进度条依赖此字段）
+     * @param remoteArtworkUrl 在线封面 URL（或 NCM 匹配到的云端封面 URL）
+     * @param localArtworkBytes 本地 .ncm 解密提取出的封面字节数组，或本地音频内嵌 ID3 封面字节
+     */
+    fun buildTrackMediaMetadata(
+        title: String,
+        artist: String,
+        album: String?,
+        durationMs: Long? = null,
+        remoteArtworkUrl: String? = null,
+        localArtworkBytes: ByteArray? = null
+    ): MediaMetadata {
+        val builder = MediaMetadata.Builder()
+            .setTitle(title)
+            .setArtist(artist)
+            .setAlbumTitle(album ?: "")
+            .setIsBrowsable(false)
+            .setIsPlayable(true)
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+
+        if (durationMs != null && durationMs > 0) {
+            builder.setDurationMs(durationMs)
+        }
+
+        // 优先处理本地 .ncm 解密出的封面字节流（确保离线状态下也能在灵动岛显示封面）
+        if (localArtworkBytes != null && localArtworkBytes.isNotEmpty()) {
+            val safeBytes = compressArtworkBytes(localArtworkBytes)
+            if (safeBytes != null) {
+                builder.setArtworkData(safeBytes, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+            }
+        }
+
+        // 写入在线封面 URI（附加网易云 CDN 尺寸限制参数，防止大图引发 Android 16 StrictMode 警告）
+        if (!remoteArtworkUrl.isNullOrBlank()) {
+            val optimizedUrl = optimizeNeteaseCoverUrl(remoteArtworkUrl)
+            builder.setArtworkUri(Uri.parse(optimizedUrl))
+        }
+
+        return builder.build()
+    }
+
+    /**
+     * 当 .ncm 或本地歌曲通过网易云 API 异步补全封面/元数据后，原地更新正在播放的 MediaItem，
+     * 触发系统 MediaSession 与灵动岛刷新封面，且不打断当前播放进度。
+     */
+    fun updateCurrentPlayingMetadata(
+        player: ExoPlayer,
+        mediaId: String,
+        updatedMetadata: MediaMetadata
+    ) {
+        val currentIndex = player.currentMediaItemIndex
+        val currentItem = player.currentMediaItem ?: return
+        if (currentItem.mediaId != mediaId) return
+
+        val updatedItem = currentItem.buildUpon()
+            .setMediaMetadata(updatedMetadata)
+            .build()
+
+        player.replaceMediaItem(currentIndex, updatedItem)
+    }
+
+    /**
+     * 为网易云音乐封面 URL 追加缩略图裁剪参数
+     */
+    private fun optimizeNeteaseCoverUrl(url: String): String {
+        return if (url.contains("music.126.net") && !url.contains("param=")) {
+            val separator = if (url.contains("?")) "&" else "?"
+            "${url}${separator}param=${MAX_ARTWORK_DIMENSION}y${MAX_ARTWORK_DIMENSION}"
+        } else {
+            url
+        }
+    }
+
+    /**
+     * 将本地 .ncm 解密封面压缩至 512x512 以内，防止跨进程 IPC 传输崩溃
+     */
+    private fun compressArtworkBytes(rawBytes: ByteArray): ByteArray? {
+        return try {
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, options)
+
+            val maxDim = max(options.outWidth, options.outHeight)
+            var sampleSize = 1
+            while (maxDim / sampleSize > MAX_ARTWORK_DIMENSION) {
+                sampleSize *= 2
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+            val bitmap = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOptions)
+                ?: return null
+
+            ByteArrayOutputStream().use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
+                bitmap.recycle()
+                out.toByteArray()
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+}
+```
+
+---
+
+## 3. 环境与权限配置（兼容 `compileSdk = 37` + `targetSdk = 35`）
+
+### 3.1 确认 AndroidX Core 版本 (`gradle/libs.versions.toml`)
+确保 `androidx.core:core-ktx` 版本在 **`1.16.0` 或以上**，以支持 `NotificationCompat.ProgressStyle` 与 `setRequestPromotedOngoing(true)`：
+
+```toml
+[versions]
+coreKtx = "1.16.0" # 若已有更高版本（如 1.17.0+）则保持现有版本即可
+```
+
+### 3.2 声明权限 (`app/src/main/AndroidManifest.xml`)
+在 `AndroidManifest.xml` 中加入 Android 16 实况通知晋升权限（在 `targetSdk = 35` 下完全合法，低版本系统会自动忽略）：
+
+```xml
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 基础前台媒体播放权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 【新增】方案一：Android 16 (API 36) 原生实况通知 (Live Updates) 上岛权限 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+
+    <!-- ... -->
+</manifest>
+```
+
+---
+
+## 4. 方案一 + 方案二核心实现：实况与多厂商上岛桥接器
+
+由于 Android 16 规范明确限制 **`MediaStyle` 通知不能直接晋升为 `Live Update` 实况胶囊**，我们需要在保留 Media3 默认媒体控制通知的同时，在播放期间维护一条**独立的静音实况通知**（同时承载 **Android 16 `Live Updates`**、**vivo OriginOS `notification.superx.*`** 以及 **Flyme Ticker 歌词**）。
+
+### 4.1 新建 `IslandLiveNotificationManager.kt`
+建议放置于 `app/src/main/java/Akari/NCM/player/player/island/IslandLiveNotificationManager.kt`：
+
+```kotlin
+package Akari.NCM.player.player.island
+
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.drawable.Icon
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.SystemClock
+import android.provider.Settings
+import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import Akari.NCM.player.R
+
+/**
+ * 负责管理：
+ * 1. 方案一：Android 16+ 原生 Live Updates (适配 ColorOS 16 流体云 / One UI 8 Now Bar / Pixel / HyperOS 3)
+ * 2. 方案二：vivo OriginOS 原子岛本地 notification.superx.* 扩展协议
+ * 3. 方案二：Meizu Flyme 及类原生系统的状态栏/实况胶囊 Ticker 歌词协议
+ */
+class IslandLiveNotificationManager(private val context: Context) {
+
+    companion object {
+        private const val CHANNEL_ID = "ame_live_island_channel"
+        // 注意：不要与 Media3 DefaultMediaNotificationProvider 的默认 ID (1001) 冲突
+        private const val NOTIFICATION_ID = 2002
+
+        // vivo 原子岛限制单个活动刷新不能过快，对纯进度更新做节流（歌词切换则立即刷新）
+        private const val VIVO_MIN_UPDATE_INTERVAL_MS = 2500L
+    }
+
+    private val notificationManager =
+        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    private var isIslandActive = false
+    private var lastVivoUpdateTime = 0L
+    private var lastLyricLine: String = ""
+
+    private val isVivoDevice: Boolean by lazy {
+        Build.MANUFACTURER.equals("vivo", ignoreCase = true) ||
+            Build.BRAND.equals("vivo", ignoreCase = true) ||
+            Build.BRAND.equals("iQOO", ignoreCase = true)
+    }
+
+    init {
+        createSilentPromotableChannel()
+    }
+
+    /**
+     * 创建符合 Android 16 晋升要求的静音通知渠道
+     * 【关键限制】：Live Updates 要求渠道重要性必须 >= IMPORTANCE_DEFAULT（不能是 MIN 或 LOW），
+     * 因此必须显式关闭渠道的声音和震动，防止切歌或刷新歌词时打断音乐播放。
+     */
+    private fun createSilentPromotableChannel() {
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "实况胶囊与灵动岛歌词",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "用于在状态栏胶囊、流体云、原子岛及 Now Bar 上实时显示歌词与播放进度"
+            setSound(null, null)
+            enableVibration(false)
+            enableLights(false)
+            setShowBadge(false)
+        }
+        notificationManager.createNotificationChannel(channel)
+    }
+
+    /**
+     * 检查当前设备（Android 16+）是否允许本应用发送晋升实况通知
+     */
+    fun canPostLiveUpdates(): Boolean {
+        return if (Build.VERSION.SDK_INT >= 36) {
+            notificationManager.canPostPromotedNotifications()
+        } else {
+            true
+        }
+    }
+
+    /**
+     * 引导用户前往系统设置开启本应用的「实况通知 / 流体云」开关（针对 Android 16+）
+     */
+    fun openPromotedNotificationSettings() {
+        if (Build.VERSION.SDK_INT >= 36) {
+            val intent = Intent(Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            runCatching { context.startActivity(intent) }
+        }
+    }
+
+    /**
+     * 创建或更新灵动岛实况通知
+     *
+     * @param songTitle 歌曲名
+     * @param artist 歌手名
+     * @param currentLyric 当前行主歌词（若无则传空字符串）
+     * @param currentTranslation 当前行翻译歌词（可选）
+     * @param currentPositionMs 当前播放进度（毫秒）
+     * @param durationMs 歌曲总时长（毫秒）
+     * @param coverBitmap 当前歌曲封面 Bitmap（可选，用于 vivo 原子岛图标）
+     * @param contentIntent 点击胶囊跳转回 App 播放页的 PendingIntent
+     */
+    fun postOrUpdateIsland(
+        songTitle: String,
+        artist: String,
+        currentLyric: String,
+        currentTranslation: String?,
+        currentPositionMs: Long,
+        durationMs: Long,
+        coverBitmap: Bitmap?,
+        contentIntent: PendingIntent
+    ) {
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        val now = SystemClock.elapsedRealtime()
+        val isLyricChanged = currentLyric != lastLyricLine
+        if (isVivoDevice && isIslandActive && !isLyricChanged &&
+            (now - lastVivoUpdateTime < VIVO_MIN_UPDATE_INTERVAL_MS)
+        ) {
+            return
+        }
+        lastLyricLine = currentLyric
+        lastVivoUpdateTime = now
+
+        val displayTitle = currentLyric.ifBlank { songTitle }
+        val displaySubtitle = buildString {
+            if (!currentTranslation.isNullOrBlank()) {
+                append(currentTranslation).append(" · ")
+            }
+            append(songTitle).append(" - ").append(artist)
+        }
+        // 状态栏胶囊内显示的短文本（建议截断在 10~12 个字符以内以保证各家胶囊完全展示）
+        val chipText = currentLyric.ifBlank { songTitle }.take(12)
+
+        val maxProgress = durationMs.coerceAtLeast(1L).toInt()
+        val currentProgress = currentPositionMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toInt()
+
+        // 1. 构建符合 Android 16 Live Updates 严苛要求的 NotificationCompat
+        // 注意：严禁调用 setColorized(true)、setGroupSummary(true) 或使用 RemoteViews！
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground) // 建议替换为项目内的纯色音符矢量图标
+            .setContentTitle(displayTitle)
+            .setContentText(displaySubtitle)
+            .setShortCriticalText(chipText) // 【核心】状态栏灵动岛/流体云胶囊内直接展示的文字
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setRequestPromotedOngoing(true) // 【核心】请求晋升为 Android 16 实况通知
+            .setContentIntent(contentIntent)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setStyle(
+                NotificationCompat.ProgressStyle()
+                    .setStyledByProgress(false)
+                    .setProgress(maxProgress, currentProgress, false)
+            )
+
+        if (coverBitmap != null) {
+            builder.setLargeIcon(coverBitmap)
+        }
+
+        // 2. 注入 vivo OriginOS 原子岛本地扩展参数 (notification.superx.*)
+        if (isVivoDevice) {
+            val vivoOperation = if (!isIslandActive) 0 else 1 // 0:创建, 1:更新
+            val vivoExtras = buildVivoSuperxExtras(
+                operation = vivoOperation,
+                title = displayTitle,
+                content = displaySubtitle,
+                coverBitmap = coverBitmap,
+                clickIntent = contentIntent
+            )
+            builder.addExtras(vivoExtras)
+        }
+
+        val notification = builder.build()
+
+        // 3. 注入魅族 Flyme 及类原生系统的 Ticker 实况歌词 Flag
+        FlymeTickerLyricHelper.applyTickerLyrics(
+            notification = notification,
+            currentLyric = currentLyric,
+            isLyricOnlyUpdate = isIslandActive
+        )
+
+        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        isIslandActive = true
+    }
+
+    /**
+     * 暂停或停止播放时关闭实况岛通知
+     */
+    fun cancelIsland() {
+        if (!isIslandActive) return
+
+        if (isVivoDevice) {
+            // 发送 vivo 原子岛结束指令 (operation = 2)
+            val endExtras = Bundle().apply {
+                putInt("notification.superx.operation", 2)
+            }
+            val endNotification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .addExtras(endExtras)
+                .build()
+            runCatching {
+                NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, endNotification)
+            }
+        }
+
+        NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
+        isIslandActive = false
+        lastLyricLine = ""
+    }
+
+    /**
+     * 构建 vivo OriginOS 本地原子岛扩展 Bundle
+     * 若当前设备不支持或未开启原子岛权限，showNotify = true 会确保其平滑回退或由系统忽略
+     */
+    private fun buildVivoSuperxExtras(
+        operation: Int,
+        title: String,
+        content: String,
+        coverBitmap: Bitmap?,
+        clickIntent: PendingIntent
+    ): Bundle {
+        val baseInfo = Bundle().apply {
+            val icon = if (coverBitmap != null) {
+                Icon.createWithBitmap(coverBitmap)
+            } else {
+                Icon.createWithResource(context, R.drawable.ic_launcher_foreground)
+            }
+            putParcelable("notification.superx.baseInfos.icon", icon)
+            putCharSequence("notification.superx.baseInfos.title", title.take(20))
+            putCharSequence("notification.superx.baseInfos.content", content.take(40))
+        }
+
+        return Bundle().apply {
+            putInt("notification.superx.operation", operation) // 0:创建, 1:更新, 2:结束
+            putBoolean("notification.superx.showNotify", true)
+            putInt("notification.superx.template", 1)
+            putParcelable("notification.superx.clickResp", clickIntent)
+            putBundle("notification.superx.baseInfos", baseInfo)
+        }
+    }
+}
+```
+
+---
+
+## 5. 方案二之魅族 Flyme 与类原生系统：状态栏 / 实况胶囊 Ticker 歌词适配
+
+魅族 Flyme 系统以及众多支持状态栏歌词的类原生定制 ROM 使用 `Notification.tickerText` 配合两个专有 Flag（`0x01000000` 和 `0x02000000`）来驱动顶部实况歌词胶囊。
+
+### 新建 `FlymeTickerLyricHelper.kt`
+放置于 `app/src/main/java/Akari/NCM/player/player/island/FlymeTickerLyricHelper.kt`：
+
+```kotlin
+package Akari.NCM.player.player.island
+
+import android.app.Notification
+
+object FlymeTickerLyricHelper {
+
+    // Flyme 专有状态栏/实况胶囊歌词 Flag
+    private const val FLAG_ALWAYS_SHOW_TICKER = 0x01000000
+    private const val FLAG_ONLY_UPDATE_TICKER = 0x02000000
+
+    /**
+     * 将当前歌词注入 Notification 的 tickerText，并打上 Flyme 实况歌词标记
+     *
+     * @param notification 待发送的 Notification 实例
+     * @param currentLyric 当前歌词行（为空则清除 Ticker）
+     * @param isLyricOnlyUpdate 是否仅为歌词行刷新（避免重复触发普通通知横幅）
+     */
+    fun applyTickerLyrics(
+        notification: Notification,
+        currentLyric: String?,
+        isLyricOnlyUpdate: Boolean = true
+    ) {
+        if (currentLyric.isNullOrBlank()) {
+            notification.tickerText = null
+            notification.flags = notification.flags and FLAG_ALWAYS_SHOW_TICKER.inv()
+            notification.flags = notification.flags and FLAG_ONLY_UPDATE_TICKER.inv()
+            return
+        }
+
+        notification.tickerText = currentLyric
+        notification.flags = notification.flags or FLAG_ALWAYS_SHOW_TICKER
+        if (isLyricOnlyUpdate) {
+            notification.flags = notification.flags or FLAG_ONLY_UPDATE_TICKER
+        }
+    }
+}
+```
+
+---
+
+## 6. 方案二之 ColorOS (OPPO/一加/真我) & OriginOS 媒体白名单构建变体
+
+对于 **ColorOS 14/15**（尚未支持 Android 16 `Live Updates`）以及希望使用 **ColorOS 原生音频流体云（带封面取色、动态律动声波、息屏 AOD 流体云）** 和 **vivo 原生原子随身听** 的用户，系统的 `com.oplus.mediacontroller` 严格校验 APK 包名白名单。
+
+### 6.1 修改 `app/build.gradle.kts` 配置双变体构建
+在 `app/build.gradle.kts` 的 `android { ... }` 块中添加 `productFlavors`，无需改动任何 Kotlin 业务代码即可打包出原生直通流体云的版本：
+
+```kotlin
+android {
+    namespace = "Akari.NCM.player"
+    compileSdk = 37
+
+    defaultConfig {
+        applicationId = "Akari.NCM.player"
+        minSdk = 26
+        targetSdk = 35
+        // ...
+    }
+
+    // 【新增】定义灵动岛/流体云构建维度
+    flavorDimensions += "island"
+    productFlavors {
+        // 标准版：保留原始包名 Akari.NCM.player
+        create("default") {
+            dimension = "island"
+            applicationId = "Akari.NCM.player"
+        }
+
+        // 流体云/原子岛特攻版：借用系统媒体控制器白名单内的本地播放器包名
+        // 适用人群：ColorOS 14/15/16 及 OriginOS 免 Root 追求原生音频岛（声波+息屏AOD）的用户
+        create("fluidCloud") {
+            dimension = "island"
+            applicationId = "com.salt.music" // 或使用 "com.apple.android.music"
+            resValue("string", "app_name", "AmePlayer (流体云版)")
+        }
+    }
+}
+```
+
+### 6.2 GitHub Actions / 命令行构建命令
+配置完成后，在打包 Release 时可执行：
+
+```bash
+# 构建标准版与流体云白名单版 Release APK
+./gradlew assembleDefaultRelease assembleFluidCloudRelease
+```
+
+> **附：面向 Root / LSPosed 用户的说明（可写入项目 `README.md`）**
+> 若 ColorOS 用户安装了标准版（`Akari.NCM.player`）且拥有 Root 环境，无需重装 `fluidCloud` 变体，直接安装开源模块 **[Asteria](https://github.com/Xposed-Modules-Repo/io.github.lilymilongc.asteria)** 并勾选 `AmePlayer`，即可将 `Akari.NCM.player` 注入 `com.oplus.mediacontroller` 白名单。
+
+---
+
+## 7. 在 `AmePlayerEngine` 中串联完整生命周期
+
+最后，在 `app/src/main/java/Akari/NCM/player/player/AmePlayerEngine.kt` 中，将上述模块与播放状态、歌词滚动事件绑定：
+
+```kotlin
+// 1. 在 AmePlayerEngine 中初始化管理器与开关状态
+private val islandManager = IslandLiveNotificationManager(context)
+var isLiveIslandEnabled: Boolean = true // 可绑定至 DataStore / 设置页开关
+
+// 2. 封装统一的触发入口（在歌词行刷新、切歌、播放状态改变时调用）
+fun syncIslandState() {
+    if (!isLiveIslandEnabled || !exoPlayer.isPlaying) {
+        islandManager.cancelIsland()
+        return
+    }
+
+    val mediaMetadata = exoPlayer.currentMediaItem?.mediaMetadata ?: return
+    val title = mediaMetadata.title?.toString().orEmpty()
+    val artist = mediaMetadata.artist?.toString().orEmpty()
+
+    // 从 AmePlayerEngine 现有的歌词状态流中获取当前歌词行与翻译
+    val currentLyric = currentLyricState.value?.mainText.orEmpty()
+    val currentTrans = currentLyricState.value?.translationText
+
+    islandManager.postOrUpdateIsland(
+        songTitle = title,
+        artist = artist,
+        currentLyric = currentLyric,
+        currentTranslation = currentTrans,
+        currentPositionMs = exoPlayer.currentPosition,
+        durationMs = exoPlayer.duration.coerceAtLeast(0L),
+        coverBitmap = currentArtworkBitmap, // 当前已加载的封面 Bitmap
+        contentIntent = buildOpenPlayerPendingIntent()
+    )
+}
+
+// 3. 在 Player.Listener 回调中挂载
+private val playerListener = object : Player.Listener {
+    override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (isPlaying) {
+            syncIslandState()
+        } else {
+            // 暂停播放时销毁实况歌词通知，交由系统标准 MediaSession 处理或收起胶囊
+            islandManager.cancelIsland()
+        }
+    }
+
+    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        syncIslandState()
+    }
+
+    override fun onPlaybackStateChanged(playbackState: Int) {
+        if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+            islandManager.cancelIsland()
+        }
+    }
+}
+
+// 4. 在引擎释放 (release) 时确保清理
+fun release() {
+    islandManager.cancelIsland()
+    exoPlayer.release()
+}
+```
+
+---
+
+## 8. UI 设置页新增项建议 (`ui/` 模块)
+
+建议在 `Ame-Player` 的「设置」页面新增一个 **「灵动岛与实况歌词」** 分组，提供以下两项交互：
+1. **启用实况歌词上岛 (`Switch`)**：控制 `isLiveIslandEnabled`。开启后通过 Android 16 `Live Updates`、vivo 原子岛扩展与 Flyme Ticker 实时推送顶部胶囊歌词。
+2. **检查系统上岛权限 (`Button` / 仅在 `Build.VERSION.SDK_INT >= 36` 显示)**：调用 `islandManager.canPostLiveUpdates()`。若返回 `false`（常见于三星 One UI 8 或部分默认关闭第三方实况通知的 ROM），点击后调用 `islandManager.openPromotedNotificationSettings()` 直接跳转至系统设置页引导用户开启。

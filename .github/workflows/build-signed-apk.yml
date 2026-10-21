@@ -64,8 +64,15 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
-      - name: Assemble unsigned release APK
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Assemble unsigned release APKs (arm64-v8a, armeabi-v7a, universal)
+        run: ./gradlew assembleRelease -PenableAbiSplits=true --no-daemon --stacktrace
+
+      - name: Verify armeabi-v7a (32-bit) and arm64-v8a APKs exist
+        run: |
+          set -euo pipefail
+          ls -lh app/build/outputs/apk/release/
+          test -f app/build/outputs/apk/release/app-armeabi-v7a-release-unsigned.apk
+          test -f app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk
 
       - name: Upload unsigned APK (PR validation / fallback)
         if: github.event_name == 'pull_request'
@@ -119,7 +126,7 @@ jobs:
           echo "KEYSTORE_PATH=$RUNNER_TEMP/ame-player-signing.p12" >> "$GITHUB_ENV"
           echo "has_key=true" >> "$GITHUB_OUTPUT"
 
-      - name: Align, sign, and verify APK
+      - name: Align, sign, and verify APKs
         if: steps.prepare-key.outputs.has_key == 'true'
         env:
           STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
@@ -131,28 +138,57 @@ jobs:
           KEY_PASSWORD="${KEY_PASSWORD:-$STORE_PASSWORD}"
           KEY_ALIAS="${KEY_ALIAS:-key0}"
           BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          APK="$(find unsigned -type f -name '*.apk' -print -quit)"
-          test -n "$APK"
+          shopt -s nullglob
+          APKS=(unsigned/*.apk)
+          test "${#APKS[@]}" -gt 0
           mkdir -p signed
-          ALIGNED="signed/ame-player-release-aligned.apk"
-          SIGNED="signed/ame-player-release-signed.apk"
-          "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "$ALIGNED"
-          "$BUILD_TOOLS/apksigner" sign \
-            --ks "$KEYSTORE_PATH" \
-            --ks-type PKCS12 \
-            --ks-pass env:STORE_PASSWORD \
-            --key-pass env:KEY_PASSWORD \
-            --ks-key-alias "$KEY_ALIAS" \
-            --out "$SIGNED" "$ALIGNED"
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED"
-          sha256sum "$SIGNED" | tee signed/SHA256SUMS.txt
+          : > signed/SHA256SUMS.txt
+          for APK in "${APKS[@]}"; do
+            BASENAME="$(basename "$APK")"
+            VARIANT="${BASENAME#app-}"
+            VARIANT="${VARIANT%-unsigned.apk}"
+            VARIANT="${VARIANT%.apk}"
+            ALIGNED="signed/ame-player-${VARIANT}-aligned.apk"
+            SIGNED="signed/ame-player-${VARIANT}-signed.apk"
+            "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "$ALIGNED"
+            "$BUILD_TOOLS/apksigner" sign \
+              --ks "$KEYSTORE_PATH" \
+              --ks-type PKCS12 \
+              --ks-pass env:STORE_PASSWORD \
+              --key-pass env:KEY_PASSWORD \
+              --ks-key-alias "$KEY_ALIAS" \
+              --out "$SIGNED" "$ALIGNED"
+            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED"
+            rm -f "$ALIGNED"
+            (cd signed && sha256sum "$(basename "$SIGNED")" | tee -a SHA256SUMS.txt)
+          done
 
-      - name: Upload signed APK artifact
+      - name: Upload signed APK artifacts (all variants)
         if: steps.prepare-key.outputs.has_key == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ame-player-release-signed-${{ github.run_number }}
-          path: signed/ame-player-release-signed.apk
+          path: |
+            signed/*.apk
+            signed/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload signed armeabi-v7a (32-bit) APK artifact
+        if: steps.prepare-key.outputs.has_key == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ame-player-armeabi-v7a-32bit-signed-${{ github.run_number }}
+          path: signed/ame-player-armeabi-v7a-release-signed.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload signed arm64-v8a (64-bit) APK artifact
+        if: steps.prepare-key.outputs.has_key == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ame-player-arm64-v8a-64bit-signed-${{ github.run_number }}
+          path: signed/ame-player-arm64-v8a-release-signed.apk
           if-no-files-found: error
           retention-days: 30
 

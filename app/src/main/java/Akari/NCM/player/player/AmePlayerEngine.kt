@@ -54,10 +54,26 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.time.Duration.Companion.milliseconds
 
+import Akari.NCM.player.MainActivity
+import Akari.NCM.player.core.LyricLine
+import Akari.NCM.player.core.LyricSource
+import Akari.NCM.player.data.LyricResult
+import Akari.NCM.player.data.LyricsManager
+import Akari.NCM.player.data.ThemePrefs
 import Akari.NCM.player.data.UserSessionManager
 import Akari.NCM.player.data.UsbAudioManager
+import Akari.NCM.player.player.island.IslandLiveNotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.drawable.BitmapDrawable
 import android.media.AudioDeviceInfo
 import android.os.Build
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.size.Size
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 
 @UnstableApi
 @Singleton
@@ -69,6 +85,26 @@ class AmePlayerEngine @Inject constructor(
 ) : PlayerState, PlayerController {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    val islandManager = IslandLiveNotificationManager(context)
+    private val lyricsManager = LyricsManager(context, ncmApi)
+
+    var isLiveIslandEnabled: Boolean
+        get() = ThemePrefs.liveIslandEnabled
+        set(value) {
+            ThemePrefs.liveIslandEnabled = value
+            syncIslandState()
+        }
+
+    private val _currentLyricState = MutableStateFlow<LyricLine?>(null)
+    val currentLyricState: StateFlow<LyricLine?> = _currentLyricState.asStateFlow()
+
+    private val _currentLyricsResult = MutableStateFlow(LyricResult(emptyList(), LyricSource.NONE))
+    val currentLyricsResult: StateFlow<LyricResult> = _currentLyricsResult.asStateFlow()
+
+    private var currentArtworkBitmap: Bitmap? = null
+    private var lyricLoadJob: Job? = null
+    private var artworkLoadJob: Job? = null
 
     // State flows
     private val _currentMedia = MutableStateFlow<PlayableMedia?>(null)
@@ -260,6 +296,11 @@ class AmePlayerEngine @Inject constructor(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _isPlaying.value = isPlaying
                 Log.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onIsPlayingChanged: $isPlaying")
+                if (isPlaying) {
+                    syncIslandState()
+                } else {
+                    islandManager.cancelIsland()
+                }
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -278,6 +319,9 @@ class AmePlayerEngine @Inject constructor(
                     Player.STATE_ENDED -> PlaybackState.ENDED
                     else -> PlaybackState.IDLE
                 }
+                if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+                    islandManager.cancelIsland()
+                }
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -288,85 +332,8 @@ class AmePlayerEngine @Inject constructor(
                 _currentIndex.value = exoPlayer.currentMediaItemIndex
                 _durationMs.value = exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L
 
-                // 懒加载封面：如果是本地文件且封面为空，在此刻异步获取网络匹配封面
-                if (currentMedia is PlayableMedia.LocalNcm && currentMedia.coverUrl == null) {
-                    scope.launch(Dispatchers.IO) {
-                        try {
-                            var finalCoverUrl: String? = null
-
-                            // 0. 先检查是否有本地缓存的封面 (之前提取过的 ID3)
-                            val coverDir = java.io.File(context.cacheDir, "covers")
-                            if (!coverDir.exists()) coverDir.mkdirs()
-                            val cachedCoverFile = java.io.File(coverDir, "${currentMedia.id}.jpg")
-                            if (cachedCoverFile.exists()) {
-                                finalCoverUrl = "file://${cachedCoverFile.absolutePath}"
-                            }
-
-                            // 1. 如果是 NCM 文件，直接从文件头解析准确的 albumPic (100% 精准，耗时极短)
-                            if (finalCoverUrl.isNullOrBlank() && currentMedia.isNcm) {
-                                val ncmMeta = NcmDataSource.scanMetadata(context.contentResolver, android.net.Uri.parse(currentMedia.uri))
-                                val albumPic = ncmMeta?.first?.albumPic
-                                if (!albumPic.isNullOrBlank()) {
-                                    finalCoverUrl = albumPic
-                                }
-                            }
-
-                            // 2. 如果是普通 MP3/FLAC，尝试提取本地 ID3 内嵌封面
-                            if (finalCoverUrl.isNullOrBlank() && !currentMedia.isNcm) {
-                                try {
-                                    val mmr = android.media.MediaMetadataRetriever()
-                                    mmr.setDataSource(context, android.net.Uri.parse(currentMedia.uri))
-                                    val picBytes = mmr.embeddedPicture
-                                    mmr.release()
-                                    if (picBytes != null) {
-                                        cachedCoverFile.writeBytes(picBytes)
-                                        finalCoverUrl = "file://${cachedCoverFile.absolutePath}"
-                                    }
-                                } catch (e: Exception) {
-                                    android.util.Log.e("[AME_COVER_DEBUG]", "Failed to extract ID3 cover for ${currentMedia.title}", e)
-                                }
-                            }
-
-                            // 3. 实在没有本地封面，才去网易云搜索兜底
-                            if (finalCoverUrl.isNullOrBlank()) {
-                                val rawFirstArtist = currentMedia.artist.split(",", "/").firstOrNull()?.trim() ?: ""
-                                val searchArtist = rawFirstArtist.split(Regex("\\s+")).firstOrNull()?.trim() ?: ""
-                                val cleanTitle = currentMedia.title.replace(Regex("^\\d+\\.?\\s*"), "").trim()
-                                val query = if (searchArtist.isNotBlank() && searchArtist != "Unknown") {
-                                    "$searchArtist $cleanTitle"
-                                } else {
-                                    cleanTitle
-                                }
-                                // 请求前5个结果，严格匹配歌手名！不匹配绝对不能用，否则会拿到错误的封面
-                                val searchResults = ncmApi.searchSongs(query.trim(), limit = 5)
-                                val searchResult = searchResults.find { 
-                                    it.artist.contains(searchArtist, ignoreCase = true) 
-                                } // 注意：移除了 fallback 到 firstOrNull() 的逻辑，宁可空着也不能错！
-                                
-                                if (searchResult != null) {
-                                    if (!searchResult.coverUrl.isNullOrBlank()) {
-                                        finalCoverUrl = searchResult.coverUrl
-                                    } else {
-                                        val detailResult = ncmApi.getSongDetails(listOf(searchResult.id)).firstOrNull()
-                                        finalCoverUrl = detailResult?.coverUrl
-                                    }
-                                }
-                            }
-
-                            if (!finalCoverUrl.isNullOrBlank()) {
-                                val updatedMedia = currentMedia.copy(coverUrl = finalCoverUrl)
-                                mediaMap[updatedMedia.id] = updatedMedia
-                                // 如果当前还是这首歌，推送更新到 UI
-                                if (_currentMedia.value?.id == updatedMedia.id) {
-                                    _currentMedia.value = updatedMedia
-                                }
-                                Log.i("[AME_ONLINE_PLAY]", "Lazy loaded cover for ${currentMedia.title}: $finalCoverUrl")
-                            }
-                        } catch (e: Exception) {
-                            Log.e("[AME_ONLINE_PLAY]", "Failed to lazy load cover", e)
-                        }
-                    }
-                }
+                onTrackChanged(currentMedia)
+                syncIslandState()
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -375,6 +342,7 @@ class AmePlayerEngine @Inject constructor(
                 _error.value = errorMessage
                 _isPlaying.value = false
                 _playbackState.value = PlaybackState.IDLE
+                islandManager.cancelIsland()
                 exoPlayer.currentMediaItem?.mediaId?.let { resolvedUrlCache.remove(it) }
             }
 
@@ -396,15 +364,31 @@ class AmePlayerEngine @Inject constructor(
             }
         })
 
-        // Position ticker
+        // Position ticker & real-time island lyric/progress sync
         scope.launch {
+            var tickCounter = 0
             while (isActive) {
                 if (_isPlaying.value) {
-                    _currentPositionMs.value = exoPlayer.currentPosition
+                    val pos = exoPlayer.currentPosition
+                    _currentPositionMs.value = pos
                     _durationMs.value = exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L
                     updateAudioFormatFromExo(exoPlayer.audioFormat)
+
+                    val lyricChanged = updateCurrentLyricForPosition(pos)
+                    tickCounter++
+                    if (lyricChanged || tickCounter >= 5) {
+                        tickCounter = 0
+                        syncIslandState()
+                    }
                 }
                 delay(200.milliseconds)
+            }
+        }
+
+        // Observe Live Island switch changes from ThemePrefs
+        scope.launch {
+            ThemePrefs.liveIslandEnabledFlow.collect {
+                syncIslandState()
             }
         }
 
@@ -427,6 +411,224 @@ class AmePlayerEngine @Inject constructor(
                 resolvedUrlCache.clear()
             }
         }
+    }
+
+    private fun updateCurrentLyricForPosition(positionMs: Long): Boolean {
+        val lines = _currentLyricsResult.value.lines
+        val newLine = if (lines.isEmpty()) {
+            null
+        } else {
+            val idx = lines.indexOfLast { it.timeMs <= positionMs }.let { if (it == -1) 0 else it }
+            lines.getOrNull(idx)
+        }
+        val changed = _currentLyricState.value != newLine
+        if (changed) {
+            _currentLyricState.value = newLine
+        }
+        return changed
+    }
+
+    private fun onTrackChanged(currentMedia: PlayableMedia?) {
+        lyricLoadJob?.cancel()
+        artworkLoadJob?.cancel()
+        _currentLyricState.value = null
+        _currentLyricsResult.value = LyricResult(emptyList(), LyricSource.NONE)
+        currentArtworkBitmap = null
+
+        if (currentMedia == null) {
+            islandManager.cancelIsland()
+            return
+        }
+
+        // 1. 异步加载当前曲目的歌词（供后台灵动岛与播放页同步使用）
+        lyricLoadJob = scope.launch {
+            val loaded = runCatching { lyricsManager.loadLyrics(currentMedia) }
+                .getOrDefault(LyricResult(emptyList(), LyricSource.NONE))
+            if (_currentMedia.value?.id == currentMedia.id) {
+                _currentLyricsResult.value = loaded
+                updateCurrentLyricForPosition(exoPlayer.currentPosition)
+                syncIslandState()
+            }
+        }
+
+        // 2. 异步解析封面（含本地 .ncm 字节、ID3 内嵌封面或云端匹配封面）并刷新 MediaSession 与灵动岛
+        artworkLoadJob = scope.launch(Dispatchers.IO) {
+            try {
+                var finalCoverUrl: String? = currentMedia.coverUrl
+                var localCoverBytes: ByteArray? = null
+
+                if (currentMedia is PlayableMedia.LocalNcm) {
+                    val coverDir = File(context.cacheDir, "covers")
+                    if (!coverDir.exists()) coverDir.mkdirs()
+                    val cachedCoverFile = File(coverDir, "${currentMedia.id}.jpg")
+                    if (cachedCoverFile.exists()) {
+                        localCoverBytes = runCatching { cachedCoverFile.readBytes() }.getOrNull()
+                        if (finalCoverUrl.isNullOrBlank()) {
+                            finalCoverUrl = "file://${cachedCoverFile.absolutePath}"
+                        }
+                    }
+
+                    // 1. 如果是 NCM 文件，直接从文件头解析准确的 albumPic 与内嵌封面字节
+                    if (currentMedia.isNcm && (finalCoverUrl.isNullOrBlank() || localCoverBytes == null)) {
+                        val ncmMeta = NcmDataSource.scanMetadata(
+                            context.contentResolver,
+                            Uri.parse(currentMedia.uri)
+                        )
+                        val albumPic = ncmMeta?.first?.albumPic
+                        val embeddedBytes = ncmMeta?.third
+                        if (embeddedBytes != null && embeddedBytes.isNotEmpty()) {
+                            localCoverBytes = embeddedBytes
+                            runCatching { cachedCoverFile.writeBytes(embeddedBytes) }
+                        }
+                        if (finalCoverUrl.isNullOrBlank() && !albumPic.isNullOrBlank()) {
+                            finalCoverUrl = albumPic
+                        }
+                    }
+
+                    // 2. 如果是普通 MP3/FLAC，尝试提取本地 ID3 内嵌封面
+                    if (!currentMedia.isNcm && (finalCoverUrl.isNullOrBlank() || localCoverBytes == null)) {
+                        try {
+                            val mmr = android.media.MediaMetadataRetriever()
+                            mmr.setDataSource(context, Uri.parse(currentMedia.uri))
+                            val picBytes = mmr.embeddedPicture
+                            mmr.release()
+                            if (picBytes != null && picBytes.isNotEmpty()) {
+                                localCoverBytes = picBytes
+                                cachedCoverFile.writeBytes(picBytes)
+                                if (finalCoverUrl.isNullOrBlank()) {
+                                    finalCoverUrl = "file://${cachedCoverFile.absolutePath}"
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("[AME_COVER_DEBUG]", "Failed to extract ID3 cover for ${currentMedia.title}", e)
+                        }
+                    }
+
+                    // 3. 实在没有本地封面，才去网易云搜索兜底
+                    if (finalCoverUrl.isNullOrBlank()) {
+                        val rawFirstArtist = currentMedia.artist.split(",", "/").firstOrNull()?.trim() ?: ""
+                        val searchArtist = rawFirstArtist.split(Regex("\\s+")).firstOrNull()?.trim() ?: ""
+                        val cleanTitle = currentMedia.title.replace(Regex("^\\d+\\.?\\s*"), "").trim()
+                        val query = if (searchArtist.isNotBlank() && searchArtist != "Unknown") {
+                            "$searchArtist $cleanTitle"
+                        } else {
+                            cleanTitle
+                        }
+                        val searchResults = ncmApi.searchSongs(query.trim(), limit = 5)
+                        val searchResult = searchResults.find {
+                            it.artist.contains(searchArtist, ignoreCase = true)
+                        }
+
+                        if (searchResult != null) {
+                            finalCoverUrl = if (!searchResult.coverUrl.isNullOrBlank()) {
+                                searchResult.coverUrl
+                            } else {
+                                ncmApi.getSongDetails(listOf(searchResult.id)).firstOrNull()?.coverUrl
+                            }
+                        }
+                    }
+
+                    if (!finalCoverUrl.isNullOrBlank() && finalCoverUrl != currentMedia.coverUrl) {
+                        val updatedMedia = currentMedia.copy(coverUrl = finalCoverUrl)
+                        mediaMap[updatedMedia.id] = updatedMedia
+                        withContext(Dispatchers.Main) {
+                            if (_currentMedia.value?.id == updatedMedia.id) {
+                                _currentMedia.value = updatedMedia
+                            }
+                        }
+                        Log.i("[AME_ONLINE_PLAY]", "Lazy loaded cover for ${currentMedia.title}: $finalCoverUrl")
+                    }
+                }
+
+                // 解码 Bitmap 供灵动岛与通知使用
+                val bitmap: Bitmap? = when {
+                    localCoverBytes != null && localCoverBytes.isNotEmpty() -> {
+                        MediaMetadataHelper.decodeSafeBitmap(localCoverBytes)
+                    }
+                    !finalCoverUrl.isNullOrBlank() -> {
+                        val optimizedUrl = MediaMetadataHelper.optimizeNeteaseCoverUrl(finalCoverUrl)
+                        val req = ImageRequest.Builder(context)
+                            .data(optimizedUrl)
+                            .size(Size(512, 512))
+                            .allowHardware(false)
+                            .build()
+                        (context.imageLoader.execute(req).drawable as? BitmapDrawable)?.bitmap
+                    }
+                    else -> null
+                }
+
+                withContext(Dispatchers.Main) {
+                    if (_currentMedia.value?.id == currentMedia.id) {
+                        currentArtworkBitmap = bitmap
+                        if (localCoverBytes != null || finalCoverUrl != currentMedia.coverUrl) {
+                            val updatedMetadata = MediaMetadataHelper.buildTrackMediaMetadata(
+                                title = currentMedia.title,
+                                artist = currentMedia.artist,
+                                album = currentMedia.album,
+                                durationMs = _durationMs.value.takeIf { it > 0 } ?: currentMedia.durationMs,
+                                remoteArtworkUrl = finalCoverUrl,
+                                localArtworkBytes = localCoverBytes
+                            )
+                            MediaMetadataHelper.updateCurrentPlayingMetadata(
+                                player = exoPlayer,
+                                mediaId = currentMedia.id,
+                                updatedMetadata = updatedMetadata
+                            )
+                        }
+                        syncIslandState()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("[AME_ONLINE_PLAY]", "Failed to resolve cover/metadata for island", e)
+            }
+        }
+    }
+
+    /**
+     * 统一的灵动岛/实况通知状态同步入口（在歌词行刷新、切歌、播放状态改变时调用）
+     */
+    fun syncIslandState() {
+        if (!isLiveIslandEnabled || !exoPlayer.isPlaying) {
+            islandManager.cancelIsland()
+            return
+        }
+
+        val mediaMetadata = exoPlayer.currentMediaItem?.mediaMetadata ?: return
+        val title = mediaMetadata.title?.toString().orEmpty().ifBlank { _currentMedia.value?.title.orEmpty() }
+        val artist = mediaMetadata.artist?.toString().orEmpty().ifBlank { _currentMedia.value?.artist.orEmpty() }
+        if (title.isBlank()) return
+
+        val currentLyric = _currentLyricState.value?.text.orEmpty()
+        val currentTrans = _currentLyricState.value?.translation
+
+        val duration = exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+            ?: _durationMs.value.takeIf { it > 0 }
+            ?: _currentMedia.value?.durationMs?.takeIf { it > 0 }
+            ?: 0L
+
+        islandManager.postOrUpdateIsland(
+            songTitle = title,
+            artist = artist,
+            currentLyric = currentLyric,
+            currentTranslation = currentTrans,
+            currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+            durationMs = duration.coerceAtLeast(0L),
+            coverBitmap = currentArtworkBitmap,
+            contentIntent = buildOpenPlayerPendingIntent()
+        )
+    }
+
+    private fun buildOpenPlayerPendingIntent(): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("open_player", true)
+        }
+        return PendingIntent.getActivity(
+            context,
+            IslandLiveNotificationManager.NOTIFICATION_ID,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
     }
 
     private fun updateAudioFormatFromExo(format: androidx.media3.common.Format?) {
@@ -480,6 +682,7 @@ class AmePlayerEngine @Inject constructor(
         exoPlayer.setMediaItem(mediaItem)
         exoPlayer.prepare()
         _currentMedia.value = media
+        onTrackChanged(media)
     }
 
     override fun loadPlaylist(items: List<PlayableMedia>, startIndex: Int) {
@@ -493,8 +696,10 @@ class AmePlayerEngine @Inject constructor(
         _playlist.value = items
         exoPlayer.setMediaItems(mediaItems, startIndex, C.TIME_UNSET)
         exoPlayer.prepare()
-        _currentMedia.value = items.getOrNull(startIndex)
+        val startMedia = items.getOrNull(startIndex)
+        _currentMedia.value = startMedia
         _currentIndex.value = startIndex
+        onTrackChanged(startMedia)
     }
 
     override fun play() {
@@ -513,6 +718,9 @@ class AmePlayerEngine @Inject constructor(
 
     override fun seekTo(positionMs: Long) {
         exoPlayer.seekTo(positionMs)
+        _currentPositionMs.value = positionMs
+        updateCurrentLyricForPosition(positionMs)
+        syncIslandState()
     }
 
     override fun skipToNext() {
@@ -601,6 +809,7 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun release() {
+        islandManager.cancelIsland()
         scope.cancel()
         exoPlayer.release()
         mediaMap.clear()
@@ -616,18 +825,25 @@ class AmePlayerEngine @Inject constructor(
             media.encodeUri()
         }
 
+        val localCoverBytes = if (media is PlayableMedia.LocalNcm) {
+            val cachedFile = File(File(context.cacheDir, "covers"), "${media.id}.jpg")
+            if (cachedFile.exists()) runCatching { cachedFile.readBytes() }.getOrNull() else null
+        } else null
+
+        val metadata = MediaMetadataHelper.buildTrackMediaMetadata(
+            title = media.title,
+            artist = media.artist,
+            album = media.album,
+            durationMs = media.durationMs,
+            remoteArtworkUrl = media.coverUrl,
+            localArtworkBytes = localCoverBytes
+        )
+
         val builder = MediaItem.Builder()
             .setMediaId(media.id)
             .setUri(uriStr.toUri())
             .setCustomCacheKey(media.id)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(media.title)
-                    .setArtist(media.artist)
-                    .setAlbumTitle(media.album)
-                    .setArtworkUri(media.coverUrl?.toUri())
-                    .build()
-            )
+            .setMediaMetadata(metadata)
 
         if (media is PlayableMedia.LocalNcm && media.isNcm) {
             builder.setCustomCacheKey("ncm:${media.id}")

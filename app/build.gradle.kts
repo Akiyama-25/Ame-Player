@@ -21,6 +21,22 @@ android {
         versionName = "release-0.2"
     }
 
+    val isReleaseTask = gradle.startParameter.taskNames.any {
+        it.contains("Release", ignoreCase = true)
+    }
+    val enableAbiSplits = providers.gradleProperty("enableAbiSplits")
+        .map { it.toBoolean() }
+        .getOrElse(isReleaseTask)
+
+    splits {
+        abi {
+            isEnable = enableAbiSplits
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true

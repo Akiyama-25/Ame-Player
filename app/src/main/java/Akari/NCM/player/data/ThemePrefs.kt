@@ -22,6 +22,7 @@ object ThemePrefs {
     private const val KEY_CUSTOM_BG_L = "custom_bg_l"
     private const val KEY_GRID_COLUMNS = "settings_grid_columns"
     private const val KEY_SHOW_MATCH_STATUS = "show_match_status"
+    private const val KEY_LIVE_ISLAND_ENABLED = "live_island_enabled"
 
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
@@ -72,6 +73,9 @@ object ThemePrefs {
     private val _showMatchStatusFlow = MutableStateFlow(false)
     val showMatchStatusFlow: StateFlow<Boolean> = _showMatchStatusFlow.asStateFlow()
 
+    private val _liveIslandEnabledFlow = MutableStateFlow(true)
+    val liveIslandEnabledFlow: StateFlow<Boolean> = _liveIslandEnabledFlow.asStateFlow()
+
     fun init(context: Context) {
         prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
         _themeFlow.value = themeMode
@@ -87,6 +91,7 @@ object ThemePrefs {
         _bgLFlow.value = customBgL
         _gridColumnsFlow.value = gridColumns
         _showMatchStatusFlow.value = showMatchStatus
+        _liveIslandEnabledFlow.value = liveIslandEnabled
     }
 
     var themeMode: String
@@ -178,5 +183,14 @@ object ThemePrefs {
         set(value) {
             prefs.edit().putBoolean(KEY_SHOW_MATCH_STATUS, value).apply()
             _showMatchStatusFlow.value = value
+        }
+
+    var liveIslandEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_LIVE_ISLAND_ENABLED, true) else _liveIslandEnabledFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_LIVE_ISLAND_ENABLED, value).apply()
+            }
+            _liveIslandEnabledFlow.value = value
         }
 }

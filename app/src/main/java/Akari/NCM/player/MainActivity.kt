@@ -20,12 +20,18 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var playerEngine: AmePlayerEngine
 
+    private val openPlayerRequests = kotlinx.coroutines.flow.MutableStateFlow(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i("AME_DEBUG", "MainActivity onCreate started")
         enableEdgeToEdge()
         
         Akari.NCM.player.data.ThemePrefs.init(this)
+
+        if (intent?.getBooleanExtra("open_player", false) == true) {
+            openPlayerRequests.value++
+        }
 
         // 启动前台播放服务，让 ExoPlayer 在后台持续存活
         startService(Intent(this, AmePlaybackService::class.java))
@@ -37,8 +43,19 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AmePlayerTheme {
-                MainScreen(playerEngine = playerEngine)
+                MainScreen(
+                    playerEngine = playerEngine,
+                    openPlayerRequests = openPlayerRequests
+                )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra("open_player", false)) {
+            openPlayerRequests.value++
         }
     }
 

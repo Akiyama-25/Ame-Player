@@ -122,6 +122,17 @@ fun SettingsScreen(
     val currentLogLevel by AppLogger.currentLevel.collectAsState()
     val maxFileSizeKb by AppLogger.maxFileSizeKb.collectAsState()
     val showMatchStatus by ThemePrefs.showMatchStatusFlow.collectAsState()
+    val liveIslandEnabled by ThemePrefs.liveIslandEnabledFlow.collectAsState()
+    val islandManager = remember { Akari.NCM.player.player.island.IslandLiveNotificationManager(context) }
+    var canPostPromoted by remember { mutableStateOf(islandManager.canPostLiveUpdates()) }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            Toast.makeText(context, "需要开启通知权限以展示灵动岛与实况歌词", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     fun exportAndShareLog(format: AppLogger.ExportFormat) {
         val file = AppLogger.exportToFormat(context, format)
@@ -600,6 +611,116 @@ fun SettingsScreen(
                         onCheckedChange = { ThemePrefs.showMatchStatus = it },
                         modifier = Modifier.testTag("switch_show_match_status")
                     )
+                }
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
+
+            // ── 灵动岛与实况歌词 ──
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("灵动岛与实况歌词") }
+
+            item {
+                val toggleLiveIsland: (Boolean) -> Unit = { enabled ->
+                    ThemePrefs.liveIslandEnabled = enabled
+                    if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                context,
+                                android.Manifest.permission.POST_NOTIFICATIONS
+                            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { toggleLiveIsland(!liveIslandEnabled) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("setting_live_island"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Lyrics,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "启用实况歌词上岛",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "通过 Android 16 Live Updates、vivo 原子岛扩展与 Flyme Ticker 实时推送顶部胶囊歌词",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = liveIslandEnabled,
+                        onCheckedChange = toggleLiveIsland,
+                        modifier = Modifier.testTag("switch_live_island")
+                    )
+                }
+            }
+
+            if (android.os.Build.VERSION.SDK_INT >= 36) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                canPostPromoted = islandManager.canPostLiveUpdates()
+                                if (!canPostPromoted) {
+                                    islandManager.openPromotedNotificationSettings()
+                                } else {
+                                    Toast.makeText(context, "当前系统已允许本应用发送实况上岛通知", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                            .testTag("setting_check_island_permission"),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.NotificationsActive,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "检查系统上岛权限",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = if (canPostPromoted) "已获得 Android 16 实况通知 (Live Updates) 晋升权限"
+                                else "未开启实况通知权限，点击前往系统设置开启「实况通知 / 流体云」开关",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (canPostPromoted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        FilledTonalButton(
+                            onClick = {
+                                canPostPromoted = islandManager.canPostLiveUpdates()
+                                if (!canPostPromoted) {
+                                    islandManager.openPromotedNotificationSettings()
+                                } else {
+                                    Toast.makeText(context, "当前系统已允许本应用发送实况上岛通知", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("btn_check_island_permission")
+                        ) {
+                            Text(if (canPostPromoted) "已授权" else "去开启", fontSize = 12.sp)
+                        }
+                    }
                 }
             }
 

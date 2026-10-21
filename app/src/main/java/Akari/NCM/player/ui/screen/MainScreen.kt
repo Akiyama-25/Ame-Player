@@ -68,7 +68,8 @@ enum class TopLevelScreen {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    playerEngine: AmePlayerEngine
+    playerEngine: AmePlayerEngine,
+    openPlayerRequests: kotlinx.coroutines.flow.StateFlow<Int> = kotlinx.coroutines.flow.MutableStateFlow(0)
 ) {
     val currentMedia by playerEngine.currentMedia.collectAsState()
     val isPlaying by playerEngine.isPlaying.collectAsState()
@@ -76,6 +77,7 @@ fun MainScreen(
     val currentIndex by playerEngine.currentIndex.collectAsState()
     val positionMs by playerEngine.currentPositionMs.collectAsState()
     val durationMs by playerEngine.durationMs.collectAsState()
+    val openPlayerCount by openPlayerRequests.collectAsState()
 
     var showPlayerScreen by remember { mutableStateOf(false) }
     var showQueueBottomSheet by remember { mutableStateOf(false) }
@@ -93,6 +95,13 @@ fun MainScreen(
     var actionPlaylistContext by remember { mutableStateOf<CustomPlaylist?>(null) }
     var actionRemoveCallback by remember { mutableStateOf<(() -> Unit)?>(null) }
 
+    LaunchedEffect(openPlayerCount) {
+        if (openPlayerCount > 0 && currentMedia != null) {
+            showSettingsScreen = false
+            showPlayerScreen = true
+        }
+    }
+
     // 系统返回手势拦截：按优先级响应各层级
     BackHandler(enabled = showSettingsScreen) {
         showSettingsScreen = false
@@ -108,6 +117,30 @@ fun MainScreen(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            playerEngine.syncIslandState()
+        }
+    }
+
+    LaunchedEffect(isPlaying) {
+        if (isPlaying && ThemePrefs.liveIslandEnabled &&
+            android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
+        ) {
+            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                runCatching {
+                    notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
+    }
 
     val sessionManager = remember { UserSessionManager(context) }
     val playlistManager = remember { PlaylistManager(context) }
