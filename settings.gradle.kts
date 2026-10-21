@@ -1,10 +1,5 @@
 pluginManagement {
     repositories {
-        if (System.getenv("CI") != "true") {
-            maven("https://maven.aliyun.com/repository/gradle-plugin")
-            maven("https://maven.aliyun.com/repository/google")
-            maven("https://maven.aliyun.com/repository/central")
-        }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -17,10 +12,6 @@ plugins {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        if (System.getenv("CI") != "true") {
-            maven("https://maven.aliyun.com/repository/google")
-            maven("https://maven.aliyun.com/repository/central")
-        }
         google()
         mavenCentral()
     }

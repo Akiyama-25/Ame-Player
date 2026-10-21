@@ -1,0 +1,8 @@
+{
+  "name": "Ame Player",
+  "description": "NCM/FLAC/MP3 music player for Android with Netease Cloud Music integration, lossless playback, lyrics, and debug features",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

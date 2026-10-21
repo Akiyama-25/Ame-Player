@@ -122,6 +122,11 @@ fun MainScreen(
     val customPlaylists by playlistManager.playlists.collectAsState()
     val showMatchStatusPreference by ThemePrefs.showMatchStatusFlow.collectAsState()
     var matchFilterMode by remember { mutableStateOf(0) } // 0: 全部, 1: 仅已匹配, 2: 仅未匹配
+    LaunchedEffect(showMatchStatusPreference) {
+        if (!showMatchStatusPreference) {
+            matchFilterMode = 0
+        }
+    }
     val apiBaseUrl by sessionManager.apiBaseUrlState.collectAsState()
     val hasApi = apiBaseUrl.isNotBlank()
     val isLoggedIn = sessionManager.isLoggedIn()

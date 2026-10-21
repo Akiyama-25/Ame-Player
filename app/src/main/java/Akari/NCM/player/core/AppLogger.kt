@@ -4,11 +4,14 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.io.FileOutputStream
 import java.io.FileWriter
@@ -39,9 +42,11 @@ object AppLogger {
     private const val DEFAULT_MAX_SIZE_KB = 1024L
     private const val LOG_FILE_NAME = "app_log.txt"
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val scope = CoroutineScope(Dispatchers.IO.limitedParallelism(1) + SupervisorJob())
     private var logDir: File? = null
     private var logFile: File? = null
+    private var crashHandlerInstalled = false
 
     private val _currentLevel = MutableStateFlow(LogLevel.ERROR)
     val currentLevel: StateFlow<LogLevel> = _currentLevel.asStateFlow()
@@ -64,10 +69,21 @@ object AppLogger {
         logDir = dir
         logFile = File(dir, LOG_FILE_NAME)
 
-        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            e("CrashHandler", "Uncaught exception in thread '${thread.name}': ${throwable.message}", throwable)
-            defaultHandler?.uncaughtException(thread, throwable)
+        if (!crashHandlerInstalled) {
+            crashHandlerInstalled = true
+            val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+            Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+                e("CrashHandler", "Uncaught exception in thread '${thread.name}': ${throwable.message}", throwable)
+                flush()
+                defaultHandler?.uncaughtException(thread, throwable)
+            }
+        }
+    }
+
+    fun flush() {
+        runBlocking {
+            val children = scope.coroutineContext[Job]?.children?.toList().orEmpty()
+            children.forEach { it.join() }
         }
     }
 
@@ -86,6 +102,7 @@ object AppLogger {
             .edit()
             .putLong(KEY_MAX_FILE_SIZE_KB, validSize)
             .apply()
+        flush()
         checkAndRotateLogFile()
     }
 
@@ -182,6 +199,12 @@ object AppLogger {
     }
 
     fun getLogContent(): String {
+        flush()
+        return readLogContentInternal()
+    }
+
+    @Synchronized
+    private fun readLogContentInternal(): String {
         val file = logFile
         if (file == null || !file.exists()) return "暂无日志记录"
         val oldBackup = File(file.parentFile, "app_log.1.txt")
@@ -202,9 +225,12 @@ object AppLogger {
     }
 
     fun clearLogs() {
-        val dir = logDir ?: return
-        dir.listFiles()?.forEach { it.delete() }
-        logFile = File(dir, LOG_FILE_NAME)
+        flush()
+        synchronized(this) {
+            val dir = logDir ?: return
+            dir.listFiles()?.forEach { it.delete() }
+            logFile = File(dir, LOG_FILE_NAME)
+        }
     }
 
     fun exportToFormat(context: Context, format: ExportFormat): File? {

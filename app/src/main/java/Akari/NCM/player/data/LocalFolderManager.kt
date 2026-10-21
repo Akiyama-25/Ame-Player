@@ -40,6 +40,7 @@ class LocalFolderManager @Inject constructor(
     
     suspend fun scanAllFolders() = withContext(Dispatchers.IO) {
         val dirs = getDirectories()
+        if (dirs.isEmpty()) return@withContext
         val allMedia = mutableListOf<PlayableMedia>()
         val cr = context.contentResolver
         

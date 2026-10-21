@@ -10,6 +10,7 @@ class AmeApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AppLogger.init(this)
+        Akari.NCM.player.data.ThemePrefs.init(this)
         AppLogger.i("AME_DEBUG", "AmeApp onCreate started")
     }
 }

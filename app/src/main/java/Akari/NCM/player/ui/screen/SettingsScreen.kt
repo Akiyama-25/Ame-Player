@@ -1,14 +1,19 @@
 package Akari.NCM.player.ui.screen
 
 import Akari.NCM.player.api.NcmApi
+import Akari.NCM.player.core.AppLogger
+import Akari.NCM.player.core.LogLevel
 import Akari.NCM.player.core.QualityLevel
 import Akari.NCM.player.core.QrStatus
 import Akari.NCM.player.core.UserProfile
 import Akari.NCM.player.data.UserSessionManager
+import android.content.Intent
 import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -51,6 +56,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -60,6 +66,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
@@ -67,7 +74,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @UnstableApi
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(
     sessionManager: UserSessionManager,
@@ -108,6 +115,40 @@ fun SettingsScreen(
     var showProfileDetailDialog by remember { mutableStateOf(false) }
     var showHomepageModeDialog by remember { mutableStateOf(false) }
     var showFoldersDialog by remember { mutableStateOf(false) }
+    var showLogLevelDialog by remember { mutableStateOf(false) }
+    var showLogSizeDialog by remember { mutableStateOf(false) }
+    var showExportMenu by remember { mutableStateOf(false) }
+
+    val currentLogLevel by AppLogger.currentLevel.collectAsState()
+    val maxFileSizeKb by AppLogger.maxFileSizeKb.collectAsState()
+    val showMatchStatus by ThemePrefs.showMatchStatusFlow.collectAsState()
+
+    fun exportAndShareLog(format: AppLogger.ExportFormat) {
+        val file = AppLogger.exportToFormat(context, format)
+        if (file != null && file.exists()) {
+            try {
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = format.mimeType
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, "Ame Player 运行日志 (${file.name})")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                val chooserIntent = Intent.createChooser(sendIntent, "导出日志 (.${format.extension})").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(chooserIntent)
+            } catch (e: Exception) {
+                Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(context, "日志导出失败", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -437,6 +478,132 @@ fun SettingsScreen(
             }
             
             item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
+
+            // ── 调试功能 ──
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("调试功能") }
+
+            item {
+                val levelLabel = if (currentLogLevel == LogLevel.ERROR) {
+                    "${currentLogLevel.label} (默认)"
+                } else {
+                    currentLogLevel.label
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = { showLogLevelDialog = true },
+                            onLongClick = { showLogSizeDialog = true }
+                        )
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("setting_log_record"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.BugReport,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "日志记录",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "等级: $levelLabel · 上限: ${maxFileSizeKb} KB（单击调节等级，长按设置大小上限）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Box {
+                        FilledTonalButton(
+                            onClick = { showExportMenu = true },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("btn_export_log")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Share,
+                                contentDescription = "导出日志",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("导出", fontSize = 12.sp)
+                        }
+                        DropdownMenu(
+                            expanded = showExportMenu,
+                            onDismissRequest = { showExportMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("导出为 .log") },
+                                onClick = {
+                                    showExportMenu = false
+                                    exportAndShareLog(AppLogger.ExportFormat.LOG)
+                                },
+                                modifier = Modifier.testTag("export_format_log")
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出为 .md") },
+                                onClick = {
+                                    showExportMenu = false
+                                    exportAndShareLog(AppLogger.ExportFormat.MD)
+                                },
+                                modifier = Modifier.testTag("export_format_md")
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出为 .zip") },
+                                onClick = {
+                                    showExportMenu = false
+                                    exportAndShareLog(AppLogger.ExportFormat.ZIP)
+                                },
+                                modifier = Modifier.testTag("export_format_zip")
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { ThemePrefs.showMatchStatus = !showMatchStatus }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("setting_show_match_status"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.FactCheck,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "歌曲匹配列表查看",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "开启后在歌单详情页快速过滤已匹配/未匹配本地源的歌曲",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = showMatchStatus,
+                        onCheckedChange = { ThemePrefs.showMatchStatus = it },
+                        modifier = Modifier.testTag("switch_show_match_status")
+                    )
+                }
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
 item(span = { GridItemSpan(maxLineSpan) }) {
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                 Column(
@@ -466,6 +633,123 @@ item(span = { GridItemSpan(maxLineSpan) }) {
             }
 
         }
+    }
+
+    if (showLogLevelDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogLevelDialog = false },
+            title = { Text("日志记录等级", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
+            text = {
+                Column {
+                    Text(
+                        text = "当前等级: ${currentLogLevel.label}（默认等级: ERROR）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    LogLevel.entries.forEach { level ->
+                        val displayLabel = if (level == LogLevel.ERROR) "${level.label} (默认)" else level.label
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    AppLogger.setLogLevel(context, level)
+                                    showLogLevelDialog = false
+                                }
+                                .padding(vertical = 10.dp, horizontal = 8.dp)
+                                .testTag("log_level_option_${level.name}"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = currentLogLevel == level,
+                                onClick = {
+                                    AppLogger.setLogLevel(context, level)
+                                    showLogLevelDialog = false
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = displayLabel,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = if (currentLogLevel == level) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLogLevelDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
+    }
+
+    if (showLogSizeDialog) {
+        var sizeInput by remember { mutableStateOf(maxFileSizeKb.toString()) }
+        AlertDialog(
+            onDismissRequest = { showLogSizeDialog = false },
+            title = { Text("自定义日志大小上限", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
+            text = {
+                Column {
+                    Text(
+                        text = "请输入单个日志文件的大小限制（单位 KB，最小 64 KB）：",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    OutlinedTextField(
+                        value = sizeInput,
+                        onValueChange = { value ->
+                            if (value.all { it.isDigit() }) {
+                                sizeInput = value
+                            }
+                        },
+                        label = { Text("大小上限 (KB)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = {
+                                val parsed = sizeInput.toLongOrNull()
+                                if (parsed != null && parsed > 0) {
+                                    AppLogger.setMaxFileSizeKb(context, parsed)
+                                    showLogSizeDialog = false
+                                }
+                            }
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("input_log_max_size_kb")
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val parsed = sizeInput.toLongOrNull()
+                        if (parsed != null && parsed > 0) {
+                            AppLogger.setMaxFileSizeKb(context, parsed)
+                            Toast.makeText(context, "日志上限已设为 ${AppLogger.maxFileSizeKb.value} KB", Toast.LENGTH_SHORT).show()
+                            showLogSizeDialog = false
+                        } else {
+                            Toast.makeText(context, "请输入有效的 KB 数值", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.testTag("btn_save_log_size")
+                ) {
+                    Text("保存")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogSizeDialog = false }) {
+                    Text("取消")
+                }
+            }
+        )
     }
 
     

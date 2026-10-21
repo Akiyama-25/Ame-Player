@@ -11,7 +11,7 @@ plugins {
 
 android {
     namespace = "Akari.NCM.player"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "Akari.NCM.player"
