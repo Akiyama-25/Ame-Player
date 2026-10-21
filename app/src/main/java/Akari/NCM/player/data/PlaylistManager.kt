@@ -206,14 +206,26 @@ class PlaylistManager(private val context: Context) {
     }
 
     companion object {
+        private fun unifyFullWidth(input: String): String {
+            return java.text.Normalizer.normalize(input, java.text.Normalizer.Form.NFKC)
+                .replace('\u301C', '~') // 兼容日文波浪号 〜 与全角/半角 ~
+        }
+
         fun normalizeArtistLayer2(artist: String): String {
             return artist.replace('/', ' ')
                 .replace(Regex("\\s+"), " ")
                 .trim()
         }
 
+        fun normalizeTitleLayer2(title: String): String {
+            return title.replace('/', ' ')
+                .replace(Regex("\\s+"), " ")
+                .trim()
+        }
+
         fun normalizeArtistLayer3(artist: String): String {
-            return artist.replace('/', ' ')
+            return unifyFullWidth(artist)
+                .replace('/', ' ')
                 .replace(Regex("[*\"<>?\\\\|:]"), " ")
                 .replace(Regex("\\s+"), " ")
                 .trim()
@@ -226,7 +238,9 @@ class PlaylistManager(private val context: Context) {
         }
 
         fun normalizeTitleLayer3(title: String): String {
-            return title.replace(Regex("[*\"<>?\\\\|:]"), " ")
+            return unifyFullWidth(title)
+                .replace('/', ' ')
+                .replace(Regex("[*\"<>?\\\\|:]"), " ")
                 .replace(Regex("\\s+"), " ")
                 .trim()
         }
@@ -236,7 +250,7 @@ class PlaylistManager(private val context: Context) {
         }
 
         fun layer2Key(title: String, artist: String): String {
-            return "${title.trim().lowercase()} - ${normalizeArtistLayer2(artist).lowercase()}"
+            return "${normalizeTitleLayer2(title).lowercase()} - ${normalizeArtistLayer2(artist).lowercase()}"
         }
 
         fun layer3Key(title: String, artist: String): String {

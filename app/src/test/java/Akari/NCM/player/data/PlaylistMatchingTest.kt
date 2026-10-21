@@ -268,4 +268,42 @@ class PlaylistMatchingTest {
         assertEquals("legacy_buzz", playlistManager.findLocalMatch(onlineBuzz)?.id)
         assertEquals("legacy_amanojaku", playlistManager.findLocalMatch(onlineAmanojaku)?.id)
     }
+
+    @Test
+    fun testTitleSlashAndFullWidthVariantMatch() {
+        // 场景 1：歌曲名中含有 '/' ("D/N/A")，本地文件名替换为空格 ("D N A")，且歌手名以数字 "25" 开头
+        val localDna = NcmFileScanner.scanUri(
+            uri = android.net.Uri.parse("file:///storage/emulated/0/Music/DNA.mp3"),
+            displayName = "25時、ナイトコードで。 Azari 鏡音リン - D N A【25時、ナイトコードで。 × 鏡音リン】.mp3"
+        ) as PlayableMedia.LocalNcm
+
+        // 场景 2：云端为半角 '+' ("DIALOGUE+")，本地文件名为全角 '＋' ("DIALOGUE＋")
+        val localSparkle = NcmFileScanner.scanUri(
+            uri = android.net.Uri.parse("file:///storage/emulated/0/Music/Sparkle.mp3"),
+            displayName = "愛美 伊藤美来 小笠原仁 梶原岳人 鈴木愛理 DIALOGUE＋ TrySail 仲村宗悟 花澤香菜 halca - Sparkle.mp3"
+        ) as PlayableMedia.LocalNcm
+
+        playlistManager.saveOrUpdateSyncedPlaylist(
+            ncmPlaylistId = -9999L,
+            name = "本地扫描文件夹",
+            coverImgUrl = null,
+            songs = listOf(localDna, localSparkle)
+        )
+
+        val onlineDna = PlayableMedia.Online(
+            id = "66601",
+            title = "D/N/A【25時、ナイトコードで。 × 鏡音リン】",
+            artist = "25時、ナイトコードで。/Azari/鏡音リン",
+            album = "D/N/A"
+        )
+        val onlineSparkle = PlayableMedia.Online(
+            id = "66602",
+            title = "Sparkle",
+            artist = "愛美/伊藤美来/小笠原仁/梶原岳人/鈴木愛理/DIALOGUE+/TrySail/仲村宗悟/花澤香菜/halca",
+            album = "Sparkle"
+        )
+
+        assertNotNull(playlistManager.findLocalMatch(onlineDna))
+        assertNotNull(playlistManager.findLocalMatch(onlineSparkle))
+    }
 }
