@@ -17,8 +17,8 @@ android {
         applicationId = "Akari.NCM.player"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "release-0.1"
+        versionCode = 2
+        versionName = "release-0.2"
     }
 
     buildTypes {
