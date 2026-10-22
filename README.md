@@ -16,6 +16,14 @@
   <img src="assets/screenshot_7.png" width="22%" />
   <img src="assets/screenshot_8.png" width="22%" />
 </p>
+<p align="center">
+  <img src="assets/Screenshot_2026-10-22-07-58-02-449_com.miui.home-edit.jpg" width="44%" />
+  <img src="assets/Screenshot_2026-10-22-07-57-50-136_com.miui.home-edit.jpg" width="44%" />
+</p>
+
+
+- 部分截图来自早期开发版本
+- HyperOS上岛效果不代表实际效果，如需达到，请在设备安装LSPosed后，使用[Hyper Helper](https://github.com/HowieHChen/XiaomiHelper)修改
 
 ---
 
@@ -108,8 +116,6 @@ app/src/main/java/Akari/NCM/player/
 | Android targetSdk | 35 |
 | Kotlin | 与 Compose Compiler 插件对应版本 |
 
-此外，在线功能依赖自行部署的 [NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced) 服务端实例。
-
 ---
 
 ## 构建与运行
@@ -178,13 +184,14 @@ app/src/main/java/Akari/NCM/player/
 - Robolectric（本地 JVM 环境下的 Compose UI 自动化测试）
 - AndroidX Compose UI Test (JUnit 4)
 - Pixel 10 Pro Fold JVM (SDK 37)
+- Xiaomi 14-HyperOS 3 / Android 16
 
 ---
 
 ## 鸣谢
 
 - **[NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)** — 提供网易云音乐 API 服务封装，本项目的云端交互、音轨解析及账号能力依赖于该开源项目。
-- **[rinchao0721/Melodia]**(https://github.com/rinchao0721/Melodia)  提供了APP内嵌API服务，而非由云端发起请求的思路
+- **[rinchao0721/Melodia](https://github.com/rinchao0721/Melodia)**  提供了APP内嵌API服务，而非由云端发起请求的思路
 - **应用图标来源** — [kanae3792 (Pinterest)](https://jp.pinterest.com/kanae3792/)
 
 ---
