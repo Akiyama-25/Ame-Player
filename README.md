@@ -159,7 +159,7 @@ app/src/main/java/Akari/NCM/player/
 仓库已配置两条 GitHub Actions 工作流：
 
 - **`.github/workflows/build-signed-apk.yml`**：在 `main` 分支推送、PR 或手动触发时自动运行单元测试并构建多架构 Release APK（`arm64-v8a`、`armeabi-v7a`、`universal`），在配置签名 Secrets 后自动执行 `zipalign` 与 `apksigner` 签名校验并上传构件。
-- **`.github/workflows/release-signed-apk.yml`**：在推送 `v*` 版本标签或手动指定标签时自动构建、签名、生成 `SHA256SUMS.txt` 校验文件并发布至 GitHub Releases。
+- **`.github/workflows/release-signed-apk.yml`**：在推送任意版本标签（Tag）或手动指定标签名称时自动构建、签名、生成 `SHA256SUMS.txt` 校验文件并发布至 GitHub Releases。
 
 ---
 
