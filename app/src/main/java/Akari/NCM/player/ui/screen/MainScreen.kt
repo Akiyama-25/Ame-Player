@@ -317,7 +317,24 @@ fun MainScreen(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = {},
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
+                                    contentDescription = "Ame Player",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                                Text(
+                                    text = "Ame Player",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        },
                         actions = {
                             if (selectedTab == 0) {
                                 IconButton(onClick = { homepageRefreshTrigger++ }) {
@@ -1121,7 +1138,7 @@ private fun EmptyState(onOpenFiles: () -> Unit) {
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            Icons.Rounded.MusicNote,
+            painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
             contentDescription = null,
             modifier = Modifier.size(80.dp),
             tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
@@ -1193,9 +1210,9 @@ fun SongItem(
                     )
                 } else {
                     Icon(
-                        Icons.Rounded.MusicNote,
+                        painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(24.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -1330,10 +1347,10 @@ private fun MiniPlayerBar(
                         )
                     } else {
                         Icon(
-                            Icons.Rounded.MusicNote,
+                            painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(26.dp)
                         )
                     }
                 }

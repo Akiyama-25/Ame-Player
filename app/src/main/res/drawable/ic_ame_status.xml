@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="240"
+    android:viewportHeight="240">
+
+    <!-- 1. 左侧双马尾大环 (外轮廓与内环镂空线) -->
+    <path
+        android:pathData="M 39.5,130 C 21,106 11.5,83 12,64.5 C 12.5,45.5 26,36 44,36.5 C 60,37 72,49.5 76.5,68.5"
+        android:strokeWidth="4.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 45.5,117.5 C 34.5,97 31,77.5 33.5,62 C 35.8,49.5 46,48.5 55.5,56 C 61,60.5 64.5,67.5 66,74.5"
+        android:strokeWidth="4.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 2. 左上发带环与顶部呆毛 -->
+    <path
+        android:pathData="M 71.5,60.5 C 70.5,43 79.5,27 91.5,26 C 98.5,25.5 101.5,29.5 100.5,34.5"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 79.5,65 C 79.5,47 87,34.5 100.5,34.5 C 113.5,34.5 119.5,45.5 110,60"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 88.5,59.5 C 89.5,46.5 95.5,40 103,41.5 C 109.5,43 110.5,51.5 105,60.5"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 3. 头顶发际轮廓线 -->
+    <path
+        android:pathData="M 41,94 C 55,78 77,66.5 96,61.5 C 101.5,60.5 106.5,60.5 110,61.5"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 110,63 C 120.5,56.5 136,56 150,61 C 156.5,63.5 162,67 165,70.5"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 176,75.5 C 182,82 187,89 190,96.5"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 197,115 C 200,121 202,127 203.2,133"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 4. 右上发带环 -->
+    <path
+        android:pathData="M 168.5,58.5 C 174,48.5 189.5,48 199,56.5 C 208,65 206.5,81 198,90.5"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 169,59 C 181.5,57.5 190.5,69 187,93.5"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 5. 右侧双马尾大环 (平滑曲线补齐原图右侧画面外头发轮廓) -->
+    <path
+        android:pathData="M 192.5,94.5 C 201.5,82.5 214,80 222.8,89.5 C 232.0,100.0 232.2,123.0 224.0,139.0 C 217.2,152.0 209.5,161.0 203.0,168.5"
+        android:strokeWidth="4.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 197.5,103.5 C 208.5,100.0 218.2,105.5 218.4,116.5 C 218.6,127.5 211.0,139.5 203.5,149.5"
+        android:strokeWidth="4.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 6. 右侧三个爱心蝴蝶结发饰 -->
+    <path
+        android:pathData="M 150.99,73.41 C 153.15,69.04 159.54,69.69 160.29,75.17 C 161.09,79.71 156.47,83.85 153.19,86.99 C 149.33,85.01 143.65,82.74 142.85,78.2 C 142.1,72.72 148.32,69.88 150.99,73.41 Z"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 143,72.5 C 136,71 131,71 129,72 C 130.5,81 135.5,90 141,96.5 C 145.5,93 149,88 151.5,84"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 158.5,70 C 163,65 166.5,62 169,61.5 C 174,68.5 176.5,78.5 176.8,88.5 C 169,86.5 161,84.5 154.5,82.5"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M 173.42,102.58 C 175.38,98.7 181.34,99.13 181.63,104.35 C 181.85,108.66 177.15,111.98 174.05,114.59 C 170.66,112.32 165.65,109.51 165.43,105.2 C 165.14,99.98 171.06,98.92 173.42,102.58 Z"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 165.5,102.5 C 159,100 154.5,98.5 152.5,98.5 C 153,108 155.5,117.5 159,124.5 C 164,120.5 168.5,116.5 172,113"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 180.5,101.5 C 186,98.5 190.5,96.5 193.5,96 C 197,104 198.5,113 197.5,121.5 C 190.5,118.5 183,115.5 176,113"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M 187.05,136.8 C 189.61,132.98 195.81,134.18 195.42,139.67 C 195.09,144.22 189.76,147.08 186.17,149.4 C 182.97,146.6 178.06,143.03 178.4,138.49 C 178.79,132.99 185.09,132.66 187.05,136.8 Z"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 178.5,136.5 C 172.5,133 168,130.5 166,130 C 165,140.5 166.5,151.5 170,159.5 C 175.5,155.5 180.5,151.5 184.5,147.5"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 194.5,136.5 C 199.5,135 204,134 206.5,134 C 206.5,144 205,153.5 202.5,161 C 197.5,156.5 192.5,152 188,147.5"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 7. 前额刘海发丝线条 -->
+    <path
+        android:pathData="M 64,149 C 71,134 81,120 91.5,108 C 89.5,126 92.5,145 101.5,161"
+        android:strokeWidth="4.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 96.5,132 C 102,148 112,163 122.5,172.5 C 119.5,157 118.5,142 119.5,129"
+        android:strokeWidth="4.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 120.5,144 C 125.5,153.5 130,160 133.5,163.5 C 132.5,152 131.5,141.5 130.5,132"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 133,142 C 139,149.5 144,154.5 148,157.5 C 145,145.5 142.5,134 140.5,123.5"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 145,138 C 154,155 163.5,169 172,179 C 168.5,160 163,139 156.5,120"
+        android:strokeWidth="4.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 8. 左侧鬓角、垂落丝带与发尾卷曲 -->
+    <path
+        android:pathData="M 66.5,114 C 57,136 51,158 46.5,173 C 51,179 56,184 61.5,187"
+        android:strokeWidth="4.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 59,138 C 57.5,156 60,171 67,181.5"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 41,131 C 35,137 31,142 28,145 C 33,144.5 37,143.5 40.5,142 C 37.5,164 39.5,188 49,205 C 54.5,206.5 60.5,206 65.5,204.5"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 50,92 C 42,97.5 35.5,104.5 31.5,111.5"
+        android:strokeWidth="4.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 31.5,111.5 C 14,124 10.5,147 18,166 C 22,176 29.5,183.5 38.5,189.5"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 38.5,122.5 C 25,133.5 22,151.5 29,167.5 C 32.5,175.5 36.5,181 40.5,185.5"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 27,178 L 19.5,190 C 24.5,195.5 31.5,197.5 37.5,196.5 L 40.5,189.5"
+        android:strokeWidth="4.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 14.5,155 C 9.5,167 10,182 15.5,192 C 16,184 18,178 21,174"
+        android:strokeWidth="4.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 9. 下巴脸部圆润轮廓、右侧垂发与丝带 -->
+    <path
+        android:pathData="M 50,183 C 54,195 61,203.5 72,206.5 C 94,211.5 129,212 152,209 C 160,207.5 166,202.5 171,194"
+        android:strokeWidth="4.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 182.5,157 C 181,176.5 174,193 162.5,202.5"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 202.5,161.5 C 201.5,183.5 195.5,202.5 185,211.5 C 189,201.5 191,190.5 191,179.5 C 188,196.5 180,208.5 169,213 C 175,204 179,193 181,180 C 175,198 164.5,209.5 151.5,213"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 198,104 C 206,112 212,123 214.5,134"
+        android:strokeWidth="4.0"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 221.5,143 C 223,156 218.5,169 211.5,181 C 205.5,191 206.5,202 217.5,205 C 212.5,209 205.5,209.5 201.5,204.5 C 198.5,196.5 199.5,181.5 202.5,168.5"
+        android:strokeWidth="4.4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M 215.5,173 C 225.5,181 227.5,195 221,204 C 219.5,205.5 218,205.5 216.5,205"
+        android:strokeWidth="4.2"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <!-- 10. 双眼椭圆实心 -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M 81.94,145.02 C 86.54,146.17 88.74,153.28 86.84,160.88 C 84.95,168.48 79.68,173.71 75.06,172.58 C 70.46,171.43 68.26,164.32 70.16,156.72 C 72.05,149.12 77.32,143.89 81.94,145.02 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M 144.44,160.92 C 149.04,162.07 151.24,169.18 149.34,176.78 C 147.45,184.38 142.18,189.61 137.56,188.48 C 132.96,187.33 130.76,180.22 132.66,172.62 C 134.55,165.02 139.82,159.79 144.44,160.92 Z" />
+</vector>

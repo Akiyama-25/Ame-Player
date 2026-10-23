@@ -500,10 +500,10 @@ internal fun PlaylistGridItem(
                 )
             } else {
                 Icon(
-                    imageVector = Icons.Rounded.MusicNote,
+                    painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                     contentDescription = null,
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(36.dp)
                         .align(Alignment.Center),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )

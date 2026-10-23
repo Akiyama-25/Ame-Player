@@ -127,7 +127,7 @@ class AmePlaybackService : MediaSessionService() {
             .setChannelId(CHANNEL_ID)
             .build()
             .apply {
-                setSmallIcon(R.drawable.ic_music_note)
+                setSmallIcon(R.drawable.ic_ame_status)
             }
 
         setMediaNotificationProvider(notificationProvider)

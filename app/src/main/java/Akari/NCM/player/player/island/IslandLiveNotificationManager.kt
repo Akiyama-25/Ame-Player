@@ -143,7 +143,7 @@ class IslandLiveNotificationManager(private val context: Context) {
         }
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_music_note)
+            .setSmallIcon(R.drawable.ic_ame_status)
             .setContentTitle(displayTitle)
             .setContentText(displaySubtitle)
             .setSubText(chipText)
@@ -192,7 +192,7 @@ class IslandLiveNotificationManager(private val context: Context) {
                 putInt("notification.superx.operation", 2)
             }
             val endNotification = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_music_note)
+                .setSmallIcon(R.drawable.ic_ame_status)
                 .setSilent(true)
                 .addExtras(endExtras)
                 .build()
@@ -217,7 +217,7 @@ class IslandLiveNotificationManager(private val context: Context) {
             val icon = if (coverBitmap != null) {
                 Icon.createWithBitmap(coverBitmap)
             } else {
-                Icon.createWithResource(context, R.drawable.ic_music_note)
+                Icon.createWithResource(context, R.drawable.ic_ame_status)
             }
             putParcelable("notification.superx.baseInfos.icon", icon)
             putCharSequence("notification.superx.baseInfos.title", title.take(20))

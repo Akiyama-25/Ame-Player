@@ -664,10 +664,10 @@ private fun PlayerMainContentView(
                                     } else {
                                         Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
                                             Icon(
-                                                Icons.Rounded.MusicNote,
+                                                painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                                                 contentDescription = null,
-                                                tint = Color.White.copy(alpha = 0.4f),
-                                                modifier = Modifier.size(maxCoverSize * 0.4f)
+                                                tint = Color.White.copy(alpha = 0.45f),
+                                                modifier = Modifier.size(maxCoverSize * 0.45f)
                                             )
                                         }
                                     }
@@ -822,10 +822,10 @@ private fun PlayerMainContentView(
                                 } else {
                                     Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
                                         Icon(
-                                            Icons.Rounded.MusicNote,
+                                            painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                                             contentDescription = null,
-                                            tint = Color.White.copy(alpha = 0.4f),
-                                            modifier = Modifier.size(maxCoverSize * 0.4f)
+                                            tint = Color.White.copy(alpha = 0.45f),
+                                            modifier = Modifier.size(maxCoverSize * 0.45f)
                                         )
                                     }
                                 }
@@ -1025,10 +1025,10 @@ private fun PlayerMainContentView(
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Icon(
-                            Icons.Rounded.MusicNote,
+                            painter            = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                             contentDescription = null,
-                            tint               = Color.White.copy(alpha = 0.4f),
-                            modifier           = Modifier.size(with(density) { (coverW * 0.4f).toDp() })
+                            tint               = Color.White.copy(alpha = 0.45f),
+                            modifier           = Modifier.size(with(density) { (coverW * 0.45f).toDp() })
                         )
                     }
                 }
@@ -1144,10 +1144,10 @@ private fun SaltPlayQueueView(
                             )
                         } else {
                             Icon(
-                                Icons.Rounded.MusicNote,
+                                painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                                 contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.6f),
-                                modifier = Modifier.size(24.dp)
+                                tint = Color.White.copy(alpha = 0.65f),
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }

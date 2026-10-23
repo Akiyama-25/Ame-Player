@@ -73,9 +73,9 @@ fun SongActionBottomSheet(
                         )
                     } else {
                         Icon(
-                            Icons.Rounded.MusicNote,
+                            painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                             contentDescription = null,
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.size(28.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
