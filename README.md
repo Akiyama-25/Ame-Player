@@ -88,6 +88,7 @@ AmePlayer 是一款面向 Android 平台的音乐播放器应用。项目以「�
 | 多厂商实况窗适配 | 适配 Xiaomi HyperOS 澎湃焦点岛/超级岛、OPPO ColorOS 流体云、vivo OriginOS 原子岛（含 `superx` 扩展参数与节流保护）及 Samsung One UI Now Bar |
 | Android 16 实况通知支持 | 支持 Android 16 (API 36) `canPostPromotedNotifications` 晋升权限检查与一键跳转系统实况通知设置 |
 | Flyme 状态栏歌词 | 内置 `FlymeTickerLyricHelper`，支持注入 `FLAG_ALWAYS_SHOW_TICKER` 与 `FLAG_ONLY_UPDATE_TICKER` 状态栏歌词标记 |
+> 在OriginOS 6上已证实失败~（恼~
 
 ### 界面与交互
 
