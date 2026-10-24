@@ -33,12 +33,26 @@ sealed class PlayableMedia {
         val pl: Int? = null,
         val dl: Int? = null,
         val fl: Int? = null,
-        val st: Int? = null
+        val st: Int? = null,
+        val alias: String? = null,
+        val transName: String? = null,
+        val matchedLyric: String? = null
     ) : PlayableMedia()
 
     val isLocal: Boolean get() = this is LocalNcm
     val isOnline: Boolean get() = this is Online
     open val isNcm: Boolean get() = false
+
+    /**
+     * 带副标题/翻译名的完整展示歌名。
+     */
+    val displayTitle: String get() {
+        val sub = when (this) {
+            is Online -> transName?.takeIf { it.isNotBlank() } ?: alias?.takeIf { it.isNotBlank() }
+            else -> null
+        }
+        return if (!sub.isNullOrBlank() && !title.contains(sub)) "$title ($sub)" else title
+    }
 
     fun encodeUri(): String = when (this) {
         is LocalNcm -> uri  // Return the original content:// or file:// URI directly

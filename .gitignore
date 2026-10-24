@@ -23,6 +23,7 @@ output*.txt
 test_out.txt
 test.kt
 app/build/
+/app/debug/
 
 # Local Agent Memory & Notes
 CLAUDE.md

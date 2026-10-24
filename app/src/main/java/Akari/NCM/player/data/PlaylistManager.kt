@@ -23,7 +23,9 @@ data class PlayableMediaDTO(
     val uri: String? = null,
     val format: String = "MP3",
     val isNcm: Boolean = false,
-    val isLocal: Boolean = true
+    val isLocal: Boolean = true,
+    val alias: String? = null,
+    val transName: String? = null
 ) {
     fun toPlayableMedia(): PlayableMedia {
         val isRealLocalUri = uri != null && (uri.startsWith("content://") || uri.startsWith("file://"))
@@ -46,7 +48,9 @@ data class PlayableMediaDTO(
                 artist = artist,
                 album = album,
                 coverUrl = coverUrl,
-                durationMs = durationMs
+                durationMs = durationMs,
+                alias = alias,
+                transName = transName
             )
         }
     }
@@ -73,7 +77,9 @@ data class PlayableMediaDTO(
                     album = media.album,
                     coverUrl = media.coverUrl,
                     durationMs = media.durationMs,
-                    isLocal = false
+                    isLocal = false,
+                    alias = media.alias,
+                    transName = media.transName
                 )
             }
         }
@@ -403,4 +409,41 @@ init {
             return true
         }
     }
+
+    /**
+     * 在所有本地与已同步歌单中检索歌曲（匹配歌名、歌手、专辑）。
+     */
+    fun searchSongsInPlaylists(query: String): List<PlaylistSongMatch> {
+        val q = query.trim().lowercase()
+        if (q.isBlank()) return emptyList()
+
+        val results = mutableListOf<PlaylistSongMatch>()
+        val seenUniqueKeys = mutableSetOf<String>()
+
+        for (playlist in _playlists.value) {
+            for (song in playlist.songs) {
+                val matches = song.title.lowercase().contains(q) ||
+                        song.artist.lowercase().contains(q) ||
+                        song.album.lowercase().contains(q) ||
+                        (song.transName?.lowercase()?.contains(q) == true) ||
+                        (song.alias?.lowercase()?.contains(q) == true)
+                if (matches) {
+                    val uniqueKey = "${playlist.id}:${song.id}"
+                    if (seenUniqueKeys.add(uniqueKey)) {
+                        results.add(PlaylistSongMatch(song = song, playlistId = playlist.id, playlistName = playlist.name))
+                    }
+                }
+            }
+        }
+        return results
+    }
 }
+
+/**
+ * 跨歌单搜索结果匹配模型。
+ */
+data class PlaylistSongMatch(
+    val song: PlayableMediaDTO,
+    val playlistId: String,
+    val playlistName: String
+)

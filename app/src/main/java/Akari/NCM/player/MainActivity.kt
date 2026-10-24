@@ -83,10 +83,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controllerFuture = null
         super.onDestroy()
-        // 只有用户从最近任务列表完全关闭 App（isFinishing=true 且非配置变更）时才释放引擎
-        if (isFinishing) {
-            playerEngine.release()
-        }
     }
 }

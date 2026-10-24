@@ -16,6 +16,8 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
@@ -79,14 +81,15 @@ class NcmApi @Inject constructor(
         }
     }
 
-    suspend fun searchSongs(keyword: String, limit: Int = 30): List<PlayableMedia.Online> {
+    private suspend fun searchCloudRaw(keyword: String, type: Int, limit: Int, offset: Int): JsonObject? {
+        if (keyword.isBlank()) return null
         if (isDirectMode) {
             try {
                 val payload = buildJsonObject {
-                    put("s", keyword)
-                    put("type", 1)
+                    put("s", keyword.trim())
+                    put("type", type)
                     put("limit", limit)
-                    put("offset", 0)
+                    put("offset", offset)
                     put("total", true)
                 }.toString()
                 val body = directClient.postEapi(
@@ -96,25 +99,176 @@ class NcmApi @Inject constructor(
                     payload
                 )
                 val json = Json.parseToJsonElement(body).asJsonObjectOrNull
-                val songs = json?.get("result")?.asJsonObjectOrNull?.get("songs")?.jsonArray
-                    ?: json?.get("songs")?.jsonArray
+                val res = json?.get("result")?.asJsonObjectOrNull ?: json
+                if (res != null) return res
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w("AME_NCM_API", "Direct search type=$type failed: ${e.message}")
+            }
+        }
+        return try {
+            val url = if (baseUrl.isNotBlank()) "$baseUrl/cloudsearch" else "$baseUrl/search"
+            val response = try {
+                client.get(url) {
+                    parameter("keywords", keyword.trim())
+                    parameter("type", type)
+                    parameter("limit", limit)
+                    parameter("offset", offset)
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                client.get("$baseUrl/search") {
+                    parameter("keywords", keyword.trim())
+                    parameter("type", type)
+                    parameter("limit", limit)
+                    parameter("offset", offset)
+                }
+            }
+            val body = response.bodyAsText()
+            val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+            json?.get("result")?.asJsonObjectOrNull ?: json
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    suspend fun searchSongs(keyword: String, limit: Int = 30, offset: Int = 0): List<PlayableMedia.Online> {
+        val json = searchCloudRaw(keyword, type = 1, limit = limit, offset = offset) ?: return emptyList()
+        val songs = json["songs"]?.jsonArray ?: return emptyList()
+        return songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+    }
+
+    suspend fun searchAlbums(keyword: String, limit: Int = 30, offset: Int = 0): List<NcmAlbum> {
+        val json = searchCloudRaw(keyword, type = 10, limit = limit, offset = offset) ?: return emptyList()
+        val albums = json["albums"]?.jsonArray ?: return emptyList()
+        return albums.mapNotNull { parseAlbum(it.asJsonObjectOrNull) }
+    }
+
+    suspend fun searchArtists(keyword: String, limit: Int = 30, offset: Int = 0): List<NcmArtist> {
+        val json = searchCloudRaw(keyword, type = 100, limit = limit, offset = offset) ?: return emptyList()
+        val artists = json["artists"]?.jsonArray ?: return emptyList()
+        return artists.mapNotNull { parseArtist(it.asJsonObjectOrNull) }
+    }
+
+    suspend fun searchLyrics(keyword: String, limit: Int = 30, offset: Int = 0): List<PlayableMedia.Online> {
+        val json = searchCloudRaw(keyword, type = 1006, limit = limit, offset = offset) ?: return emptyList()
+        val songs = json["songs"]?.jsonArray ?: return emptyList()
+        return songs.mapNotNull { element ->
+            val obj = element.asJsonObjectOrNull ?: return@mapNotNull null
+            val lyricsArray = obj["lyrics"]?.jsonArray
+            val rawLyric = lyricsArray?.firstOrNull()?.jsonPrimitive?.contentOrNull
+            val cleanLyric = rawLyric?.replace(Regex("\\[\\d+:\\d+.*?\\]"), "")?.trim()
+            parseSong(obj, matchedLyric = cleanLyric)
+        }
+    }
+
+    /**
+     * 混合搜索模式（默认模式）：
+     * - 单曲（包含歌词命中，优先歌曲名匹配）限制展示 10 首；
+     * - 专辑限制展示 5 个；
+     * - 歌手仅在名称匹配时展示。
+     */
+    suspend fun searchMixed(keyword: String): NcmMixedSearchResult = coroutineScope {
+        if (keyword.isBlank()) return@coroutineScope NcmMixedSearchResult()
+
+        val songsDeferred = async { searchSongs(keyword, limit = 10, offset = 0) }
+        val lyricsDeferred = async { searchLyrics(keyword, limit = 10, offset = 0) }
+        val albumsDeferred = async { searchAlbums(keyword, limit = 5, offset = 0) }
+        val artistsDeferred = async { searchArtists(keyword, limit = 5, offset = 0) }
+
+        val directSongs = songsDeferred.await()
+        val lyricSongs = lyricsDeferred.await()
+        val rawAlbums = albumsDeferred.await()
+        val rawArtists = artistsDeferred.await()
+
+        // 单曲组合：优先歌曲名匹配，歌词命中补充，按 id 去重，最多 10 首
+        val combinedSongs = mutableListOf<PlayableMedia.Online>()
+        val seenIds = mutableSetOf<String>()
+        for (s in directSongs) {
+            if (seenIds.add(s.id)) {
+                combinedSongs.add(s)
+            }
+        }
+        for (s in lyricSongs) {
+            if (combinedSongs.size >= 10) break
+            if (seenIds.add(s.id)) {
+                combinedSongs.add(s)
+            }
+        }
+        val finalSongs = combinedSongs.take(10)
+
+        // 专辑限制 5 个
+        val finalAlbums = rawAlbums.take(5)
+
+        // 歌手：仅在名称或别名包含关键词时展示
+        val q = keyword.trim().lowercase()
+        val matchedArtists = rawArtists.filter { artist ->
+            artist.name.lowercase().contains(q) ||
+            artist.alias.any { it.lowercase().contains(q) } ||
+            (artist.trans?.lowercase()?.contains(q) == true)
+        }.take(2)
+
+        NcmMixedSearchResult(
+            songs = finalSongs,
+            albums = finalAlbums,
+            artists = matchedArtists
+        )
+    }
+
+    suspend fun getAlbumTracks(albumId: Long): List<PlayableMedia.Online> {
+        if (isDirectMode) {
+            try {
+                val body = directClient.postEapi(
+                    client,
+                    "${NeteaseEndpoints.HOST_SERVICE}/eapi/v1/album/$albumId",
+                    "/api/v1/album/$albumId",
+                    "{}"
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val songs = json?.get("songs")?.jsonArray
                 if (songs != null) {
                     val list = songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
                     if (list.isNotEmpty()) return list
                 }
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_NCM_API", "Direct search failed: ${e.message}")
-            }
+            } catch (_: Exception) {}
         }
         return try {
-            val response = client.get("$baseUrl/search") {
-                parameter("keywords", keyword)
-                parameter("limit", limit)
+            val response = client.get("$baseUrl/album") {
+                parameter("id", albumId)
             }
             val body = response.bodyAsText()
-            val json = Json.parseToJsonElement(body).asJsonObjectOrNull ?: return emptyList()
-            val songs = json["result"]?.asJsonObjectOrNull?.get("songs")?.jsonArray ?: return emptyList()
+            val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+            val songs = json?.get("songs")?.jsonArray ?: return emptyList()
+            songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun getArtistTopSongs(artistId: Long): List<PlayableMedia.Online> {
+        if (isDirectMode) {
+            try {
+                val body = directClient.postEapi(
+                    client,
+                    "${NeteaseEndpoints.HOST_SERVICE}/eapi/artist/top/song",
+                    "/api/artist/top/song",
+                    buildJsonObject { put("id", artistId) }.toString()
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val songs = json?.get("songs")?.jsonArray
+                if (songs != null) {
+                    val list = songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    if (list.isNotEmpty()) return list
+                }
+            } catch (_: Exception) {}
+        }
+        return try {
+            val response = client.get("$baseUrl/artist/top/song") {
+                parameter("id", artistId)
+            }
+            val body = response.bodyAsText()
+            val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+            val songs = json?.get("songs")?.jsonArray ?: return emptyList()
             songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
         } catch (_: Exception) {
             emptyList()
@@ -946,14 +1100,21 @@ class NcmApi @Inject constructor(
         }
     }
 
+data class NcmPlaylistDetailResult(
+    val playlist: NcmUserPlaylist?,
+    val tracks: List<PlayableMedia.Online>
+)
+
     /**
-     * 全量循环分页拉取歌单曲目，带 10s 超时防护与实时 (fetched/total) 进度回调
+     * 全量循环分页拉取歌单曲目及歌单详情，带 10s 超时防护与实时 (fetched/total) 进度回调
      */
-    suspend fun getPlaylistTracks(
+    suspend fun getPlaylistDetailAndTracks(
         playlistId: Long,
         totalCount: Int = 0,
         onProgress: ((fetched: Int, total: Int) -> Unit)? = null
-    ): List<PlayableMedia.Online> {
+    ): NcmPlaylistDetailResult {
+        var parsedPlaylistMeta: NcmUserPlaylist? = null
+
         if (isDirectMode) {
             try {
                 val payload = buildJsonObject {
@@ -969,6 +1130,17 @@ class NcmApi @Inject constructor(
                 )
                 val json = Json.parseToJsonElement(body).asJsonObjectOrNull
                 val playlist = json?.get("playlist")?.asJsonObjectOrNull
+                if (playlist != null) {
+                    parsedPlaylistMeta = NcmUserPlaylist(
+                        id = playlist.get("id")?.jsonPrimitive?.longOrNull ?: playlistId,
+                        name = playlist.get("name")?.jsonPrimitive?.contentOrNull ?: "",
+                        coverImgUrl = playlist.get("coverImgUrl")?.jsonPrimitive?.contentOrNull ?: "",
+                        trackCount = playlist.get("trackCount")?.jsonPrimitive?.intOrNull ?: 0,
+                        playCount = playlist.get("playCount")?.jsonPrimitive?.longOrNull ?: 0L,
+                        creatorName = playlist.get("creator")?.asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
+                        description = playlist.get("description")?.jsonPrimitive?.contentOrNull ?: ""
+                    )
+                }
                 val trackIdsArray = playlist?.get("trackIds")?.jsonArray
                 val tracksArray = playlist?.get("tracks")?.jsonArray
 
@@ -976,7 +1148,7 @@ class NcmApi @Inject constructor(
                     val songs = tracksArray.mapNotNull { parseSong(it.asJsonObjectOrNull) }
                     val expectedTotal = if (totalCount > 0) totalCount else songs.size
                     onProgress?.invoke(songs.size, expectedTotal)
-                    return songs
+                    return NcmPlaylistDetailResult(parsedPlaylistMeta, songs)
                 }
 
                 if (trackIdsArray != null && trackIdsArray.isNotEmpty()) {
@@ -990,7 +1162,7 @@ class NcmApi @Inject constructor(
                         val expectedTotal = if (totalCount > 0) totalCount else allTrackIds.size
                         onProgress?.invoke(allSongs.size, expectedTotal)
                     }
-                    if (allSongs.isNotEmpty()) return allSongs
+                    if (allSongs.isNotEmpty()) return NcmPlaylistDetailResult(parsedPlaylistMeta, allSongs)
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -1035,7 +1207,19 @@ class NcmApi @Inject constructor(
                         }
                         val detailBody = detailResp?.bodyAsText() ?: ""
                         val detailJson = Json.parseToJsonElement(detailBody).asJsonObjectOrNull
-                        val tracks = detailJson?.get("playlist")?.asJsonObjectOrNull?.get("tracks")?.jsonArray
+                        val detailPlaylist = detailJson?.get("playlist")?.asJsonObjectOrNull
+                        if (parsedPlaylistMeta == null && detailPlaylist != null) {
+                            parsedPlaylistMeta = NcmUserPlaylist(
+                                id = detailPlaylist.get("id")?.jsonPrimitive?.longOrNull ?: playlistId,
+                                name = detailPlaylist.get("name")?.jsonPrimitive?.contentOrNull ?: "",
+                                coverImgUrl = detailPlaylist.get("coverImgUrl")?.jsonPrimitive?.contentOrNull ?: "",
+                                trackCount = detailPlaylist.get("trackCount")?.jsonPrimitive?.intOrNull ?: 0,
+                                playCount = detailPlaylist.get("playCount")?.jsonPrimitive?.longOrNull ?: 0L,
+                                creatorName = detailPlaylist.get("creator")?.asJsonObjectOrNull?.get("nickname")?.jsonPrimitive?.contentOrNull ?: "",
+                                description = detailPlaylist.get("description")?.jsonPrimitive?.contentOrNull ?: ""
+                            )
+                        }
+                        val tracks = detailPlaylist?.get("tracks")?.jsonArray
                         tracks?.mapNotNull { parseSong(it.asJsonObjectOrNull) }?.let { allSongs.addAll(it) }
                     }
                     hasMore = false
@@ -1060,7 +1244,18 @@ class NcmApi @Inject constructor(
         val expectedTotal = if (totalCount > 0) totalCount else allSongs.size
         onProgress?.invoke(allSongs.size, expectedTotal)
         Log.i("AME_PLAYLIST_DEBUG", "getPlaylistTracks completed for playlistId=$playlistId with total ${allSongs.size} tracks")
-        return allSongs
+        return NcmPlaylistDetailResult(parsedPlaylistMeta, allSongs)
+    }
+
+    /**
+     * 全量循环分页拉取歌单曲目，带 10s 超时防护与实时 (fetched/total) 进度回调
+     */
+    suspend fun getPlaylistTracks(
+        playlistId: Long,
+        totalCount: Int = 0,
+        onProgress: ((fetched: Int, total: Int) -> Unit)? = null
+    ): List<PlayableMedia.Online> {
+        return getPlaylistDetailAndTracks(playlistId, totalCount, onProgress).tracks
     }
 
     /**
@@ -1152,7 +1347,7 @@ class NcmApi @Inject constructor(
         }
     }
 
-    private fun parseSong(json: JsonObject?): PlayableMedia.Online? {
+    private fun parseSong(json: JsonObject?, matchedLyric: String? = null): PlayableMedia.Online? {
         if (json == null) return null
         return try {
             val id = json["id"]?.jsonPrimitive?.longOrNull ?: return null
@@ -1168,6 +1363,11 @@ class NcmApi @Inject constructor(
             val albumName = albumObj?.get("name")?.jsonPrimitive?.contentOrNull ?: ""
             val picUrl = albumObj?.get("picUrl")?.jsonPrimitive?.contentOrNull
 
+            val alias = json["alia"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.firstOrNull { it.isNotBlank() }
+                ?: json["alias"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.firstOrNull { it.isNotBlank() }
+            val transName = json["tns"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.firstOrNull { it.isNotBlank() }
+                ?: json["transNames"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.firstOrNull { it.isNotBlank() }
+
             PlayableMedia.Online(
                 id = id.toString(),
                 title = name,
@@ -1176,7 +1376,66 @@ class NcmApi @Inject constructor(
                 coverUrl = picUrl,
                 durationMs = json["dt"]?.jsonPrimitive?.longOrNull
                     ?: json["duration"]?.jsonPrimitive?.longOrNull ?: 0L,
-                fee = json["fee"]?.jsonPrimitive?.intOrNull ?: 0
+                fee = json["fee"]?.jsonPrimitive?.intOrNull ?: 0,
+                alias = alias,
+                transName = transName,
+                matchedLyric = matchedLyric
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseAlbum(json: JsonObject?): NcmAlbum? {
+        if (json == null) return null
+        return try {
+            val id = json["id"]?.jsonPrimitive?.longOrNull ?: return null
+            val name = json["name"]?.jsonPrimitive?.contentOrNull ?: return null
+            val artistName = json["artist"]?.asJsonObjectOrNull?.get("name")?.jsonPrimitive?.contentOrNull
+                ?: json["artists"]?.jsonArray?.firstOrNull()?.asJsonObjectOrNull?.get("name")?.jsonPrimitive?.contentOrNull
+                ?: ""
+            val picUrl = json["picUrl"]?.jsonPrimitive?.contentOrNull
+            val size = json["size"]?.jsonPrimitive?.intOrNull ?: 0
+            val publishTime = json["publishTime"]?.jsonPrimitive?.longOrNull ?: 0L
+            val transNames = json["transNames"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+            val alias = json["alias"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+
+            NcmAlbum(
+                id = id,
+                name = name,
+                artistName = artistName,
+                picUrl = picUrl,
+                songCount = size,
+                publishTimeMs = publishTime,
+                transNames = transNames,
+                alias = alias
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseArtist(json: JsonObject?): NcmArtist? {
+        if (json == null) return null
+        return try {
+            val id = json["id"]?.jsonPrimitive?.longOrNull ?: return null
+            val name = json["name"]?.jsonPrimitive?.contentOrNull ?: return null
+            val picUrl = json["picUrl"]?.jsonPrimitive?.contentOrNull
+                ?: json["img1v1Url"]?.jsonPrimitive?.contentOrNull
+            val albumCount = json["albumSize"]?.jsonPrimitive?.intOrNull ?: 0
+            val songCount = json["musicSize"]?.jsonPrimitive?.intOrNull ?: 0
+            val alias = json["alias"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+            val trans = json["trans"]?.jsonPrimitive?.contentOrNull
+                ?: json["transNames"]?.jsonArray?.firstOrNull()?.jsonPrimitive?.contentOrNull
+
+            NcmArtist(
+                id = id,
+                name = name,
+                picUrl = picUrl,
+                albumCount = albumCount,
+                songCount = songCount,
+                alias = alias,
+                trans = trans
             )
         } catch (_: Exception) {
             null

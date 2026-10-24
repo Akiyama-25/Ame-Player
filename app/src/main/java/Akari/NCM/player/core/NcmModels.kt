@@ -51,6 +51,48 @@ data class NcmUserPlaylist(
 )
 
 @Serializable
+data class OnlinePlaylistTarget(
+    val id: Long,
+    val title: String = "",
+    val coverImgUrl: String = "",
+    val trackCount: Int = 0,
+    val playCount: Long = 0L,
+    val creatorName: String = "",
+    val description: String = "",
+    val isDailyRecommend: Boolean = false,
+    val isAlbum: Boolean = false
+)
+
+@Serializable
+data class NcmAlbum(
+    val id: Long,
+    val name: String,
+    val artistName: String,
+    val picUrl: String? = null,
+    val songCount: Int = 0,
+    val publishTimeMs: Long = 0L,
+    val transNames: List<String> = emptyList(),
+    val alias: List<String> = emptyList()
+)
+
+@Serializable
+data class NcmArtist(
+    val id: Long,
+    val name: String,
+    val picUrl: String? = null,
+    val albumCount: Int = 0,
+    val songCount: Int = 0,
+    val alias: List<String> = emptyList(),
+    val trans: String? = null
+)
+
+data class NcmMixedSearchResult(
+    val songs: List<PlayableMedia.Online> = emptyList(),
+    val albums: List<NcmAlbum> = emptyList(),
+    val artists: List<NcmArtist> = emptyList()
+)
+
+@Serializable
 data class QrCheckResult(
     val status: QrStatus,
     val message: String = "",

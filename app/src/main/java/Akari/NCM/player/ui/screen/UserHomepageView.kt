@@ -5,6 +5,7 @@ import Akari.NCM.player.core.HomepageBlock
 import Akari.NCM.player.core.HomepageDragonBall
 import Akari.NCM.player.core.HomepageMode
 import Akari.NCM.player.core.NcmUserPlaylist
+import Akari.NCM.player.core.OnlinePlaylistTarget
 import Akari.NCM.player.data.UserSessionManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -59,7 +60,7 @@ fun UserHomepageView(
     ncmApi: NcmApi,
     sessionManager: UserSessionManager,
     refreshTrigger: Int = 0,
-    onPlaylistClick: (Long) -> Unit,
+    onPlaylistClick: (OnlinePlaylistTarget) -> Unit,
     onDailyRecommendClick: () -> Unit
 ) {
     val mode by sessionManager.homepageModeState.collectAsState()
@@ -76,7 +77,7 @@ internal fun DiscoverBlocksHomepage(
     ncmApi: NcmApi,
     sessionManager: UserSessionManager,
     refreshTrigger: Int = 0,
-    onPlaylistClick: (Long) -> Unit,
+    onPlaylistClick: (OnlinePlaylistTarget) -> Unit,
     onDailyRecommendClick: () -> Unit
 ) {
     val cookieState by sessionManager.cookieState.collectAsState()
@@ -265,9 +266,21 @@ internal fun DiscoverBlocksHomepage(
                                         } else if (ball.name.contains("FM") || ball.name.contains("心动")) {
                                             val realId = ball.url?.substringAfterLast("id=")?.toLongOrNull() ?: recommendPlaylistIds.getOrNull(0)
                                             if (realId != null) {
-                                                onPlaylistClick(realId)
+                                                onPlaylistClick(
+                                                    OnlinePlaylistTarget(
+                                                        id = realId,
+                                                        title = ball.name,
+                                                        coverImgUrl = bgUrl ?: ""
+                                                    )
+                                                )
                                             } else if (ball.id > 0) {
-                                                onPlaylistClick(ball.id)
+                                                onPlaylistClick(
+                                                    OnlinePlaylistTarget(
+                                                        id = ball.id,
+                                                        title = ball.name,
+                                                        coverImgUrl = bgUrl ?: ""
+                                                    )
+                                                )
                                             }
                                         }
                                     }
@@ -311,7 +324,16 @@ internal fun DiscoverBlocksHomepage(
                                     lineHeight = creativeLineHeight,
                                     onClick = {
                                         val id = creative.resourceId.toLongOrNull()
-                                        if (id != null) onPlaylistClick(id)
+                                        if (id != null) {
+                                            onPlaylistClick(
+                                                OnlinePlaylistTarget(
+                                                    id = id,
+                                                    title = creative.title,
+                                                    coverImgUrl = creative.imageUrl,
+                                                    playCount = creative.playCount
+                                                )
+                                            )
+                                        }
                                     }
                                 )
                             }
@@ -324,7 +346,7 @@ internal fun DiscoverBlocksHomepage(
 }
 
 @Composable
-internal fun DailyOnlyHomepage(ncmApi: NcmApi, sessionManager: UserSessionManager, refreshTrigger: Int = 0, onPlaylistClick: (Long) -> Unit) {
+internal fun DailyOnlyHomepage(ncmApi: NcmApi, sessionManager: UserSessionManager, refreshTrigger: Int = 0, onPlaylistClick: (OnlinePlaylistTarget) -> Unit) {
     var playlists by remember { mutableStateOf(emptyList<NcmUserPlaylist>()) }
     var isLoading by remember { mutableStateOf(true) }
     val cookieState by sessionManager.cookieState.collectAsState()
@@ -353,7 +375,7 @@ internal fun DailyOnlyHomepage(ncmApi: NcmApi, sessionManager: UserSessionManage
 }
 
 @Composable
-internal fun HighQualityOnlyHomepage(ncmApi: NcmApi, refreshTrigger: Int = 0, onPlaylistClick: (Long) -> Unit) {
+internal fun HighQualityOnlyHomepage(ncmApi: NcmApi, refreshTrigger: Int = 0, onPlaylistClick: (OnlinePlaylistTarget) -> Unit) {
     var playlists by remember { mutableStateOf(emptyList<NcmUserPlaylist>()) }
     var isLoading by remember { mutableStateOf(true) }
 
@@ -375,7 +397,7 @@ internal fun HighQualityOnlyHomepage(ncmApi: NcmApi, refreshTrigger: Int = 0, on
 @Composable
 internal fun PlaylistGrid(
     playlists: List<NcmUserPlaylist>,
-    onPlaylistClick: (Long) -> Unit,
+    onPlaylistClick: (OnlinePlaylistTarget) -> Unit,
     modifier: Modifier = Modifier
 ) {
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -461,7 +483,19 @@ internal fun PlaylistGrid(
                         titleFontSize = titleFontSize,
                         titleLineHeight = titleLineHeight,
                         spacerHeight = spacerHeight,
-                        onClick = { onPlaylistClick(playlist.id) }
+                        onClick = {
+                            onPlaylistClick(
+                                OnlinePlaylistTarget(
+                                    id = playlist.id,
+                                    title = playlist.name,
+                                    coverImgUrl = playlist.coverImgUrl,
+                                    trackCount = playlist.trackCount,
+                                    playCount = playlist.playCount,
+                                    creatorName = playlist.creatorName,
+                                    description = playlist.description
+                                )
+                            )
+                        }
                     )
                 }
             }

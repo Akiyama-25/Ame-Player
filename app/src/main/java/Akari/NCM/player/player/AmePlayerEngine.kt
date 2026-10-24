@@ -84,7 +84,7 @@ class AmePlayerEngine @Inject constructor(
     private val sessionManager: UserSessionManager
 ) : PlayerState, PlayerController {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     val islandManager = IslandLiveNotificationManager(context)
     private val lyricsManager = LyricsManager(context, ncmApi)
@@ -156,9 +156,35 @@ class AmePlayerEngine @Inject constructor(
         SimpleCache(cacheDir, LeastRecentlyUsedCacheEvictor(500 * 1024 * 1024L))
     }
 
-    private val exoPlayer: ExoPlayer
+    @Volatile
+    private var isReleased = false
+
+    private var exoPlayer: ExoPlayer
 
     init {
+        exoPlayer = createExoPlayer()
+        startBackgroundObservers()
+    }
+
+    private fun ensureActive() {
+        val isDead = isReleased || runCatching {
+            val looper = exoPlayer.playbackLooper
+            !looper.thread.isAlive
+        }.getOrDefault(true)
+
+        if (isDead) {
+            Log.w("[AME_ONLINE_PLAY]", ">>> ExoPlayer internal thread is dead or released. Recovering player instance...")
+            isReleased = false
+            if (!scope.isActive) {
+                scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+                startBackgroundObservers()
+            }
+            runCatching { exoPlayer.release() }
+            exoPlayer = createExoPlayer()
+        }
+    }
+
+    private fun createExoPlayer(): ExoPlayer {
         // Audio-only renderer for efficiency
         val audioOnlyFactory = RenderersFactory { handler, _, audioListener, _, _ ->
             arrayOf(
@@ -274,7 +300,7 @@ class AmePlayerEngine @Inject constructor(
             )
             .build()
 
-        exoPlayer = ExoPlayer.Builder(context, audioOnlyFactory)
+        val player = ExoPlayer.Builder(context, audioOnlyFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
             .build()
@@ -284,15 +310,21 @@ class AmePlayerEngine @Inject constructor(
             .setAudioOffloadMode(TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED)
             .setIsGaplessSupportRequired(true)
             .build()
-        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+        player.trackSelectionParameters = player.trackSelectionParameters
             .buildUpon()
             .setAudioOffloadPreferences(offloadPrefs)
             .build()
 
-        exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
+        player.repeatMode = when (_repeatMode.value) {
+            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+        }
+        player.shuffleModeEnabled = _shuffleEnabled.value
+        player.volume = _volume.value
 
         // Player listener
-        exoPlayer.addListener(object : Player.Listener {
+        player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _isPlaying.value = isPlaying
                 Log.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onIsPlayingChanged: $isPlaying")
@@ -320,17 +352,17 @@ class AmePlayerEngine @Inject constructor(
                     else -> PlaybackState.IDLE
                 }
                 if (playbackState == Player.STATE_READY) {
-                    val realDuration = exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
+                    val realDuration = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
                     if (realDuration > 0L) {
                         _durationMs.value = realDuration
-                        val currentItem = exoPlayer.currentMediaItem
+                        val currentItem = player.currentMediaItem
                         val existingDuration = currentItem?.mediaMetadata?.durationMs ?: 0L
                         if (currentItem != null && existingDuration <= 0L) {
                             val updatedMeta = currentItem.mediaMetadata.buildUpon()
                                 .setDurationMs(realDuration)
                                 .build()
                             MediaMetadataHelper.updateCurrentPlayingMetadata(
-                                player = exoPlayer,
+                                player = player,
                                 mediaId = currentItem.mediaId,
                                 updatedMetadata = updatedMeta
                             )
@@ -347,8 +379,8 @@ class AmePlayerEngine @Inject constructor(
                 Log.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onMediaItemTransition: mediaId='$id', reason=$reason")
                 val currentMedia = id?.let { mediaMap[it] }
                 _currentMedia.value = currentMedia
-                _currentIndex.value = exoPlayer.currentMediaItemIndex
-                _durationMs.value = exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L
+                _currentIndex.value = player.currentMediaItemIndex
+                _durationMs.value = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L
 
                 onTrackChanged(currentMedia)
                 syncIslandState()
@@ -361,7 +393,7 @@ class AmePlayerEngine @Inject constructor(
                 _isPlaying.value = false
                 _playbackState.value = PlaybackState.IDLE
                 islandManager.cancelIsland()
-                exoPlayer.currentMediaItem?.mediaId?.let { resolvedUrlCache.remove(it) }
+                player.currentMediaItem?.mediaId?.let { resolvedUrlCache.remove(it) }
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
@@ -378,10 +410,20 @@ class AmePlayerEngine @Inject constructor(
             }
 
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-                updateAudioFormatFromExo(exoPlayer.audioFormat)
+                updateAudioFormatFromExo(player.audioFormat)
             }
         })
 
+        val currentDevice = usbAudioManager.connectedUsbDevice.value
+        val isExclusive = usbAudioManager.isExclusiveModeEnabled.value
+        if (isExclusive && currentDevice != null) {
+            player.setPreferredAudioDevice(currentDevice)
+        }
+
+        return player
+    }
+
+    private fun startBackgroundObservers() {
         // Position ticker & in-app lyric sync
         scope.launch {
             while (isActive) {
@@ -667,6 +709,7 @@ class AmePlayerEngine @Inject constructor(
     // --- PlayerController ---
 
     override fun load(media: PlayableMedia) {
+        ensureActive()
         val mediaItem = buildMediaItem(media)
         mediaMap[media.id] = media
         Log.i("[AME_ONLINE_PLAY]", ">>> load single track '${media.title}' (id=${media.id})")
@@ -677,6 +720,7 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun loadPlaylist(items: List<PlayableMedia>, startIndex: Int) {
+        ensureActive()
         Log.i("[AME_ONLINE_PLAY]", ">>> loadPlaylist size=${items.size}, startIndex=$startIndex")
         mediaMap.clear()
         resolvedUrlCache.clear()
@@ -694,20 +738,24 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun play() {
+        ensureActive()
         Log.i("[AME_ONLINE_PLAY]", ">>> play() called")
         exoPlayer.play()
     }
 
     override fun pause() {
+        ensureActive()
         Log.i("[AME_ONLINE_PLAY]", ">>> pause() called")
         exoPlayer.pause()
     }
 
     override fun togglePlayPause() {
+        ensureActive()
         if (exoPlayer.isPlaying) pause() else play()
     }
 
     override fun seekTo(positionMs: Long) {
+        ensureActive()
         exoPlayer.seekTo(positionMs)
         _currentPositionMs.value = positionMs
         updateCurrentLyricForPosition(positionMs)
@@ -715,6 +763,7 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun skipToNext() {
+        ensureActive()
         if (exoPlayer.hasNextMediaItem()) {
             exoPlayer.seekToNext()
             exoPlayer.prepare()
@@ -727,6 +776,7 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun skipToPrevious() {
+        ensureActive()
         if (exoPlayer.currentPosition > 3000) {
             exoPlayer.seekTo(0)
         } else if (exoPlayer.hasPreviousMediaItem()) {
@@ -742,6 +792,7 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun skipToIndex(index: Int) {
+        ensureActive()
         exoPlayer.seekToDefaultPosition(index)
         exoPlayer.prepare()
         exoPlayer.play()
@@ -750,6 +801,7 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun insertAsNext(media: PlayableMedia) {
+        ensureActive()
         val currentList = _playlist.value.toMutableList()
         val mediaItem = buildMediaItem(media)
         mediaMap[media.id] = media
@@ -767,6 +819,7 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun setRepeatMode(mode: RepeatMode) {
+        ensureActive()
         exoPlayer.repeatMode = when (mode) {
             RepeatMode.OFF -> Player.REPEAT_MODE_OFF
             RepeatMode.ALL -> Player.REPEAT_MODE_ALL
@@ -775,15 +828,18 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun toggleShuffle() {
+        ensureActive()
         exoPlayer.shuffleModeEnabled = !exoPlayer.shuffleModeEnabled
     }
 
     override fun setVolume(volume: Float) {
+        ensureActive()
         exoPlayer.volume = volume.coerceIn(0f, 1f)
         _volume.value = exoPlayer.volume
     }
 
     override fun setUsbExclusiveMode(enabled: Boolean) {
+        ensureActive()
         usbAudioManager.setExclusiveModeEnabled(enabled)
         val currentDevice = usbAudioManager.connectedUsbDevice.value
         applyUsbAudioRouting(currentDevice, enabled)
@@ -809,9 +865,10 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun release() {
+        isReleased = true
         islandManager.cancelIsland()
         scope.cancel()
-        exoPlayer.release()
+        runCatching { exoPlayer.release() }
         mediaMap.clear()
         resolvedUrlCache.clear()
     }

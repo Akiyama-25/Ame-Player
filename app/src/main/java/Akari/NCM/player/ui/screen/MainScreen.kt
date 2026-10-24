@@ -2,12 +2,14 @@ package Akari.NCM.player.ui.screen
 
 import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.core.NcmUserPlaylist
+import Akari.NCM.player.core.OnlinePlaylistTarget
 import Akari.NCM.player.core.PlayableMedia
 import Akari.NCM.player.data.CustomPlaylist
 import Akari.NCM.player.data.LyricsManager
 import Akari.NCM.player.data.LocalFolderManager
 import Akari.NCM.player.data.NcmFileScanner
 import Akari.NCM.player.data.PlaylistManager
+import Akari.NCM.player.data.SearchHistoryManager
 import Akari.NCM.player.data.ThemePrefs
 import Akari.NCM.player.data.UserSessionManager
 import Akari.NCM.player.player.AmePlayerEngine
@@ -61,7 +63,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 
 enum class TopLevelScreen {
-    PLAYER, SETTINGS, MAIN
+    PLAYER, SETTINGS, SEARCH, MAIN
 }
 
 @UnstableApi
@@ -82,9 +84,11 @@ fun MainScreen(
     var showPlayerScreen by remember { mutableStateOf(false) }
     var showQueueBottomSheet by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
+    var showSearchScreen by remember { mutableStateOf(false) }
     var showSyncCloudDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) } // 0: User Homepage, 1: Playlists
     var selectedPlaylistForDetail by remember { mutableStateOf<CustomPlaylist?>(null) }
+    var selectedOnlinePlaylist by remember { mutableStateOf<OnlinePlaylistTarget?>(null) }
     var songToAddToPlaylist by remember { mutableStateOf<PlayableMedia?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
@@ -98,6 +102,7 @@ fun MainScreen(
     LaunchedEffect(openPlayerCount) {
         if (openPlayerCount > 0 && currentMedia != null) {
             showSettingsScreen = false
+            showSearchScreen = false
             showPlayerScreen = true
         }
     }
@@ -107,12 +112,20 @@ fun MainScreen(
         showSettingsScreen = false
     }
 
-    BackHandler(enabled = showPlayerScreen && !showSettingsScreen) {
+    BackHandler(enabled = showSearchScreen && !showSettingsScreen) {
+        showSearchScreen = false
+    }
+
+    BackHandler(enabled = showPlayerScreen && !showSettingsScreen && !showSearchScreen) {
         showPlayerScreen = false
     }
 
-    BackHandler(enabled = selectedPlaylistForDetail != null && !showPlayerScreen && !showSettingsScreen) {
-        selectedPlaylistForDetail = null
+    BackHandler(enabled = (selectedOnlinePlaylist != null || selectedPlaylistForDetail != null) && !showPlayerScreen && !showSettingsScreen && !showSearchScreen) {
+        if (selectedOnlinePlaylist != null) {
+            selectedOnlinePlaylist = null
+        } else {
+            selectedPlaylistForDetail = null
+        }
     }
 
     val context = LocalContext.current
@@ -145,6 +158,7 @@ fun MainScreen(
     val sessionManager = remember { UserSessionManager(context) }
     val playlistManager = remember { PlaylistManager(context) }
     val ncmApi = remember { NcmApi(sessionManager) }
+    val searchHistoryManager = remember { SearchHistoryManager(context) }
     val localFolderManager = remember { LocalFolderManager(context, sessionManager, playlistManager, ncmApi) }
 
     LaunchedEffect(Unit) {
@@ -213,6 +227,7 @@ fun MainScreen(
     val topLevelScreen = when {
         showPlayerScreen -> TopLevelScreen.PLAYER
         showSettingsScreen -> TopLevelScreen.SETTINGS
+        showSearchScreen -> TopLevelScreen.SEARCH
         else -> TopLevelScreen.MAIN
     }
 
@@ -233,6 +248,14 @@ fun MainScreen(
                     fadeOut(animationSpec = tween(400))
                 }
                 initialState == TopLevelScreen.SETTINGS -> {
+                    fadeIn(animationSpec = tween(400)) togetherWith
+                    slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(400))
+                }
+                targetState == TopLevelScreen.SEARCH -> {
+                    slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) togetherWith
+                    fadeOut(animationSpec = tween(400))
+                }
+                initialState == TopLevelScreen.SEARCH -> {
                     fadeIn(animationSpec = tween(400)) togetherWith
                     slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(400))
                 }
@@ -266,6 +289,25 @@ fun MainScreen(
                     onBack = { showSettingsScreen = false }
                 )
             }
+            TopLevelScreen.SEARCH -> {
+                SearchScreen(
+                    playerState = playerEngine,
+                    playerController = playerEngine,
+                    ncmApi = ncmApi,
+                    playlistManager = playlistManager,
+                    searchHistoryManager = searchHistoryManager,
+                    onBack = { showSearchScreen = false },
+                    onSongActionClick = { media, playlistCtx ->
+                        actionMedia = media
+                        actionPlaylistContext = playlistCtx
+                        actionRemoveCallback = null
+                    },
+                    onOpenPlaylistTarget = { target ->
+                        selectedOnlinePlaylist = target
+                        showSearchScreen = false
+                    }
+                )
+            }
             TopLevelScreen.MAIN -> {
 
         val adaptiveInfo = androidx.compose.material3.adaptive.currentWindowAdaptiveInfo()
@@ -289,6 +331,9 @@ fun MainScreen(
                     item(
                         selected = selectedTab == 0,
                         onClick = {
+                            if (selectedTab == 0 && selectedOnlinePlaylist != null) {
+                                selectedOnlinePlaylist = null
+                            }
                             selectedTab = 0
                             selectedPlaylistForDetail = null
                         },
@@ -336,7 +381,7 @@ fun MainScreen(
                             }
                         },
                         actions = {
-                            if (selectedTab == 0) {
+                            if (selectedTab == 0 && selectedOnlinePlaylist == null) {
                                 IconButton(onClick = { homepageRefreshTrigger++ }) {
                                     Icon(Icons.Rounded.Refresh, contentDescription = "刷新首页")
                                 }
@@ -350,6 +395,11 @@ fun MainScreen(
                                 IconButton(onClick = { showCreateDialog = true }) {
                                     Icon(Icons.Rounded.Add, contentDescription = "新建本地")
                                 }
+                            }
+                            IconButton(onClick = {
+                                showSearchScreen = true
+                            }) {
+                                Icon(Icons.Rounded.Search, contentDescription = "搜索")
                             }
                             IconButton(onClick = {
                                 showSettingsScreen = true
@@ -399,37 +449,56 @@ fun MainScreen(
                         when (tab) {
                         0 -> {
                             // User Homepage Tab
-                            UserHomepageView(
-                                ncmApi = ncmApi,
-                                sessionManager = sessionManager,
-                                refreshTrigger = homepageRefreshTrigger,
-                                onPlaylistClick = { playlistId ->
-                                    Toast.makeText(context, "正在加载歌单...", Toast.LENGTH_SHORT).show()
-                                    scope.launch {
-                                        val tracks = ncmApi.getPlaylistTracks(playlistId)
-                                        if (tracks.isNotEmpty()) {
-                                            playerEngine.loadPlaylist(tracks, 0)
-                                            playerEngine.play()
-                                            Toast.makeText(context, "开始播放该歌单 (${tracks.size} 首)", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "未获取到歌曲", Toast.LENGTH_SHORT).show()
-                                        }
+                            AnimatedContent(
+                                targetState = selectedOnlinePlaylist,
+                                transitionSpec = {
+                                    if (targetState != null && initialState == null) {
+                                        slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                                    } else if (targetState == null && initialState != null) {
+                                        fadeIn(animationSpec = tween(300)) togetherWith slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
+                                    } else {
+                                        fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
                                     }
                                 },
-                                onDailyRecommendClick = {
-                                    Toast.makeText(context, "正在获取每日推荐...", Toast.LENGTH_SHORT).show()
-                                    scope.launch {
-                                        val tracks = ncmApi.getDailyRecommendSongs()
-                                        if (tracks.isNotEmpty()) {
-                                            playerEngine.loadPlaylist(tracks, 0)
-                                            playerEngine.play()
-                                            Toast.makeText(context, "开始播放每日推荐 (${tracks.size} 首)", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "获取每日推荐失败，请检查是否已登录并有 VIP 权限", Toast.LENGTH_LONG).show()
+                                label = "OnlinePlaylistDetailTransition",
+                                modifier = Modifier.fillMaxSize()
+                            ) { onlineTarget ->
+                                if (onlineTarget != null) {
+                                    OnlinePlaylistDetailView(
+                                        target = onlineTarget,
+                                        ncmApi = ncmApi,
+                                        playlistManager = playlistManager,
+                                        playerEngine = playerEngine,
+                                        currentMedia = currentMedia,
+                                        isPlaying = isPlaying,
+                                        showMatchStatusPreference = showMatchStatusPreference,
+                                        onBack = { selectedOnlinePlaylist = null },
+                                        onSongAction = { media, pContext ->
+                                            actionMedia = media
+                                            actionPlaylistContext = pContext
+                                            actionRemoveCallback = null
                                         }
-                                    }
+                                    )
+                                } else {
+                                    UserHomepageView(
+                                        ncmApi = ncmApi,
+                                        sessionManager = sessionManager,
+                                        refreshTrigger = homepageRefreshTrigger,
+                                        onPlaylistClick = { target: OnlinePlaylistTarget ->
+                                            selectedOnlinePlaylist = target
+                                        },
+                                        onDailyRecommendClick = {
+                                            selectedOnlinePlaylist = OnlinePlaylistTarget(
+                                                id = -1L,
+                                                title = "每日推荐",
+                                                coverImgUrl = HomepageCache.firstSongCover ?: "",
+                                                description = "根据你的音乐口味生成 · 每天 6:00 更新",
+                                                isDailyRecommend = true
+                                            )
+                                        }
+                                    )
                                 }
-                            )
+                            }
                         }
                         1 -> {
                             // Custom Playlists Tab
@@ -450,6 +519,8 @@ fun MainScreen(
                                 if (currentDetail != null) {
                                     // Playlist Detail View
                                     val currentPlaylist = currentDetail
+                                    var inPlaylistSearchQuery by remember(currentPlaylist.id) { mutableStateOf("") }
+                                    var isPlaylistSearchActive by remember(currentPlaylist.id) { mutableStateOf(false) }
                                 Column(
                                     modifier = Modifier
                                         .fillMaxSize()
@@ -502,9 +573,32 @@ fun MainScreen(
                                                 Spacer(modifier = Modifier.width(4.dp))
                                             }
                                             if (currentPlaylist.songs.isNotEmpty()) {
+                                                IconButton(onClick = {
+                                                    isPlaylistSearchActive = !isPlaylistSearchActive
+                                                    if (!isPlaylistSearchActive) inPlaylistSearchQuery = ""
+                                                }) {
+                                                    Icon(
+                                                        if (isPlaylistSearchActive) Icons.Rounded.SearchOff else Icons.Rounded.Search,
+                                                        contentDescription = "歌单内搜索",
+                                                        tint = if (isPlaylistSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                            }
+                                            if (currentPlaylist.songs.isNotEmpty()) {
                                                 FilledTonalButton(
                                                     onClick = {
-                                                        val playableList = currentPlaylist.songs.map { dto ->
+                                                        val filteredSongs = if (inPlaylistSearchQuery.isBlank()) {
+                                                            currentPlaylist.songs
+                                                        } else {
+                                                            val q = inPlaylistSearchQuery.trim().lowercase()
+                                                            currentPlaylist.songs.filter {
+                                                                it.title.lowercase().contains(q) ||
+                                                                it.artist.lowercase().contains(q) ||
+                                                                it.album.lowercase().contains(q)
+                                                            }
+                                                        }
+                                                        val playableList = filteredSongs.map { dto ->
                                                             val m = dto.toPlayableMedia()
                                                             if (m is PlayableMedia.Online) {
                                                                 playlistManager.findLocalMatch(m) ?: m
@@ -516,10 +610,42 @@ fun MainScreen(
                                                 ) {
                                                     Icon(Icons.Rounded.PlayArrow, contentDescription = null)
                                                     Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Play All")
+                                                    Text(if (inPlaylistSearchQuery.isNotBlank()) "播放筛选" else "Play All")
                                                 }
                                             }
                                         }
+                                    }
+
+                                    // Search bar inside playlist (Animated)
+                                    AnimatedVisibility(
+                                        visible = isPlaylistSearchActive,
+                                        enter = expandVertically() + fadeIn(),
+                                        exit = shrinkVertically() + fadeOut()
+                                    ) {
+                                        OutlinedTextField(
+                                            value = inPlaylistSearchQuery,
+                                            onValueChange = { inPlaylistSearchQuery = it },
+                                            placeholder = {
+                                                Text(
+                                                    "在《${currentPlaylist.name}》中搜索歌曲/歌手/专辑...",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            },
+                                            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                                            trailingIcon = {
+                                                if (inPlaylistSearchQuery.isNotEmpty()) {
+                                                    IconButton(onClick = { inPlaylistSearchQuery = "" }) {
+                                                        Icon(Icons.Rounded.Close, contentDescription = "清空")
+                                                    }
+                                                }
+                                            },
+                                            singleLine = true,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                                            shape = RoundedCornerShape(12.dp)
+                                        )
                                     }
 
                                     if (currentPlaylist.songs.isEmpty()) {
@@ -533,11 +659,21 @@ fun MainScreen(
                                             )
                                         }
                                     } else {
-                                        val songMatchTriples = remember(currentPlaylist.songs, customPlaylists) {
-                                            currentPlaylist.songs.mapIndexed { index, songDto ->
+                                        val songMatchTriples = remember(currentPlaylist.songs, inPlaylistSearchQuery, customPlaylists) {
+                                            val allTriples = currentPlaylist.songs.mapIndexed { index, songDto ->
                                                 val media = songDto.toPlayableMedia()
                                                 val localMatch = if (media is PlayableMedia.Online) playlistManager.findLocalMatch(media) else null
                                                 Triple(index, songDto, localMatch != null)
+                                            }
+                                            if (inPlaylistSearchQuery.isBlank()) {
+                                                allTriples
+                                            } else {
+                                                val q = inPlaylistSearchQuery.trim().lowercase()
+                                                allTriples.filter { (_, songDto, _) ->
+                                                    songDto.title.lowercase().contains(q) ||
+                                                    songDto.artist.lowercase().contains(q) ||
+                                                    songDto.album.lowercase().contains(q)
+                                                }
                                             }
                                         }
                                         val matchedCount = remember(songMatchTriples) { songMatchTriples.count { it.third } }
@@ -585,7 +721,9 @@ fun MainScreen(
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
-                                                    if (matchFilterMode == 1) "暂无已匹配的歌曲" else "暂无未匹配的歌曲",
+                                                    if (inPlaylistSearchQuery.isNotBlank()) "未在歌单内找到匹配歌曲"
+                                                    else if (matchFilterMode == 1) "暂无已匹配的歌曲"
+                                                    else "暂无未匹配的歌曲",
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
                                             }
@@ -599,7 +737,7 @@ fun MainScreen(
                                                         isPlaying = isPlaying && currentMedia?.id == media.id,
                                                         isLocalMatch = isMatched,
                                                         onClick = {
-                                                            val playableList = currentPlaylist.songs.map { dto ->
+                                                            val playableList = displayedSongs.map { (_, dto, _) ->
                                                                 val m = dto.toPlayableMedia()
                                                                 if (m is PlayableMedia.Online) {
                                                                     playlistManager.findLocalMatch(m) ?: m
@@ -1170,13 +1308,14 @@ fun SongItem(
     isCurrentTrack: Boolean,
     isPlaying: Boolean,
     isLocalMatch: Boolean = false,
+    matchedLyric: String? = (media as? PlayableMedia.Online)?.matchedLyric,
     onClick: () -> Unit,
     onActionClick: (() -> Unit)? = null
 ) {
     ListItem(
         headlineContent = {
             Text(
-                media.title,
+                media.displayTitle,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = if (isCurrentTrack) MaterialTheme.colorScheme.primary
@@ -1185,13 +1324,26 @@ fun SongItem(
             )
         },
         supportingContent = {
-            Text(
-                "${media.artist}${if (media.album.isNotBlank()) "  ·  ${media.album}" else ""}",
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column {
+                Text(
+                    "${media.artist}${if (media.album.isNotBlank()) "  ·  ${media.album}" else ""}",
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (!matchedLyric.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        "💬 $matchedLyric",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                        fontSize = 11.sp
+                    )
+                }
+            }
         },
         leadingContent = {
             Box(

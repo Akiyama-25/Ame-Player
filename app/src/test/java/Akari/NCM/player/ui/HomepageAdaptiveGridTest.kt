@@ -78,7 +78,7 @@ class HomepageAdaptiveGridTest {
         composeTestRule.setContent {
             PlaylistGrid(
                 playlists = playlists,
-                onPlaylistClick = { clickedId = it }
+                onPlaylistClick = { clickedId = it.id }
             )
         }
 
