@@ -75,8 +75,6 @@ fun SearchScreen(
     onSongActionClick: (PlayableMedia, CustomPlaylist?) -> Unit,
     onOpenPlaylistTarget: ((OnlinePlaylistTarget) -> Unit)? = null
 ) {
-    BackHandler { onBack() }
-
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -286,7 +284,8 @@ fun SearchScreen(
                     trackCount = artist.songCount,
                     creatorName = artist.name,
                     description = "歌手精选 · ${artist.name}",
-                    isAlbum = false
+                    isAlbum = false,
+                    isArtist = true
                 )
                 onOpenPlaylistTarget?.invoke(target)
             } catch (e: Exception) {

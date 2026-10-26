@@ -9,12 +9,17 @@ import Akari.NCM.player.core.PlayerState
 import Akari.NCM.player.core.RepeatMode
 import Akari.NCM.player.data.LyricResult
 import Akari.NCM.player.data.LyricsManager
+import Akari.NCM.player.ui.component.PredictiveBackEasing
+import Akari.NCM.player.ui.component.predictiveBackForeground
+import Akari.NCM.player.ui.component.rememberPredictiveBackState
 import android.annotation.SuppressLint
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -67,8 +72,11 @@ import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.size.Size
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
@@ -130,9 +138,13 @@ fun PlayerScreen(
         label = "QueueParallaxProgress"
     )
 
-    BackHandler(enabled = showPlayQueuePage) {
+    val queueBackState = rememberPredictiveBackState(enabled = showPlayQueuePage) {
         showPlayQueuePage = false
     }
+
+    val effectiveQueueProgress = (
+        queueProgress * (1f - PredictiveBackEasing.transform(queueBackState.progress.coerceIn(0f, 1f)) * 0.85f)
+    ).coerceIn(0f, 1f)
 
     Box(
         modifier = Modifier
@@ -165,27 +177,28 @@ fun PlayerScreen(
             )
         )
 
-        // ── 2. 主播放界面（带有 3D 视差推退与微缩放效果）─────────────────────
+        // ── 2. 主播放界面（带有 3D 视差推退与微缩放效果，随预见性返回手势实时还原）────────
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    val scale = lerpF(1.0f, 0.92f, queueProgress)
-                    val translateY = lerpF(0f, -32.dp.toPx(), queueProgress)
-                    val alphaVal = lerpF(1.0f, 0.45f, queueProgress)
+                    val scale = lerpF(1.0f, 0.92f, effectiveQueueProgress)
+                    val translateY = lerpF(0f, -32.dp.toPx(), effectiveQueueProgress)
+                    val alphaVal = lerpF(1.0f, 0.45f, effectiveQueueProgress)
 
                     scaleX = scale
                     scaleY = scale
                     translationY = translateY
                     alpha = alphaVal
                 }
-                .clip(RoundedCornerShape(with(density) { lerpF(0f, 24f, queueProgress).toDp() }))
+                .clip(RoundedCornerShape(with(density) { lerpF(0f, 24f, effectiveQueueProgress).toDp() }))
         ) {
             PlayerMainContentView(
                 playerState = playerState,
                 playerController = playerController,
                 displayedTrack = activeTrack,
                 ncmApi = ncmApi,
+                isQueueOpen = showPlayQueuePage,
                 onBackClick = onBackClick,
                 onAddToPlaylistClick = onAddToPlaylistClick,
                 onOpenQueueClick = { showPlayQueuePage = true }
@@ -253,12 +266,18 @@ fun PlayerScreen(
                 animationSpec = tween(450, easing = EaseInOut)
             ) + fadeOut(tween(300))
         ) {
-            SaltPlayQueueView(
-                playerState = playerState,
-                playerController = playerController,
-                displayedTrack = activeTrack,
-                onDismiss = { showPlayQueuePage = false }
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackForeground(state = queueBackState, pullDownDp = 64f)
+            ) {
+                SaltPlayQueueView(
+                    playerState = playerState,
+                    playerController = playerController,
+                    displayedTrack = activeTrack,
+                    onDismiss = { showPlayQueuePage = false }
+                )
+            }
         }
     }
 }
@@ -271,6 +290,7 @@ private fun PlayerMainContentView(
     playerController: PlayerController,
     displayedTrack: PlayableMedia?,
     ncmApi: Akari.NCM.player.api.NcmApi,
+    isQueueOpen: Boolean = false,
     onBackClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit,
     onOpenQueueClick: () -> Unit
@@ -356,12 +376,20 @@ private fun PlayerMainContentView(
     // progress = 0 → 封面大图模式   progress = 1 → 歌词全屏模式
     val progress    = remember { Animatable(0f) }
     var isLyricsMode by remember { mutableStateOf(false) }
-    val p = progress.value
+    var lyricsBackDragProgress by remember { mutableFloatStateOf(0f) }
+    var isLyricsBackDragging by remember { mutableStateOf(false) }
+    val p = if (isLyricsBackDragging) {
+        (1f - PredictiveBackEasing.transform(lyricsBackDragProgress.coerceIn(0f, 1f)) * 0.88f).coerceIn(0f, 1f)
+    } else {
+        progress.value
+    }
     val jobRef = remember { object { var job: Job? = null } }
     val lyricsListState = rememberLazyListState()
 
     fun goToLyrics() {
         jobRef.job?.cancel()
+        isLyricsBackDragging = false
+        lyricsBackDragProgress = 0f
         isLyricsMode = true
         jobRef.job = scope.launch {
             progress.animateTo(1f, tween(500, easing = EaseInOut))
@@ -370,6 +398,8 @@ private fun PlayerMainContentView(
 
     fun goToCover() {
         jobRef.job?.cancel()
+        isLyricsBackDragging = false
+        lyricsBackDragProgress = 0f
         jobRef.job = scope.launch {
             progress.animateTo(0f, tween(500, easing = EaseInOut))
             isLyricsMode = false
@@ -397,6 +427,41 @@ private fun PlayerMainContentView(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isLandscape = maxWidth > maxHeight || maxWidth >= 550.dp
+        val isShortLandscape = isLandscape && maxHeight < 500.dp
+        val supportsLyricsToggle = !isLandscape || isShortLandscape
+
+        // 全屏歌词模式下的 AOSP 预见性返回手势：实时跟手插值封面与歌词透明度，退回封面大图视图
+        PredictiveBackHandler(enabled = isLyricsMode && supportsLyricsToggle && !isQueueOpen) { backEvents ->
+            jobRef.job?.cancel()
+            try {
+                isLyricsBackDragging = true
+                lyricsBackDragProgress = 0f
+                backEvents.collect { event ->
+                    lyricsBackDragProgress = event.progress.coerceIn(0f, 1f)
+                }
+                val settledP = (1f - PredictiveBackEasing.transform(lyricsBackDragProgress) * 0.88f).coerceIn(0f, 1f)
+                progress.snapTo(settledP)
+                isLyricsBackDragging = false
+                lyricsBackDragProgress = 0f
+                progress.animateTo(0f, tween(220, easing = EaseInOut))
+                isLyricsMode = false
+            } catch (e: CancellationException) {
+                withContext(NonCancellable) {
+                    val settledP = (1f - PredictiveBackEasing.transform(lyricsBackDragProgress) * 0.88f).coerceIn(0f, 1f)
+                    progress.snapTo(settledP)
+                    isLyricsBackDragging = false
+                    lyricsBackDragProgress = 0f
+                    progress.animateTo(
+                        targetValue = 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow
+                        )
+                    )
+                }
+                throw e
+            }
+        }
 
         // ── 氛围背景 (Salt Player 风格：鲜艳高饱和、无重度灰黑遮罩) ───────────
         Box(Modifier.fillMaxSize().background(Color(0xFF0F172A)))

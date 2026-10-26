@@ -14,11 +14,14 @@ import Akari.NCM.player.data.ThemePrefs
 import Akari.NCM.player.data.UserSessionManager
 import Akari.NCM.player.player.AmePlayerEngine
 import Akari.NCM.player.ui.component.AddToPlaylistDialog
+import Akari.NCM.player.ui.component.PredictiveBackEasing
 import Akari.NCM.player.ui.component.SongActionBottomSheet
+import Akari.NCM.player.ui.component.predictiveBackBackground
+import Akari.NCM.player.ui.component.predictiveBackForeground
+import Akari.NCM.player.ui.component.rememberPredictiveBackState
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -39,12 +42,10 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.*
-
-
-
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -107,25 +108,31 @@ fun MainScreen(
         }
     }
 
-    // 系统返回手势拦截：按优先级响应各层级
-    BackHandler(enabled = showSettingsScreen) {
+    // AOSP 预见性返回手势状态：按优先级响应设置页、搜索页、播放页、在线歌单详情页与本地歌单详情页
+    val settingsBackState = rememberPredictiveBackState(enabled = showSettingsScreen) {
         showSettingsScreen = false
     }
 
-    BackHandler(enabled = showSearchScreen && !showSettingsScreen) {
+    val searchBackState = rememberPredictiveBackState(enabled = showSearchScreen && !showSettingsScreen) {
         showSearchScreen = false
     }
 
-    BackHandler(enabled = showPlayerScreen && !showSettingsScreen && !showSearchScreen) {
+    val playerBackState = rememberPredictiveBackState(
+        enabled = showPlayerScreen && !showSettingsScreen && !showSearchScreen
+    ) {
         showPlayerScreen = false
     }
 
-    BackHandler(enabled = (selectedOnlinePlaylist != null || selectedPlaylistForDetail != null) && !showPlayerScreen && !showSettingsScreen && !showSearchScreen) {
-        if (selectedOnlinePlaylist != null) {
-            selectedOnlinePlaylist = null
-        } else {
-            selectedPlaylistForDetail = null
-        }
+    val onlinePlaylistBackState = rememberPredictiveBackState(
+        enabled = selectedOnlinePlaylist != null && selectedTab == 0 && !showPlayerScreen && !showSettingsScreen && !showSearchScreen
+    ) {
+        selectedOnlinePlaylist = null
+    }
+
+    val playlistDetailBackState = rememberPredictiveBackState(
+        enabled = selectedPlaylistForDetail != null && selectedTab == 1 && !showPlayerScreen && !showSettingsScreen && !showSearchScreen
+    ) {
+        selectedPlaylistForDetail = null
     }
 
     val context = LocalContext.current
@@ -231,44 +238,619 @@ fun MainScreen(
         else -> TopLevelScreen.MAIN
     }
 
-    AnimatedContent(
-        targetState = topLevelScreen,
-        transitionSpec = {
-            when {
-                targetState == TopLevelScreen.PLAYER -> {
-                    slideInVertically(initialOffsetY = { it }, animationSpec = tween(400)) togetherWith
-                    fadeOut(animationSpec = tween(400))
+    val isTopBackActive = (showPlayerScreen && playerBackState.isVisibleInBackground) ||
+        (showSettingsScreen && settingsBackState.isVisibleInBackground) ||
+        (showSearchScreen && searchBackState.isVisibleInBackground)
+    val activeTopBackProgress = when {
+        showSettingsScreen -> settingsBackState.progress
+        showSearchScreen -> searchBackState.progress
+        else -> playerBackState.progress
+    }
+    val activeTopBackEdge = when {
+        showSettingsScreen -> settingsBackState.swipeEdge
+        showSearchScreen -> searchBackState.swipeEdge
+        else -> playerBackState.swipeEdge
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        if (topLevelScreen == TopLevelScreen.MAIN || isTopBackActive) {
+            Box(
+                modifier = if (topLevelScreen != TopLevelScreen.MAIN && isTopBackActive) {
+                    Modifier
+                        .fillMaxSize()
+                        .predictiveBackBackground(
+                            progress = activeTopBackProgress,
+                            swipeEdge = activeTopBackEdge
+                        )
+                } else {
+                    Modifier.fillMaxSize()
                 }
-                initialState == TopLevelScreen.PLAYER -> {
-                    fadeIn(animationSpec = tween(400)) togetherWith
-                    slideOutVertically(targetOffsetY = { it }, animationSpec = tween(400))
+            ) {
+                val adaptiveInfo = androidx.compose.material3.adaptive.currentWindowAdaptiveInfo()
+                val customLayoutType = with(adaptiveInfo.windowSizeClass) {
+                    when {
+                        windowHeightSizeClass == androidx.window.core.layout.WindowHeightSizeClass.COMPACT ->
+                            androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationRail
+                        windowWidthSizeClass == androidx.window.core.layout.WindowWidthSizeClass.EXPANDED ->
+                            androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationRail
+                        windowWidthSizeClass == androidx.window.core.layout.WindowWidthSizeClass.MEDIUM ->
+                            androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationRail
+                        else -> androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationBar
+                    }
                 }
-                targetState == TopLevelScreen.SETTINGS -> {
-                    slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) togetherWith
-                    fadeOut(animationSpec = tween(400))
+
+                // Material 3 Adaptive Navigation Suite Scaffold
+                NavigationSuiteScaffold(
+                    layoutType = customLayoutType,
+                    navigationSuiteItems = {
+                        if (hasApi) {
+                            item(
+                                selected = selectedTab == 0,
+                                onClick = {
+                                    if (selectedTab == 0 && selectedOnlinePlaylist != null) {
+                                        selectedOnlinePlaylist = null
+                                    }
+                                    selectedTab = 0
+                                    selectedPlaylistForDetail = null
+                                },
+                                icon = {
+                                    Icon(Icons.Rounded.Home, contentDescription = "用户首页")
+                                },
+                                label = {
+                                    Text("首页")
+                                }
+                            )
+                        }
+                        item(
+                            selected = selectedTab == 1,
+                            onClick = {
+                                selectedTab = 1
+                            },
+                            icon = {
+                                Icon(Icons.Rounded.LibraryMusic, contentDescription = "我的歌单")
+                            },
+                            label = {
+                                Text(if (customPlaylists.isNotEmpty()) "歌单 (${customPlaylists.size})" else "歌单")
+                            }
+                        )
+                    }
+                ) {
+                    Scaffold(
+                        topBar = {
+                            TopAppBar(
+                                title = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
+                                            contentDescription = "Ame Player",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                        Text(
+                                            text = "Ame Player",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                },
+                                actions = {
+                                    if (selectedTab == 0 && selectedOnlinePlaylist == null) {
+                                        IconButton(onClick = { homepageRefreshTrigger++ }) {
+                                            Icon(Icons.Rounded.Refresh, contentDescription = "刷新首页")
+                                        }
+                                    }
+                                    if (selectedTab == 1 && selectedPlaylistForDetail == null) {
+                                        if (hasApi && isLoggedIn) {
+                                            IconButton(onClick = { showSyncCloudDialog = true }) {
+                                                Icon(Icons.Rounded.CloudSync, contentDescription = "同步云端")
+                                            }
+                                        }
+                                        IconButton(onClick = { showCreateDialog = true }) {
+                                            Icon(Icons.Rounded.Add, contentDescription = "新建本地")
+                                        }
+                                    }
+                                    IconButton(onClick = {
+                                        showSearchScreen = true
+                                    }) {
+                                        Icon(Icons.Rounded.Search, contentDescription = "搜索")
+                                    }
+                                    IconButton(onClick = {
+                                        showSettingsScreen = true
+                                    }) {
+                                        Icon(Icons.Rounded.Settings, contentDescription = "设置")
+                                    }
+                                },
+                                colors = TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                )
+                            )
+                        },
+                        bottomBar = {
+                            // Mini Player Bar
+                            AnimatedVisibility(
+                                visible = currentMedia != null && !showPlayerScreen,
+                                enter = slideInVertically(initialOffsetY = { it }),
+                                exit = slideOutVertically(targetOffsetY = { it })
+                            ) {
+                                MiniPlayerBar(
+                                    media = currentMedia,
+                                    isPlaying = isPlaying,
+                                    positionMs = positionMs,
+                                    durationMs = durationMs,
+                                    onTogglePlayPause = { playerEngine.togglePlayPause() },
+                                    onClick = { showPlayerScreen = true },
+                                    onSkipNext = { playerEngine.skipToNext() },
+                                    onSkipPrevious = { playerEngine.skipToPrevious() },
+                                    onQueueClick = { showQueueBottomSheet = true }
+                                )
+                            }
+                        }
+                    ) { padding ->
+                        Box(
+                            modifier = Modifier
+                                .padding(padding)
+                                .fillMaxSize()
+                        ) {
+                            AnimatedContent(
+                                targetState = selectedTab,
+                                transitionSpec = {
+                                    fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                                },
+                                label = "TabTransition",
+                                modifier = Modifier.fillMaxSize()
+                            ) { tab ->
+                                when (tab) {
+                                    0 -> {
+                                        // User Homepage Tab (支持在线歌单/每日推荐/专辑详情页预见性返回透出底层主页)
+                                        Box(modifier = Modifier.fillMaxSize()) {
+                                            if (selectedOnlinePlaylist != null && onlinePlaylistBackState.isVisibleInBackground) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .predictiveBackBackground(
+                                                            progress = onlinePlaylistBackState.progress,
+                                                            swipeEdge = onlinePlaylistBackState.swipeEdge
+                                                        )
+                                                ) {
+                                                    UserHomepageView(
+                                                        ncmApi = ncmApi,
+                                                        sessionManager = sessionManager,
+                                                        refreshTrigger = homepageRefreshTrigger,
+                                                        onPlaylistClick = { target: OnlinePlaylistTarget ->
+                                                            selectedOnlinePlaylist = target
+                                                        },
+                                                        onDailyRecommendClick = {
+                                                            selectedOnlinePlaylist = OnlinePlaylistTarget(
+                                                                id = -1L,
+                                                                title = "每日推荐",
+                                                                coverImgUrl = HomepageCache.firstSongCover ?: "",
+                                                                description = "根据你的音乐口味生成 · 每天 6:00 更新",
+                                                                isDailyRecommend = true
+                                                            )
+                                                        }
+                                                    )
+                                                    val onlineScrimAlpha = 0.35f * (1f - PredictiveBackEasing.transform(onlinePlaylistBackState.progress.coerceIn(0f, 1f)))
+                                                    if (onlineScrimAlpha > 0.005f) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .background(Color.Black.copy(alpha = onlineScrimAlpha))
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            AnimatedContent(
+                                                targetState = selectedOnlinePlaylist,
+                                                transitionSpec = {
+                                                    if (targetState != null && initialState == null) {
+                                                        slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                                                    } else if (targetState == null && initialState != null) {
+                                                        fadeIn(animationSpec = tween(300)) togetherWith slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
+                                                    } else {
+                                                        fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                                                    }
+                                                },
+                                                label = "OnlinePlaylistDetailTransition",
+                                                modifier = Modifier.fillMaxSize()
+                                            ) { onlineTarget ->
+                                                if (onlineTarget != null) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .predictiveBackForeground(state = onlinePlaylistBackState, pullDownDp = 12f)
+                                                            .background(MaterialTheme.colorScheme.surface)
+                                                    ) {
+                                                        OnlinePlaylistDetailView(
+                                                            target = onlineTarget,
+                                                            ncmApi = ncmApi,
+                                                            playlistManager = playlistManager,
+                                                            playerEngine = playerEngine,
+                                                            currentMedia = currentMedia,
+                                                            isPlaying = isPlaying,
+                                                            showMatchStatusPreference = showMatchStatusPreference,
+                                                            onBack = { selectedOnlinePlaylist = null },
+                                                            onSongAction = { media, pContext ->
+                                                                actionMedia = media
+                                                                actionPlaylistContext = pContext
+                                                                actionRemoveCallback = null
+                                                            }
+                                                        )
+                                                    }
+                                                } else {
+                                                    UserHomepageView(
+                                                        ncmApi = ncmApi,
+                                                        sessionManager = sessionManager,
+                                                        refreshTrigger = homepageRefreshTrigger,
+                                                        onPlaylistClick = { target: OnlinePlaylistTarget ->
+                                                            selectedOnlinePlaylist = target
+                                                        },
+                                                        onDailyRecommendClick = {
+                                                            selectedOnlinePlaylist = OnlinePlaylistTarget(
+                                                                id = -1L,
+                                                                title = "每日推荐",
+                                                                coverImgUrl = HomepageCache.firstSongCover ?: "",
+                                                                description = "根据你的音乐口味生成 · 每天 6:00 更新",
+                                                                isDailyRecommend = true
+                                                            )
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    1 -> {
+                                        // Custom Playlists Tab (支持歌单详情页预见性返回透出底层歌单列表)
+                                        Box(modifier = Modifier.fillMaxSize()) {
+                                            if (selectedPlaylistForDetail != null && playlistDetailBackState.isVisibleInBackground) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .predictiveBackBackground(
+                                                            progress = playlistDetailBackState.progress,
+                                                            swipeEdge = playlistDetailBackState.swipeEdge
+                                                        )
+                                                ) {
+                                                    PlaylistsView(
+                                                        playlists = customPlaylists,
+                                                        playlistManager = playlistManager,
+                                                        isLoggedIn = isLoggedIn,
+                                                        hasApi = hasApi,
+                                                        onSelectPlaylist = { selectedPlaylistForDetail = it },
+                                                        onReSyncPlaylist = reSyncPlaylist
+                                                    )
+                                                    val detailScrimAlpha = 0.35f * (1f - PredictiveBackEasing.transform(playlistDetailBackState.progress.coerceIn(0f, 1f)))
+                                                    if (detailScrimAlpha > 0.005f) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .background(Color.Black.copy(alpha = detailScrimAlpha))
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            AnimatedContent(
+                                                targetState = selectedPlaylistForDetail,
+                                                transitionSpec = {
+                                                    if (targetState != null && initialState == null) {
+                                                        slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                                                    } else if (targetState == null && initialState != null) {
+                                                        fadeIn(animationSpec = tween(300)) togetherWith slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
+                                                    } else {
+                                                        fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+                                                    }
+                                                },
+                                                label = "PlaylistDetailTransition",
+                                                modifier = Modifier.fillMaxSize()
+                                            ) { currentDetail ->
+                                                if (currentDetail != null) {
+                                                    // Playlist Detail View
+                                                    val currentPlaylist = currentDetail
+                                                    var inPlaylistSearchQuery by remember(currentPlaylist.id) { mutableStateOf("") }
+                                                    var isPlaylistSearchActive by remember(currentPlaylist.id) { mutableStateOf(false) }
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .predictiveBackForeground(state = playlistDetailBackState, pullDownDp = 12f)
+                                                            .background(MaterialTheme.colorScheme.surface)
+                                                    ) {
+                                                        Column(
+                                                            modifier = Modifier
+                                                                .fillMaxSize()
+                                                                .wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally)
+                                                                .widthIn(max = 840.dp)
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier
+                                                                    .fillMaxWidth()
+                                                                    .padding(16.dp),
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                IconButton(onClick = { selectedPlaylistForDetail = null }) {
+                                                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                                                                }
+                                                                Column(modifier = Modifier.weight(1f)) {
+                                                                    Text(
+                                                                        currentPlaylist.name,
+                                                                        style = MaterialTheme.typography.titleLarge,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        maxLines = 1,
+                                                                        overflow = TextOverflow.Ellipsis
+                                                                    )
+                                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                        Text(
+                                                                            "${currentPlaylist.songs.size} songs",
+                                                                            style = MaterialTheme.typography.bodyMedium,
+                                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                        )
+                                                                        if (currentPlaylist.ncmPlaylistId != null && currentPlaylist.ncmPlaylistId != -9999L) {
+                                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                                            SuggestionChip(
+                                                                                onClick = {},
+                                                                                label = { Text("云端", fontSize = 10.sp) },
+                                                                                modifier = Modifier.height(22.dp)
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
+                                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                                    if (currentPlaylist.ncmPlaylistId != null && hasApi && isLoggedIn) {
+                                                                        IconButton(onClick = { reSyncPlaylist(currentPlaylist) }) {
+                                                                            Icon(
+                                                                                Icons.Rounded.Sync,
+                                                                                contentDescription = "Re-sync",
+                                                                                tint = MaterialTheme.colorScheme.primary
+                                                                            )
+                                                                        }
+                                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                                    }
+                                                                    if (currentPlaylist.songs.isNotEmpty()) {
+                                                                        IconButton(onClick = {
+                                                                            isPlaylistSearchActive = !isPlaylistSearchActive
+                                                                            if (!isPlaylistSearchActive) inPlaylistSearchQuery = ""
+                                                                        }) {
+                                                                            Icon(
+                                                                                if (isPlaylistSearchActive) Icons.Rounded.SearchOff else Icons.Rounded.Search,
+                                                                                contentDescription = "歌单内搜索",
+                                                                                tint = if (isPlaylistSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                                                            )
+                                                                        }
+                                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                                    }
+                                                                    if (currentPlaylist.songs.isNotEmpty()) {
+                                                                        FilledTonalButton(
+                                                                            onClick = {
+                                                                                val filteredSongs = if (inPlaylistSearchQuery.isBlank()) {
+                                                                                    currentPlaylist.songs
+                                                                                } else {
+                                                                                    val q = inPlaylistSearchQuery.trim().lowercase()
+                                                                                    currentPlaylist.songs.filter {
+                                                                                        it.title.lowercase().contains(q) ||
+                                                                                        it.artist.lowercase().contains(q) ||
+                                                                                        it.album.lowercase().contains(q)
+                                                                                    }
+                                                                                }
+                                                                                val playableList = filteredSongs.map { dto ->
+                                                                                    val m = dto.toPlayableMedia()
+                                                                                    if (m is PlayableMedia.Online) {
+                                                                                        playlistManager.findLocalMatch(m) ?: m
+                                                                                    } else m
+                                                                                }
+                                                                                playerEngine.loadPlaylist(playableList)
+                                                                                playerEngine.play()
+                                                                            }
+                                                                        ) {
+                                                                            Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                                                                            Spacer(modifier = Modifier.width(4.dp))
+                                                                            Text(if (inPlaylistSearchQuery.isNotBlank()) "播放筛选" else "Play All")
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            // Search bar inside playlist (Animated)
+                                                            AnimatedVisibility(
+                                                                visible = isPlaylistSearchActive,
+                                                                enter = expandVertically() + fadeIn(),
+                                                                exit = shrinkVertically() + fadeOut()
+                                                            ) {
+                                                                OutlinedTextField(
+                                                                    value = inPlaylistSearchQuery,
+                                                                    onValueChange = { inPlaylistSearchQuery = it },
+                                                                    placeholder = {
+                                                                        Text(
+                                                                            "在《${currentPlaylist.name}》中搜索歌曲/歌手/专辑...",
+                                                                            style = MaterialTheme.typography.bodyMedium,
+                                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                        )
+                                                                    },
+                                                                    leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
+                                                                    trailingIcon = {
+                                                                        if (inPlaylistSearchQuery.isNotEmpty()) {
+                                                                            IconButton(onClick = { inPlaylistSearchQuery = "" }) {
+                                                                                Icon(Icons.Rounded.Close, contentDescription = "清空")
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    singleLine = true,
+                                                                    modifier = Modifier
+                                                                        .fillMaxWidth()
+                                                                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                                                                    shape = RoundedCornerShape(12.dp)
+                                                                )
+                                                            }
+
+                                                            if (currentPlaylist.songs.isEmpty()) {
+                                                                Box(
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    Text(
+                                                                        "No songs in this playlist yet",
+                                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                    )
+                                                                }
+                                                            } else {
+                                                                val songMatchTriples = remember(currentPlaylist.songs, inPlaylistSearchQuery, customPlaylists) {
+                                                                    val allTriples = currentPlaylist.songs.mapIndexed { index, songDto ->
+                                                                        val media = songDto.toPlayableMedia()
+                                                                        val localMatch = if (media is PlayableMedia.Online) playlistManager.findLocalMatch(media) else null
+                                                                        Triple(index, songDto, localMatch != null)
+                                                                    }
+                                                                    if (inPlaylistSearchQuery.isBlank()) {
+                                                                        allTriples
+                                                                    } else {
+                                                                        val q = inPlaylistSearchQuery.trim().lowercase()
+                                                                        allTriples.filter { (_, songDto, _) ->
+                                                                            songDto.title.lowercase().contains(q) ||
+                                                                            songDto.artist.lowercase().contains(q) ||
+                                                                            songDto.album.lowercase().contains(q)
+                                                                        }
+                                                                    }
+                                                                }
+                                                                val matchedCount = remember(songMatchTriples) { songMatchTriples.count { it.third } }
+                                                                val unmatchedCount = remember(songMatchTriples) { songMatchTriples.size - matchedCount }
+
+                                                                if (showMatchStatusPreference) {
+                                                                    Row(
+                                                                        modifier = Modifier
+                                                                            .fillMaxWidth()
+                                                                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                        verticalAlignment = Alignment.CenterVertically
+                                                                    ) {
+                                                                        FilterChip(
+                                                                            selected = matchFilterMode == 0,
+                                                                            onClick = { matchFilterMode = 0 },
+                                                                            label = { Text("全部 (${songMatchTriples.size})") }
+                                                                        )
+                                                                        FilterChip(
+                                                                            selected = matchFilterMode == 1,
+                                                                            onClick = { matchFilterMode = 1 },
+                                                                            label = { Text("已匹配 ($matchedCount)") }
+                                                                        )
+                                                                        FilterChip(
+                                                                            selected = matchFilterMode == 2,
+                                                                            onClick = { matchFilterMode = 2 },
+                                                                            label = { Text("未匹配 ($unmatchedCount)") }
+                                                                        )
+                                                                    }
+                                                                }
+
+                                                                val displayedSongs = remember(songMatchTriples, matchFilterMode, showMatchStatusPreference) {
+                                                                    if (!showMatchStatusPreference || matchFilterMode == 0) {
+                                                                        songMatchTriples
+                                                                    } else if (matchFilterMode == 1) {
+                                                                        songMatchTriples.filter { it.third }
+                                                                    } else {
+                                                                        songMatchTriples.filter { !it.third }
+                                                                    }
+                                                                }
+
+                                                                if (displayedSongs.isEmpty()) {
+                                                                    Box(
+                                                                        modifier = Modifier.fillMaxSize(),
+                                                                        contentAlignment = Alignment.Center
+                                                                    ) {
+                                                                        Text(
+                                                                            if (inPlaylistSearchQuery.isNotBlank()) "未在歌单内找到匹配歌曲"
+                                                                            else if (matchFilterMode == 1) "暂无已匹配的歌曲"
+                                                                            else "暂无未匹配的歌曲",
+                                                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                                        )
+                                                                    }
+                                                                } else {
+                                                                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                                                        items(displayedSongs, key = { it.second.id }) { (origIndex, songDto, isMatched) ->
+                                                                            val media = songDto.toPlayableMedia()
+                                                                            SongItem(
+                                                                                media = media,
+                                                                                isCurrentTrack = currentMedia?.id == media.id,
+                                                                                isPlaying = isPlaying && currentMedia?.id == media.id,
+                                                                                isLocalMatch = isMatched,
+                                                                                onClick = {
+                                                                                    val playableList = displayedSongs.map { (_, dto, _) ->
+                                                                                        val m = dto.toPlayableMedia()
+                                                                                        if (m is PlayableMedia.Online) {
+                                                                                            playlistManager.findLocalMatch(m) ?: m
+                                                                                        } else m
+                                                                                    }
+                                                                                    playerEngine.loadPlaylist(playableList, origIndex)
+                                                                                    playerEngine.play()
+                                                                                },
+                                                                                onActionClick = {
+                                                                                    actionMedia = media
+                                                                                    actionPlaylistContext = currentPlaylist
+                                                                                    actionRemoveCallback = {
+                                                                                        playlistManager.removeSongFromPlaylist(currentPlaylist.id, media.id)
+                                                                                        selectedPlaylistForDetail = playlistManager.playlists.value.find { it.id == currentPlaylist.id }
+                                                                                        if (currentPlaylist.ncmPlaylistId != null) {
+                                                                                            scope.launch(Dispatchers.IO) {
+                                                                                                ncmApi.updatePlaylistTracks("del", currentPlaylist.ncmPlaylistId, media.id)
+                                                                                            }
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    // Playlists Grid / List View
+                                                    PlaylistsView(
+                                                        playlists = customPlaylists,
+                                                        playlistManager = playlistManager,
+                                                        isLoggedIn = isLoggedIn,
+                                                        hasApi = hasApi,
+                                                        onSelectPlaylist = { selectedPlaylistForDetail = it },
+                                                        onReSyncPlaylist = reSyncPlaylist
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                initialState == TopLevelScreen.SETTINGS -> {
-                    fadeIn(animationSpec = tween(400)) togetherWith
-                    slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(400))
-                }
-                targetState == TopLevelScreen.SEARCH -> {
-                    slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) togetherWith
-                    fadeOut(animationSpec = tween(400))
-                }
-                initialState == TopLevelScreen.SEARCH -> {
-                    fadeIn(animationSpec = tween(400)) togetherWith
-                    slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(400))
-                }
-                else -> {
-                    fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+
+                if (topLevelScreen != TopLevelScreen.MAIN && isTopBackActive) {
+                    val topScrimAlpha = 0.42f * (1f - PredictiveBackEasing.transform(activeTopBackProgress.coerceIn(0f, 1f)))
+                    if (topScrimAlpha > 0.005f) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = topScrimAlpha))
+                        )
+                    }
                 }
             }
-        },
-        label = "TopLevelTransition",
-        modifier = Modifier.fillMaxSize()
-    ) { screen ->
-        when (screen) {
-            TopLevelScreen.PLAYER -> {
+        }
+
+        AnimatedVisibility(
+            visible = topLevelScreen == TopLevelScreen.PLAYER,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
+            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackForeground(state = playerBackState, pullDownDp = 42f)
+            ) {
                 PlayerScreen(
                     playerState = playerEngine,
                     playerController = playerEngine,
@@ -281,15 +863,19 @@ fun MainScreen(
                     }
                 )
             }
-            TopLevelScreen.SETTINGS -> {
-                SettingsScreen(
-                    sessionManager = sessionManager,
-                    ncmApi = ncmApi,
-                    localFolderManager = localFolderManager,
-                    onBack = { showSettingsScreen = false }
-                )
-            }
-            TopLevelScreen.SEARCH -> {
+        }
+
+        AnimatedVisibility(
+            visible = topLevelScreen == TopLevelScreen.SEARCH,
+            enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
+            exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackForeground(state = searchBackState, pullDownDp = 12f)
+            ) {
                 SearchScreen(
                     playerState = playerEngine,
                     playerController = playerEngine,
@@ -304,489 +890,33 @@ fun MainScreen(
                     },
                     onOpenPlaylistTarget = { target ->
                         selectedOnlinePlaylist = target
+                        selectedTab = 0
                         showSearchScreen = false
                     }
                 )
             }
-            TopLevelScreen.MAIN -> {
-
-        val adaptiveInfo = androidx.compose.material3.adaptive.currentWindowAdaptiveInfo()
-        val customLayoutType = with(adaptiveInfo.windowSizeClass) {
-            when {
-                windowHeightSizeClass == androidx.window.core.layout.WindowHeightSizeClass.COMPACT -> 
-                    androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationRail
-                windowWidthSizeClass == androidx.window.core.layout.WindowWidthSizeClass.EXPANDED -> 
-                    androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationRail
-                windowWidthSizeClass == androidx.window.core.layout.WindowWidthSizeClass.MEDIUM -> 
-                    androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationRail
-                else -> androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationBar
-            }
         }
 
-        // Material 3 Adaptive Navigation Suite Scaffold
-        NavigationSuiteScaffold(
-            layoutType = customLayoutType,
-            navigationSuiteItems = {
-                if (hasApi) {
-                    item(
-                        selected = selectedTab == 0,
-                        onClick = {
-                            if (selectedTab == 0 && selectedOnlinePlaylist != null) {
-                                selectedOnlinePlaylist = null
-                            }
-                            selectedTab = 0
-                            selectedPlaylistForDetail = null
-                        },
-                        icon = {
-                            Icon(Icons.Rounded.Home, contentDescription = "用户首页")
-                        },
-                        label = {
-                            Text("首页")
-                        }
-                    )
-                }
-                item(
-                    selected = selectedTab == 1,
-                    onClick = {
-                        selectedTab = 1
-                    },
-                    icon = {
-                        Icon(Icons.Rounded.LibraryMusic, contentDescription = "我的歌单")
-                    },
-                    label = {
-                        Text(if (customPlaylists.isNotEmpty()) "歌单 (${customPlaylists.size})" else "歌单")
-                    }
-                )
-            }
+        AnimatedVisibility(
+            visible = topLevelScreen == TopLevelScreen.SETTINGS,
+            enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
+            exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
+            modifier = Modifier.fillMaxSize()
         ) {
-            Scaffold(
-                topBar = {
-                    TopAppBar(
-                        title = {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
-                                    contentDescription = "Ame Player",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                                Text(
-                                    text = "Ame Player",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        },
-                        actions = {
-                            if (selectedTab == 0 && selectedOnlinePlaylist == null) {
-                                IconButton(onClick = { homepageRefreshTrigger++ }) {
-                                    Icon(Icons.Rounded.Refresh, contentDescription = "刷新首页")
-                                }
-                            }
-                            if (selectedTab == 1 && selectedPlaylistForDetail == null) {
-                                if (hasApi && isLoggedIn) {
-                                    IconButton(onClick = { showSyncCloudDialog = true }) {
-                                        Icon(Icons.Rounded.CloudSync, contentDescription = "同步云端")
-                                    }
-                                }
-                                IconButton(onClick = { showCreateDialog = true }) {
-                                    Icon(Icons.Rounded.Add, contentDescription = "新建本地")
-                                }
-                            }
-                            IconButton(onClick = {
-                                showSearchScreen = true
-                            }) {
-                                Icon(Icons.Rounded.Search, contentDescription = "搜索")
-                            }
-                            IconButton(onClick = {
-                                showSettingsScreen = true
-                            }) {
-                                Icon(Icons.Rounded.Settings, contentDescription = "设置")
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
-                    )
-                },
-                bottomBar = {
-                    // Mini Player Bar
-                    AnimatedVisibility(
-                        visible = currentMedia != null && !showPlayerScreen,
-                        enter = slideInVertically(initialOffsetY = { it }),
-                        exit = slideOutVertically(targetOffsetY = { it })
-                    ) {
-                        MiniPlayerBar(
-                            media = currentMedia,
-                            isPlaying = isPlaying,
-                            positionMs = positionMs,
-                            durationMs = durationMs,
-                            onTogglePlayPause = { playerEngine.togglePlayPause() },
-                            onClick = { showPlayerScreen = true },
-                            onSkipNext = { playerEngine.skipToNext() },
-                            onSkipPrevious = { playerEngine.skipToPrevious() },
-                            onQueueClick = { showQueueBottomSheet = true }
-                        )
-                    }
-                }
-            ) { padding ->
-                Box(
-                    modifier = Modifier
-                        .padding(padding)
-                        .fillMaxSize()
-                ) {
-                    AnimatedContent(
-                        targetState = selectedTab,
-                        transitionSpec = {
-                            fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
-                        },
-                        label = "TabTransition",
-                        modifier = Modifier.fillMaxSize()
-                    ) { tab ->
-                        when (tab) {
-                        0 -> {
-                            // User Homepage Tab
-                            AnimatedContent(
-                                targetState = selectedOnlinePlaylist,
-                                transitionSpec = {
-                                    if (targetState != null && initialState == null) {
-                                        slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
-                                    } else if (targetState == null && initialState != null) {
-                                        fadeIn(animationSpec = tween(300)) togetherWith slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
-                                    } else {
-                                        fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
-                                    }
-                                },
-                                label = "OnlinePlaylistDetailTransition",
-                                modifier = Modifier.fillMaxSize()
-                            ) { onlineTarget ->
-                                if (onlineTarget != null) {
-                                    OnlinePlaylistDetailView(
-                                        target = onlineTarget,
-                                        ncmApi = ncmApi,
-                                        playlistManager = playlistManager,
-                                        playerEngine = playerEngine,
-                                        currentMedia = currentMedia,
-                                        isPlaying = isPlaying,
-                                        showMatchStatusPreference = showMatchStatusPreference,
-                                        onBack = { selectedOnlinePlaylist = null },
-                                        onSongAction = { media, pContext ->
-                                            actionMedia = media
-                                            actionPlaylistContext = pContext
-                                            actionRemoveCallback = null
-                                        }
-                                    )
-                                } else {
-                                    UserHomepageView(
-                                        ncmApi = ncmApi,
-                                        sessionManager = sessionManager,
-                                        refreshTrigger = homepageRefreshTrigger,
-                                        onPlaylistClick = { target: OnlinePlaylistTarget ->
-                                            selectedOnlinePlaylist = target
-                                        },
-                                        onDailyRecommendClick = {
-                                            selectedOnlinePlaylist = OnlinePlaylistTarget(
-                                                id = -1L,
-                                                title = "每日推荐",
-                                                coverImgUrl = HomepageCache.firstSongCover ?: "",
-                                                description = "根据你的音乐口味生成 · 每天 6:00 更新",
-                                                isDailyRecommend = true
-                                            )
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                        1 -> {
-                            // Custom Playlists Tab
-                            AnimatedContent(
-                                targetState = selectedPlaylistForDetail,
-                                transitionSpec = {
-                                    if (targetState != null && initialState == null) {
-                                        slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
-                                    } else if (targetState == null && initialState != null) {
-                                        fadeIn(animationSpec = tween(300)) togetherWith slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
-                                    } else {
-                                        fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
-                                    }
-                                },
-                                label = "PlaylistDetailTransition",
-                                modifier = Modifier.fillMaxSize()
-                            ) { currentDetail ->
-                                if (currentDetail != null) {
-                                    // Playlist Detail View
-                                    val currentPlaylist = currentDetail
-                                    var inPlaylistSearchQuery by remember(currentPlaylist.id) { mutableStateOf("") }
-                                    var isPlaylistSearchActive by remember(currentPlaylist.id) { mutableStateOf(false) }
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally)
-                                        .widthIn(max = 840.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        IconButton(onClick = { selectedPlaylistForDetail = null }) {
-                                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
-                                        }
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                currentPlaylist.name,
-                                                style = MaterialTheme.typography.titleLarge,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    "${currentPlaylist.songs.size} songs",
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                if (currentPlaylist.ncmPlaylistId != null && currentPlaylist.ncmPlaylistId != -9999L) {
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    SuggestionChip(
-                                                        onClick = {},
-                                                        label = { Text("云端", fontSize = 10.sp) },
-                                                        modifier = Modifier.height(22.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (currentPlaylist.ncmPlaylistId != null && hasApi && isLoggedIn) {
-                                                IconButton(onClick = { reSyncPlaylist(currentPlaylist) }) {
-                                                    Icon(
-                                                        Icons.Rounded.Sync,
-                                                        contentDescription = "Re-sync",
-                                                        tint = MaterialTheme.colorScheme.primary
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                            }
-                                            if (currentPlaylist.songs.isNotEmpty()) {
-                                                IconButton(onClick = {
-                                                    isPlaylistSearchActive = !isPlaylistSearchActive
-                                                    if (!isPlaylistSearchActive) inPlaylistSearchQuery = ""
-                                                }) {
-                                                    Icon(
-                                                        if (isPlaylistSearchActive) Icons.Rounded.SearchOff else Icons.Rounded.Search,
-                                                        contentDescription = "歌单内搜索",
-                                                        tint = if (isPlaylistSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                            }
-                                            if (currentPlaylist.songs.isNotEmpty()) {
-                                                FilledTonalButton(
-                                                    onClick = {
-                                                        val filteredSongs = if (inPlaylistSearchQuery.isBlank()) {
-                                                            currentPlaylist.songs
-                                                        } else {
-                                                            val q = inPlaylistSearchQuery.trim().lowercase()
-                                                            currentPlaylist.songs.filter {
-                                                                it.title.lowercase().contains(q) ||
-                                                                it.artist.lowercase().contains(q) ||
-                                                                it.album.lowercase().contains(q)
-                                                            }
-                                                        }
-                                                        val playableList = filteredSongs.map { dto ->
-                                                            val m = dto.toPlayableMedia()
-                                                            if (m is PlayableMedia.Online) {
-                                                                playlistManager.findLocalMatch(m) ?: m
-                                                            } else m
-                                                        }
-                                                        playerEngine.loadPlaylist(playableList)
-                                                        playerEngine.play()
-                                                    }
-                                                ) {
-                                                    Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text(if (inPlaylistSearchQuery.isNotBlank()) "播放筛选" else "Play All")
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Search bar inside playlist (Animated)
-                                    AnimatedVisibility(
-                                        visible = isPlaylistSearchActive,
-                                        enter = expandVertically() + fadeIn(),
-                                        exit = shrinkVertically() + fadeOut()
-                                    ) {
-                                        OutlinedTextField(
-                                            value = inPlaylistSearchQuery,
-                                            onValueChange = { inPlaylistSearchQuery = it },
-                                            placeholder = {
-                                                Text(
-                                                    "在《${currentPlaylist.name}》中搜索歌曲/歌手/专辑...",
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            },
-                                            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
-                                            trailingIcon = {
-                                                if (inPlaylistSearchQuery.isNotEmpty()) {
-                                                    IconButton(onClick = { inPlaylistSearchQuery = "" }) {
-                                                        Icon(Icons.Rounded.Close, contentDescription = "清空")
-                                                    }
-                                                }
-                                            },
-                                            singleLine = true,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                                            shape = RoundedCornerShape(12.dp)
-                                        )
-                                    }
-
-                                    if (currentPlaylist.songs.isEmpty()) {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                "No songs in this playlist yet",
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    } else {
-                                        val songMatchTriples = remember(currentPlaylist.songs, inPlaylistSearchQuery, customPlaylists) {
-                                            val allTriples = currentPlaylist.songs.mapIndexed { index, songDto ->
-                                                val media = songDto.toPlayableMedia()
-                                                val localMatch = if (media is PlayableMedia.Online) playlistManager.findLocalMatch(media) else null
-                                                Triple(index, songDto, localMatch != null)
-                                            }
-                                            if (inPlaylistSearchQuery.isBlank()) {
-                                                allTriples
-                                            } else {
-                                                val q = inPlaylistSearchQuery.trim().lowercase()
-                                                allTriples.filter { (_, songDto, _) ->
-                                                    songDto.title.lowercase().contains(q) ||
-                                                    songDto.artist.lowercase().contains(q) ||
-                                                    songDto.album.lowercase().contains(q)
-                                                }
-                                            }
-                                        }
-                                        val matchedCount = remember(songMatchTriples) { songMatchTriples.count { it.third } }
-                                        val unmatchedCount = remember(songMatchTriples) { songMatchTriples.size - matchedCount }
-
-                                        if (showMatchStatusPreference) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                FilterChip(
-                                                    selected = matchFilterMode == 0,
-                                                    onClick = { matchFilterMode = 0 },
-                                                    label = { Text("全部 (${songMatchTriples.size})") }
-                                                )
-                                                FilterChip(
-                                                    selected = matchFilterMode == 1,
-                                                    onClick = { matchFilterMode = 1 },
-                                                    label = { Text("已匹配 ($matchedCount)") }
-                                                )
-                                                FilterChip(
-                                                    selected = matchFilterMode == 2,
-                                                    onClick = { matchFilterMode = 2 },
-                                                    label = { Text("未匹配 ($unmatchedCount)") }
-                                                )
-                                            }
-                                        }
-
-                                        val displayedSongs = remember(songMatchTriples, matchFilterMode, showMatchStatusPreference) {
-                                            if (!showMatchStatusPreference || matchFilterMode == 0) {
-                                                songMatchTriples
-                                            } else if (matchFilterMode == 1) {
-                                                songMatchTriples.filter { it.third }
-                                            } else {
-                                                songMatchTriples.filter { !it.third }
-                                            }
-                                        }
-
-                                        if (displayedSongs.isEmpty()) {
-                                            Box(
-                                                modifier = Modifier.fillMaxSize(),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Text(
-                                                    if (inPlaylistSearchQuery.isNotBlank()) "未在歌单内找到匹配歌曲"
-                                                    else if (matchFilterMode == 1) "暂无已匹配的歌曲"
-                                                    else "暂无未匹配的歌曲",
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            }
-                                        } else {
-                                            LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                                items(displayedSongs, key = { it.second.id }) { (origIndex, songDto, isMatched) ->
-                                                    val media = songDto.toPlayableMedia()
-                                                    SongItem(
-                                                        media = media,
-                                                        isCurrentTrack = currentMedia?.id == media.id,
-                                                        isPlaying = isPlaying && currentMedia?.id == media.id,
-                                                        isLocalMatch = isMatched,
-                                                        onClick = {
-                                                            val playableList = displayedSongs.map { (_, dto, _) ->
-                                                                val m = dto.toPlayableMedia()
-                                                                if (m is PlayableMedia.Online) {
-                                                                    playlistManager.findLocalMatch(m) ?: m
-                                                                } else m
-                                                            }
-                                                            playerEngine.loadPlaylist(playableList, origIndex)
-                                                            playerEngine.play()
-                                                        },
-                                                        onActionClick = {
-                                                            actionMedia = media
-                                                            actionPlaylistContext = currentPlaylist
-                                                            actionRemoveCallback = {
-                                                                playlistManager.removeSongFromPlaylist(currentPlaylist.id, media.id)
-                                                                selectedPlaylistForDetail = playlistManager.playlists.value.find { it.id == currentPlaylist.id }
-                                                                if (currentPlaylist.ncmPlaylistId != null) {
-                                                                    scope.launch(Dispatchers.IO) {
-                                                                        ncmApi.updatePlaylistTracks("del", currentPlaylist.ncmPlaylistId, media.id)
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                // Playlists Grid / List View
-                                PlaylistsView(
-                                    playlists = customPlaylists,
-                                    playlistManager = playlistManager,
-                                    isLoggedIn = isLoggedIn,
-                                    hasApi = hasApi,
-                                    onSelectPlaylist = { selectedPlaylistForDetail = it },
-                                    onReSyncPlaylist = reSyncPlaylist
-                                )
-                            }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackForeground(state = settingsBackState, pullDownDp = 12f)
+            ) {
+                SettingsScreen(
+                    sessionManager = sessionManager,
+                    ncmApi = ncmApi,
+                    localFolderManager = localFolderManager,
+                    onBack = { showSettingsScreen = false }
+                )
             }
         }
     }
-
-    
 
     // Add To Playlist Dialog
     if (songToAddToPlaylist != null) {
@@ -881,7 +1011,6 @@ fun MainScreen(
                             )
                         }
                     }
-                }
                 }
             }
         }

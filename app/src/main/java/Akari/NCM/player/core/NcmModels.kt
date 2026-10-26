@@ -60,7 +60,8 @@ data class OnlinePlaylistTarget(
     val creatorName: String = "",
     val description: String = "",
     val isDailyRecommend: Boolean = false,
-    val isAlbum: Boolean = false
+    val isAlbum: Boolean = false,
+    val isArtist: Boolean = false
 )
 
 @Serializable

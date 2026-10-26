@@ -8,7 +8,6 @@ import android.content.ComponentName
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.media3.session.MediaController
@@ -41,11 +40,6 @@ class MainActivity : ComponentActivity() {
         // 启动前台播放服务，让 ExoPlayer 与 MediaSession 在后台持续存活
         runCatching {
             startService(Intent(this, AmePlaybackService::class.java))
-        }
-
-        // 拦截返回手势：将任务移到后台而非销毁 Activity，保持播放状态
-        onBackPressedDispatcher.addCallback(this) {
-            moveTaskToBack(true)
         }
 
         setContent {

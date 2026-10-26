@@ -87,6 +87,17 @@ fun OnlinePlaylistDetailView(
                 } else {
                     errorMessage = "未获取到专辑曲目，请检查网络或稍后重试"
                 }
+            } else if (target.isArtist) {
+                val artistSongs = ncmApi.getArtistTopSongs(target.id)
+                if (artistSongs.isNotEmpty()) {
+                    tracks = artistSongs
+                    playlistMeta = playlistMeta.copy(
+                        trackCount = artistSongs.size,
+                        coverImgUrl = if (playlistMeta.coverImgUrl.isBlank()) artistSongs.first().coverUrl ?: "" else playlistMeta.coverImgUrl
+                    )
+                } else {
+                    errorMessage = "未获取到歌手热门曲目，请检查网络或稍后重试"
+                }
             } else {
                 val result = ncmApi.getPlaylistDetailAndTracks(target.id, target.trackCount)
                 if (result.tracks.isNotEmpty()) {
@@ -166,7 +177,12 @@ fun OnlinePlaylistDetailView(
                 Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
             }
             Text(
-                text = if (target.isDailyRecommend) "每日推荐" else if (target.isAlbum) "专辑详情" else "歌单详情",
+                text = when {
+                    target.isDailyRecommend -> "每日推荐"
+                    target.isAlbum -> "专辑详情"
+                    target.isArtist -> "歌手热门"
+                    else -> "歌单详情"
+                },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,

@@ -1,0 +1,6 @@
+{
+  "summary":  "为 Ame Player 引入全局 AOSP 预见性返回手势（Predictive Back）的实施方案，涵盖系统级返回桌面缩略预览、后台播放保活机制，以及播放页、设置页、歌单详情页、播放队列与全屏歌词五个层级的跟手缩放透视返回动效。",
+  "updatedAt":  "2026-10-26T12:36:12.830024505Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}
