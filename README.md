@@ -159,6 +159,9 @@ app/src/main/java/Akari/NCM/player/
 
 ### CI / CD 自动构建与签名发布
 
+> [!NOTE]
+> 工作流依赖自行配置的签名文件，信息储存在GitHub Action环境变量内，如需fork后使用，请自行在Action环境变量内设置对应的变量，或修改工作流问题。
+
 仓库已配置两条 GitHub Actions 工作流：
 
 - **`.github/workflows/build-signed-apk.yml`**：在 `main` 分支推送、PR 或手动触发时自动运行单元测试并构建多架构 Release APK（`arm64-v8a`、`armeabi-v7a`、`universal`），在配置签名 Secrets 后自动执行 `zipalign` 与 `apksigner` 签名校验并上传构件。
