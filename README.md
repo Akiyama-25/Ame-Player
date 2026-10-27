@@ -28,12 +28,11 @@
 
 ## 特性概览
 
-- **网易云官方直连**：内置纯 Kotlin 实现的协议加解密层（WeAPI / EAPI），无需自行搭建外部云端服务。支持扫码登录、云端歌单双向同步、每日推荐与全方位曲库搜索（单曲/专辑/歌手/歌词）。
+- **端侧Netease API**：由 Kotlin 实现的协议加解密层（WeAPI / EAPI），无需自行搭建外部云端服务。支持扫码登录、云端歌单双向同步、每日推荐与全方位曲库搜索（单曲/专辑/歌手/歌词）。
 - **本地管理与 NCM 解密**：支持多本地目录批量扫描与智能歌曲匹配（ID / 文本双重比对），原生流式解密 `.ncm` 加密文件并自动补全元数据与双语歌词。
-- **发烧级音频体验**：基于 AndroidX Media3 (ExoPlayer)，自动协商最高音质（Hi-Res / 无损），内置 USB DAC 独占模式绕过系统重采样，实现 Bit-Perfect 原始码流直通。
-- **现代化设计与交互**：Material 3 Adaptive 自适应布局（无缝适配竖屏、横屏、折叠屏及平板）、Monet 动态取色、系统级预测性返回手势（AOSP Predictive Back）跟手缩放与平滑转场动画。
-- **实况通知与状态栏歌词**：适配 Xiaomi HyperOS（焦点通知/超级岛）、OPPO ColorOS（流体云）、vivo OriginOS（原子岛）、Samsung One UI（Now Bar）及 Flyme 状态栏实时歌词。
-- **诊断与分级日志**：内置完整日志工具（AppLogger），支持多级别过滤、单文件大小限制与自动轮转，可一键导出为 `.log`、`.md` 或 `.zip`。
+- **（实验性）USB独占**：基于 AndroidX Media3 (ExoPlayer)，自动协商最高音质（Hi-Res / 无损），内置 USB DAC 独占模式绕过系统重采样，实现 Bit-Perfect 原始码流直通。
+- **设计与交互**：Material 3 Adaptive 自适应布局（无缝适配竖屏、横屏、折叠屏及平板）、Monet 动态取色、系统级预测性返回手势（AOSP Predictive Back）跟手缩放与平滑转场动画。
+- **实况通知与（实验性）“灵动岛”**：适配 Xiaomi HyperOS（焦点通知/超级岛）、OPPO ColorOS（流体云）、vivo OriginOS（原子岛）、Samsung One UI（Now Bar）及 Flyme 状态栏实时歌词。
 
 ---
 
