@@ -57,6 +57,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import Akari.NCM.player.MainActivity
 import Akari.NCM.player.core.LyricLine
 import Akari.NCM.player.core.LyricSource
+import Akari.NCM.player.core.UsbDeviceDetails
 import Akari.NCM.player.data.LyricResult
 import Akari.NCM.player.data.LyricsManager
 import Akari.NCM.player.data.ThemePrefs
@@ -145,6 +146,8 @@ class AmePlayerEngine @Inject constructor(
 
     override val isUsbExclusiveMode: StateFlow<Boolean> = usbAudioManager.isExclusiveModeEnabled
     override val connectedUsbDeviceName: StateFlow<String?> = usbAudioManager.connectedUsbDeviceName
+    override val usbUacVersion: StateFlow<String?> = usbAudioManager.uacVersion
+    override val usbDeviceDetails: StateFlow<UsbDeviceDetails?> = usbAudioManager.usbDeviceDetails
 
     // Map mediaId to PlayableMedia for quick resolution
     private val mediaMap = ConcurrentHashMap<String, PlayableMedia>()
@@ -847,8 +850,15 @@ class AmePlayerEngine @Inject constructor(
 
     private fun applyUsbAudioRouting(device: AudioDeviceInfo?, isExclusive: Boolean) {
         if (isExclusive && device != null) {
-            Log.i("[AME_USB_AUDIO]", ">>> Applying USB Exclusive Routing to device: '${device.productName}' (id=${device.id}, type=${device.type})")
+            val uac = usbAudioManager.uacVersion.value ?: "UAC"
+            Log.i("[AME_USB_AUDIO]", ">>> Applying USB Exclusive Routing to device: '${device.productName}' ($uac, id=${device.id}, type=${device.type})")
             exoPlayer.setPreferredAudioDevice(device)
+            val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
+                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                .setUsage(C.USAGE_MEDIA)
+                .setAllowedCapturePolicy(C.ALLOW_CAPTURE_BY_NONE)
+                .build()
+            exoPlayer.setAudioAttributes(audioAttributes, false)
         } else {
             Log.i("[AME_USB_AUDIO]", ">>> Reverting USB Audio routing to default (isExclusive=$isExclusive, device=${device?.productName})")
             exoPlayer.setPreferredAudioDevice(null)

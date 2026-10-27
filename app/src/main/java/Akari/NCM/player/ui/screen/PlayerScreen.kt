@@ -304,11 +304,14 @@ private fun PlayerMainContentView(
 
     val isUsbExclusiveMode by playerState.isUsbExclusiveMode.collectAsState()
     val connectedUsbDeviceName by playerState.connectedUsbDeviceName.collectAsState()
+    val usbUacVersion by playerState.usbUacVersion.collectAsState()
+    val usbDeviceDetails by playerState.usbDeviceDetails.collectAsState()
 
     if (showQuickFunctionsDialog) {
         QuickFunctionsDialog(
             isUsbExclusive = isUsbExclusiveMode,
             usbDeviceName = connectedUsbDeviceName,
+            uacVersion = usbUacVersion,
             onDismiss = { showQuickFunctionsDialog = false },
             onShowStatusClick = { showPlaybackStatusDialog = true },
             onShowUsbExclusiveClick = { showUsbExclusiveDialog = true },
@@ -320,6 +323,8 @@ private fun PlayerMainContentView(
         UsbExclusiveDialog(
             isExclusive = isUsbExclusiveMode,
             usbDeviceName = connectedUsbDeviceName,
+            uacVersion = usbUacVersion,
+            deviceDetails = usbDeviceDetails,
             onToggleExclusive = { enabled ->
                 playerController.setUsbExclusiveMode(enabled)
             },
@@ -334,6 +339,7 @@ private fun PlayerMainContentView(
             audioFormatInfo = audioFormatInfo,
             isUsbExclusive = isUsbExclusiveMode,
             usbDeviceName = connectedUsbDeviceName,
+            uacVersion = usbUacVersion,
             onDismiss = { showPlaybackStatusDialog = false }
         )
     }
@@ -1574,6 +1580,7 @@ private fun formatTime(millis: Long): String {
 private fun QuickFunctionsDialog(
     isUsbExclusive: Boolean,
     usbDeviceName: String?,
+    uacVersion: String? = null,
     onDismiss: () -> Unit,
     onShowStatusClick: () -> Unit,
     onShowUsbExclusiveClick: () -> Unit,
@@ -1655,10 +1662,11 @@ private fun QuickFunctionsDialog(
                                         }
                                     }
                                 }
+                                val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""
                                 val subText = when {
-                                    isUsbExclusive && !usbDeviceName.isNullOrBlank() -> "已独占绑定: $usbDeviceName"
-                                    !usbDeviceName.isNullOrBlank() -> "已检测到: $usbDeviceName (点击配置)"
-                                    else -> "绕过系统混音器实现 Bit-Perfect 无损直通"
+                                    isUsbExclusive && !usbDeviceName.isNullOrBlank() -> "已独占绑定: $usbDeviceName$uacTag"
+                                    !usbDeviceName.isNullOrBlank() -> "已检测到: $usbDeviceName$uacTag (点击配置)"
+                                    else -> "基于方案三实现硬件接口排他独占与直通"
                                 }
                                 Text(subText, fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
@@ -1696,10 +1704,15 @@ private fun QuickFunctionsDialog(
 private fun UsbExclusiveDialog(
     isExclusive: Boolean,
     usbDeviceName: String?,
+    uacVersion: String?,
+    deviceDetails: Akari.NCM.player.core.UsbDeviceDetails?,
     onToggleExclusive: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val hasDevice = !usbDeviceName.isNullOrBlank()
+    val isUac2 = uacVersion?.contains("2.0") == true
+    val isUac3 = uacVersion?.contains("3.0") == true
+    val isClaimed = deviceDetails?.isExclusiveClaimed == true
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1712,7 +1725,7 @@ private fun UsbExclusiveDialog(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Rounded.Usb, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(24.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("独占 USB 音频通道", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("USB 硬件独占直通", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         },
         text = {
@@ -1728,10 +1741,10 @@ private fun UsbExclusiveDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("启用 USB 独占输出", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                            Text("启用 USB 硬件独占", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                if (hasDevice) "锁定至 USB DAC 避开 AudioFlinger 混音器"
+                                if (hasDevice) "基于 USB Host 接口抢占 · 绕过 AudioFlinger 混音"
                                 else "未检测到 USB Audio 连入设备",
                                 fontSize = 12.sp,
                                 color = Color.White.copy(alpha = 0.55f)
@@ -1747,43 +1760,112 @@ private fun UsbExclusiveDialog(
 
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = if (hasDevice) Color(0xFF10B981).copy(alpha = 0.12f) else Color(0xFFEF4444).copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, if (hasDevice) Color(0xFF10B981).copy(alpha = 0.3f) else Color(0xFFEF4444).copy(alpha = 0.3f)),
+                    color = if (hasDevice) Color(0xFF10B981).copy(alpha = 0.10f) else Color(0xFFEF4444).copy(alpha = 0.10f),
+                    border = BorderStroke(1.dp, if (hasDevice) Color(0xFF10B981).copy(alpha = 0.35f) else Color(0xFFEF4444).copy(alpha = 0.35f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            if (hasDevice) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
-                            contentDescription = null,
-                            tint = if (hasDevice) Color(0xFF34D399) else Color(0xFFF87171),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Column {
-                            Text(
-                                if (hasDevice) "检测到 USB 音频设备" else "尚未接入 USB 声卡",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.White
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (hasDevice) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
+                                contentDescription = null,
+                                tint = if (hasDevice) Color(0xFF34D399) else Color(0xFFF87171),
+                                modifier = Modifier.size(20.dp)
                             )
-                            Text(
-                                if (hasDevice) usbDeviceName ?: "Unknown USB Audio" else "请插紧 USB 耳放/解码器或检查 Type-C 连接",
-                                fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.7f)
-                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    if (hasDevice) "已识别 USB 音频硬件" else "尚未接入 USB 声卡",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    if (hasDevice) {
+                                        val mfg = deviceDetails?.manufacturerName?.takeIf { it.isNotBlank() }
+                                        if (mfg != null) "$mfg · $usbDeviceName" else (usbDeviceName ?: "Unknown USB Audio")
+                                    } else "请插紧 USB 耳放/小尾巴或检查 Type-C 连接",
+                                    fontSize = 12.sp,
+                                    color = Color.White.copy(alpha = 0.75f)
+                                )
+                            }
+                        }
+
+                        if (hasDevice) {
+                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = when {
+                                        isUac2 -> Color(0xFF059669).copy(alpha = 0.25f)
+                                        isUac3 -> Color(0xFF7C3AED).copy(alpha = 0.25f)
+                                        else -> Color(0xFF2563EB).copy(alpha = 0.25f)
+                                    },
+                                    border = BorderStroke(1.dp, when {
+                                        isUac2 -> Color(0xFF10B981)
+                                        isUac3 -> Color(0xFFA78BFA)
+                                        else -> Color(0xFF3B82F6)
+                                    })
+                                ) {
+                                    Text(
+                                        text = uacVersion ?: "UAC 1.0 / 2.0",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = when {
+                                            isUac2 -> Color(0xFF34D399)
+                                            isUac3 -> Color(0xFFC4B5FD)
+                                            else -> Color(0xFF93C5FD)
+                                        },
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = when {
+                                        isUac2 -> "高速异步等时传输 (支持 192kHz+ 及 Hi-Res)"
+                                        isUac3 -> "新一代低功耗音频协议"
+                                        else -> "标准音频模式 (最高 96kHz / 24-bit)"
+                                    },
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.8f)
+                                )
+                            }
+
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                if (deviceDetails != null && (deviceDetails.vendorId > 0 || deviceDetails.productId > 0)) {
+                                    Text(
+                                        "硬件标识: ${deviceDetails.formattedVidPid}",
+                                        fontSize = 11.sp,
+                                        color = Color.White.copy(alpha = 0.55f)
+                                    )
+                                }
+                                val statusText = when {
+                                    isExclusive && isClaimed -> "独占状态: 🟢 硬件接口已排他抢占 (Bit-Perfect Direct)"
+                                    isExclusive -> "独占状态: 🟡 优先路由锁定 (点击开关可重新申请硬件授权)"
+                                    else -> "独占状态: ⚪ 系统共享音频路由"
+                                }
+                                Text(
+                                    statusText,
+                                    fontSize = 11.sp,
+                                    color = if (isExclusive && isClaimed) Color(0xFF34D399) else Color.White.copy(alpha = 0.6f)
+                                )
+                            }
                         }
                     }
                 }
 
                 Column(modifier = Modifier.padding(horizontal = 4.dp)) {
-                    Text("💡 独占模式提示：", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.8f))
+                    Text("💡 方案三独占架构说明：", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.8f))
                     Spacer(Modifier.height(4.dp))
-                    Text("1. 开启后音频数据将绕过 Android 系统 SRC 重采样，实现 Bit-Perfect 无损源码输出。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
+                    Text("1. UAC 协议自动识别：读取 USB 设备描述符，精准识别 UAC 1.0 / 2.0 通道协议与传输特性。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
                     Spacer(Modifier.height(2.dp))
-                    Text("2. 当插入的 USB 耳放拔出时，播放引擎会自动触发暂停保护，防止误操作产生爆音。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
+                    Text("2. 硬件排他性抢占：基于 USB Host API 独占锁定音频传输接口，规避系统通知音与 AudioFlinger 强制重采样。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
+                    Spacer(Modifier.height(2.dp))
+                    Text("3. 拔出防爆音保护：耳放意外拔出时自动触发安全暂停，避免杂音与爆音保护听力安全。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
                 }
             }
         },
@@ -1800,6 +1882,7 @@ private fun PlaybackStatusDialog(
     audioFormatInfo: Akari.NCM.player.core.AudioFormatInfo,
     isUsbExclusive: Boolean = false,
     usbDeviceName: String? = null,
+    uacVersion: String? = null,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1862,7 +1945,8 @@ private fun PlaybackStatusDialog(
                     InfoRow("本地文件大小", fileSizeText)
                 }
                 if (isUsbExclusive && !usbDeviceName.isNullOrBlank()) {
-                    InfoRow("输出通道", "USB 独占直通 · $usbDeviceName")
+                    val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""
+                    InfoRow("输出通道", "USB 硬件独占直通 · $usbDeviceName$uacTag")
                 }
                 HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
                 InfoRow("实时比特率", bitrateText)

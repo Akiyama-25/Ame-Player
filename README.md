@@ -30,9 +30,28 @@
 
 - **端侧Netease API**：由 Kotlin 实现的协议加解密层（WeAPI / EAPI），无需自行搭建外部云端服务。支持扫码登录、云端歌单双向同步、每日推荐与全方位曲库搜索（单曲/专辑/歌手/歌词）。
 - **本地管理与 NCM 解密**：支持多本地目录批量扫描与智能歌曲匹配（ID / 文本双重比对），原生流式解密 `.ncm` 加密文件并自动补全元数据与双语歌词。
-- **（实验性）USB独占**：基于 AndroidX Media3 (ExoPlayer)，自动协商最高音质（Hi-Res / 无损），内置 USB DAC 独占模式绕过系统重采样，实现 Bit-Perfect 原始码流直通。
+- **（实验性）USB 硬件独占直通**：以方案三架构为基础，支持在界面中实时识别 USB DAC 硬件的 UAC 1.0 / UAC 2.0 传输协议；基于 Android USB Host 接口抢占排他性锁定音频传输端点，脱离系统 AudioFlinger 混音干扰并内置设备断开防爆音安全保护。
 - **设计与交互**：Material 3 Adaptive 自适应布局（无缝适配竖屏、横屏、折叠屏及平板）、Monet 动态取色、系统级预测性返回手势（AOSP Predictive Back）跟手缩放与平滑转场动画。
 - **实况通知与（实验性）“灵动岛”**：适配 Xiaomi HyperOS（焦点通知/超级岛）、OPPO ColorOS（流体云）、vivo OriginOS（原子岛）、Samsung One UI（Now Bar）及 Flyme 状态栏实时歌词。
+
+---
+
+## 包体说明与“灵动岛”伪装包
+
+本项目所有发布包体均为 **universal 全架构通用包体**（已移除过往 32-bit / 64-bit 独立架构分包，安装包内含全架构支持）。
+
+针对国内部分定制 Android 系统对状态栏胶囊、流体云或原子岛施加的应用白名单限制（默认仅允许特定主流音乐 App 常驻），CI/CD 自动化工作流与 Releases 页面同步提供三种**包名伪装包体**，以便在未开放 Android 16 实况通知特性的系统上无缝触发“灵动岛”交互：
+
+| 包体类型 | 文件名命名格式 | Application ID (包名) | 适用场景 |
+|---------|--------------|----------------------|----------|
+| **标准通用包** | `Ame-Player-<版本号>-signed.apk` | `Akari.NCM.player` | 官方默认包体，通用各机型与标准 AOSP 系统 |
+| **Apple Music 伪装包** | `Ame-Player-<版本号>-Apple_Music-signed.apk` | `com.apple.android.music` | 伪装为 Apple Music，突破系统音乐胶囊白名单 |
+| **Spotify 伪装包** | `Ame-Player-<版本号>-Spotify-signed.apk` | `com.spotify.music` | 伪装为 Spotify，适合限制特定国际流媒体白名单的设备 |
+| **网易云音乐 伪装包** | `Ame-Player-<版本号>-Netease_Music-signed.apk` | `com.netease.cloudmusic` | 伪装为网易云音乐，原生激活各品牌桌面与状态栏胶囊 |
+
+> **注意事项**：
+> 1. 所有包体均使用同一套官方密钥签名，校验指纹与功能完全一致。
+> 2. 由于各伪装包包名不同，它们可与标准包共存安装。但如果您的设备上**已安装了对应官方正版 App**（例如官方网易云音乐），则由于签名证书不同，直接安装对应的伪装包会提示签名冲突，此时可优先选择其他未安装的伪装包（例如使用 `-Apple_Music` 或 `-Spotify`）。
 
 ---
 
@@ -54,8 +73,11 @@ cd Ame-Player
 # 2. 构建 Debug APK
 ./gradlew assembleDebug
 
-# 3. 构建 Release APK（支持启用 ABI 分包：arm64-v8a、armeabi-v7a 与 universal）
-./gradlew assembleRelease -PenableAbiSplits=true
+# 3. 构建 Release Universal APK (默认未伪装包)
+./gradlew assembleRelease
+
+# 4. （可选）构建指定伪装包 (例如 Apple Music 伪装)
+./gradlew assembleRelease -PcustomApplicationId=com.apple.android.music
 ```
 
 > **提示**：GitHub Actions 工作流（`.github/workflows/build-signed-apk.yml` 与 `release-signed-apk.yml`）依赖仓库配置的签名 Secrets，若在 Fork 仓库中构建，需自行配置对应的签名变量，或使用未签名构建。

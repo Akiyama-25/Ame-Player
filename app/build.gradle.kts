@@ -9,31 +9,24 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val customApplicationId = providers.gradleProperty("customApplicationId").orNull
+
 android {
     namespace = "Akari.NCM.player"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "Akari.NCM.player"
+        applicationId = customApplicationId ?: "Akari.NCM.player"
         minSdk = 26
         targetSdk = 35
         versionCode = 2
         versionName = "release-0.2"
     }
 
-    val isReleaseTask = gradle.startParameter.taskNames.any {
-        it.contains("Release", ignoreCase = true)
-    }
-    val enableAbiSplits = providers.gradleProperty("enableAbiSplits")
-        .map { it.toBoolean() }
-        .getOrElse(isReleaseTask)
-
+    // Only build universal APK, removing separate 32-bit and 64-bit split APKs
     splits {
         abi {
-            isEnable = enableAbiSplits
-            reset()
-            include("arm64-v8a", "armeabi-v7a")
-            isUniversalApk = true
+            isEnable = false
         }
     }
 

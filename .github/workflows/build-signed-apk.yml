@@ -64,15 +64,47 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --no-daemon --stacktrace
 
-      - name: Assemble unsigned release APKs (arm64-v8a, armeabi-v7a, universal)
-        run: ./gradlew assembleRelease -PenableAbiSplits=true --no-daemon --stacktrace
+      - name: Assemble universal release APKs (standard and disguised variants)
+        run: |
+          set -euo pipefail
+          mkdir -p build-outputs
 
-      - name: Verify armeabi-v7a (32-bit) and arm64-v8a APKs exist
+          # 1. Standard universal APK (unmasked, package: Akari.NCM.player)
+          echo ">>> Building standard universal APK..."
+          ./gradlew assembleRelease --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/*.apk build-outputs/app-release-unsigned.apk
+          rm -rf app/build/outputs/apk/release/*
+
+          # 2. Apple Music disguise (package: com.apple.android.music)
+          echo ">>> Building Apple Music disguise APK..."
+          ./gradlew assembleRelease -PcustomApplicationId=com.apple.android.music --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/*.apk build-outputs/app-Apple_Music-release-unsigned.apk
+          rm -rf app/build/outputs/apk/release/*
+
+          # 3. Spotify disguise (package: com.spotify.music)
+          echo ">>> Building Spotify disguise APK..."
+          ./gradlew assembleRelease -PcustomApplicationId=com.spotify.music --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/*.apk build-outputs/app-Spotify-release-unsigned.apk
+          rm -rf app/build/outputs/apk/release/*
+
+          # 4. NetEase Music disguise (package: com.netease.cloudmusic)
+          echo ">>> Building NetEase Music disguise APK..."
+          ./gradlew assembleRelease -PcustomApplicationId=com.netease.cloudmusic --no-daemon --stacktrace
+          cp app/build/outputs/apk/release/*.apk build-outputs/app-Netease_Music-release-unsigned.apk
+          rm -rf app/build/outputs/apk/release/*
+
+          # Collect all universal APKs
+          cp build-outputs/*.apk app/build/outputs/apk/release/
+          ls -lh app/build/outputs/apk/release/
+
+      - name: Verify universal release APKs exist
         run: |
           set -euo pipefail
           ls -lh app/build/outputs/apk/release/
-          test -f app/build/outputs/apk/release/app-armeabi-v7a-release-unsigned.apk
-          test -f app/build/outputs/apk/release/app-arm64-v8a-release-unsigned.apk
+          test -f app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f app/build/outputs/apk/release/app-Apple_Music-release-unsigned.apk
+          test -f app/build/outputs/apk/release/app-Spotify-release-unsigned.apk
+          test -f app/build/outputs/apk/release/app-Netease_Music-release-unsigned.apk
 
       - name: Upload unsigned APK (PR validation / fallback)
         if: github.event_name == 'pull_request'
@@ -145,11 +177,22 @@ jobs:
           : > signed/SHA256SUMS.txt
           for APK in "${APKS[@]}"; do
             BASENAME="$(basename "$APK")"
-            VARIANT="${BASENAME#app-}"
-            VARIANT="${VARIANT%-unsigned.apk}"
-            VARIANT="${VARIANT%.apk}"
-            ALIGNED="signed/ame-player-${VARIANT}-aligned.apk"
-            SIGNED="signed/ame-player-${VARIANT}-signed.apk"
+            if [ "$BASENAME" = "app-release-unsigned.apk" ]; then
+              SIGNED_NAME="ame-player-release-signed.apk"
+            elif [ "$BASENAME" = "app-Apple_Music-release-unsigned.apk" ]; then
+              SIGNED_NAME="ame-player-Apple_Music-release-signed.apk"
+            elif [ "$BASENAME" = "app-Spotify-release-unsigned.apk" ]; then
+              SIGNED_NAME="ame-player-Spotify-release-signed.apk"
+            elif [ "$BASENAME" = "app-Netease_Music-release-unsigned.apk" ]; then
+              SIGNED_NAME="ame-player-Netease_Music-release-signed.apk"
+            else
+              VARIANT="${BASENAME#app-}"
+              VARIANT="${VARIANT%-unsigned.apk}"
+              VARIANT="${VARIANT%.apk}"
+              SIGNED_NAME="ame-player-${VARIANT}-signed.apk"
+            fi
+            ALIGNED="signed/aligned-temp.apk"
+            SIGNED="signed/${SIGNED_NAME}"
             "$BUILD_TOOLS/zipalign" -f -p 4 "$APK" "$ALIGNED"
             "$BUILD_TOOLS/apksigner" sign \
               --ks "$KEYSTORE_PATH" \
@@ -160,7 +203,7 @@ jobs:
               --out "$SIGNED" "$ALIGNED"
             "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$SIGNED"
             rm -f "$ALIGNED"
-            (cd signed && sha256sum "$(basename "$SIGNED")" | tee -a SHA256SUMS.txt)
+            (cd signed && sha256sum "$SIGNED_NAME" | tee -a SHA256SUMS.txt)
           done
 
       - name: Upload signed APK artifacts (all variants)
@@ -171,24 +214,6 @@ jobs:
           path: |
             signed/*.apk
             signed/SHA256SUMS.txt
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload signed armeabi-v7a (32-bit) APK artifact
-        if: steps.prepare-key.outputs.has_key == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ame-player-armeabi-v7a-32bit-signed-${{ github.run_number }}
-          path: signed/ame-player-armeabi-v7a-release-signed.apk
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Upload signed arm64-v8a (64-bit) APK artifact
-        if: steps.prepare-key.outputs.has_key == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ame-player-arm64-v8a-64bit-signed-${{ github.run_number }}
-          path: signed/ame-player-arm64-v8a-release-signed.apk
           if-no-files-found: error
           retention-days: 30
 

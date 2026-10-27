@@ -13,6 +13,21 @@ data class AudioFormatInfo(
 )
 
 @Stable
+data class UsbDeviceDetails(
+    val deviceName: String = "",
+    val productName: String = "",
+    val manufacturerName: String? = null,
+    val vendorId: Int = 0,
+    val productId: Int = 0,
+    val uacVersion: String = "未连接",
+    val isExclusiveClaimed: Boolean = false,
+    val hasPermission: Boolean = false
+) {
+    val formattedVidPid: String
+        get() = if (vendorId > 0 || productId > 0) String.format("VID:%04X  PID:%04X", vendorId, productId) else "未知标识"
+}
+
+@Stable
 interface PlayerState {
     val currentMedia: StateFlow<PlayableMedia?>
     val isPlaying: StateFlow<Boolean>
@@ -28,6 +43,8 @@ interface PlayerState {
     val audioFormatInfo: StateFlow<AudioFormatInfo>
     val isUsbExclusiveMode: StateFlow<Boolean>
     val connectedUsbDeviceName: StateFlow<String?>
+    val usbUacVersion: StateFlow<String?>
+    val usbDeviceDetails: StateFlow<UsbDeviceDetails?>
 }
 
 enum class PlaybackState {
