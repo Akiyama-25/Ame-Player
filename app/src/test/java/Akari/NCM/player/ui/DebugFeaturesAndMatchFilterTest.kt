@@ -108,11 +108,11 @@ class DebugFeaturesAndMatchFilterTest {
         composeTestRule.onNodeWithTag("setting_log_record").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("日志记录等级").assertIsDisplayed()
-        composeTestRule.onNodeWithText("ERROR (默认)").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("log_level_option_DEBUG").performClick()
+        composeTestRule.onNodeWithText("DEBUG (默认)").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("log_level_option_INFO").performClick()
         composeTestRule.waitForIdle()
 
-        assertEquals(LogLevel.DEBUG, AppLogger.currentLevel.value)
+        assertEquals(LogLevel.INFO, AppLogger.currentLevel.value)
     }
 
     @Test
