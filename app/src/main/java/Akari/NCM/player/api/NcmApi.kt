@@ -2,7 +2,6 @@ package Akari.NCM.player.api
 
 import Akari.NCM.player.core.*
 import Akari.NCM.player.data.UserSessionManager
-import android.util.Log
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.HttpSend
@@ -103,7 +102,7 @@ class NcmApi @Inject constructor(
                 if (res != null) return res
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_NCM_API", "Direct search type=$type failed: ${e.message}")
+                AppLogger.w("AME_NCM_API", "Direct search type=$type failed: ${e.message}")
             }
         }
         return try {
@@ -304,7 +303,7 @@ class NcmApi @Inject constructor(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_NCM_API", "Direct getSongDetails failed: ${e.message}")
+                AppLogger.w("AME_NCM_API", "Direct getSongDetails failed: ${e.message}")
             }
         }
         return try {
@@ -324,7 +323,7 @@ class NcmApi @Inject constructor(
      * 获取歌曲播放链接 (自动匹配账号最高可用音质)
      */
     suspend fun getSongUrl(song: PlayableMedia.Online, quality: QualityLevel? = null): String? {
-        Log.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (isDirectMode=$isDirectMode)")
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (isDirectMode=$isDirectMode)")
 
         // 默认按账号可获取的最高级别链依次尝试: HIRES -> LOSSLESS -> EXHIGH -> STANDARD
         val qualitiesToTry = if (quality != null) {
@@ -354,12 +353,12 @@ class NcmApi @Inject constructor(
                     val url = data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
 
                     if (url != null) {
-                        Log.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Direct resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms): $url")
+                        AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Direct resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms): $url")
                         return url
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    Log.d("[AME_ONLINE_PLAY]", "--- Direct quality level ${q.value} try failed: ${e.message}")
+                    AppLogger.d("[AME_ONLINE_PLAY]", "--- Direct quality level ${q.value} try failed: ${e.message}")
                 }
             }
         }
@@ -379,23 +378,23 @@ class NcmApi @Inject constructor(
                 val url = data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
 
                 if (url != null) {
-                    Log.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Successfully resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms): $url")
+                    AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Successfully resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms): $url")
                     return url
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.d("[AME_ONLINE_PLAY]", "--- Quality level ${q.value} try failed: ${e.message}")
+                AppLogger.d("[AME_ONLINE_PLAY]", "--- Quality level ${q.value} try failed: ${e.message}")
             }
         }
 
         // 兜底退回旧接口 /song/url
-        Log.w("[AME_ONLINE_PLAY]", "--- Trying legacy fallback for '${song.title}' (id=${song.id}) ---")
+        AppLogger.w("[AME_ONLINE_PLAY]", "--- Trying legacy fallback for '${song.title}' (id=${song.id}) ---")
         for (br in listOf(320000, 128000)) {
             val fallbackUrl = getForcedMp3Url(song.id, br)
             if (fallbackUrl != null) return fallbackUrl
         }
 
-        Log.e("[AME_ONLINE_PLAY]", ">>> All song URL resolution attempts failed for '${song.title}' (id=${song.id})")
+        AppLogger.e("[AME_ONLINE_PLAY]", ">>> All song URL resolution attempts failed for '${song.title}' (id=${song.id})")
         return null
     }
 
@@ -439,7 +438,7 @@ class NcmApi @Inject constructor(
                 if (lrc != null || tlyric != null) return Pair(lrc, tlyric)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_NCM_API", "Direct getLyric failed: ${e.message}")
+                AppLogger.w("AME_NCM_API", "Direct getLyric failed: ${e.message}")
             }
         }
         return try {
@@ -476,11 +475,11 @@ class NcmApi @Inject constructor(
                 val json = Json.parseToJsonElement(body).asJsonObjectOrNull
                 val key = json?.get("data")?.asJsonObjectOrNull?.get("unikey")?.jsonPrimitive?.contentOrNull
                     ?: json?.get("unikey")?.jsonPrimitive?.contentOrNull
-                Log.i("AME_QR_DEBUG", "Direct getQrKey result: $key")
+                AppLogger.i("AME_QR_DEBUG", "Direct getQrKey result: $key")
                 if (!key.isNullOrBlank()) return key
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.e("AME_QR_DEBUG", "Direct getQrKey failed", e)
+                AppLogger.e("AME_QR_DEBUG", "Direct getQrKey failed", e)
             }
         }
         return try {
@@ -491,11 +490,11 @@ class NcmApi @Inject constructor(
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull
             val key = json?.get("data")?.asJsonObjectOrNull?.get("unikey")?.jsonPrimitive?.contentOrNull
                 ?: json?.get("unikey")?.jsonPrimitive?.contentOrNull
-            Log.i("AME_QR_DEBUG", "getQrKey result: $key")
+            AppLogger.i("AME_QR_DEBUG", "getQrKey result: $key")
             key?.takeIf { it.isNotBlank() }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.e("AME_QR_DEBUG", "getQrKey failed", e)
+            AppLogger.e("AME_QR_DEBUG", "getQrKey failed", e)
             null
         }
     }
@@ -503,7 +502,7 @@ class NcmApi @Inject constructor(
     suspend fun createQrUrl(key: String): Pair<String?, String?>? {
         if (isDirectMode) {
             val qrUrl = NeteaseEndpoints.QR_LOGIN_URL_PREFIX + key
-            Log.i("AME_QR_DEBUG", "Direct createQrUrl: qrurl=$qrUrl")
+            AppLogger.i("AME_QR_DEBUG", "Direct createQrUrl: qrurl=$qrUrl")
             return Pair(null, qrUrl)
         }
         return try {
@@ -517,11 +516,11 @@ class NcmApi @Inject constructor(
             val dataObj = json?.get("data")?.asJsonObjectOrNull
             val qrimg = dataObj?.get("qrimg")?.jsonPrimitive?.contentOrNull
             val qrurl = dataObj?.get("qrurl")?.jsonPrimitive?.contentOrNull
-            Log.i("AME_QR_DEBUG", "createQrUrl result length: ${qrimg?.length ?: 0}, hasUrl: ${qrurl != null}")
+            AppLogger.i("AME_QR_DEBUG", "createQrUrl result length: ${qrimg?.length ?: 0}, hasUrl: ${qrurl != null}")
             Pair(qrimg, qrurl)
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.e("AME_QR_DEBUG", "createQrUrl failed", e)
+            AppLogger.e("AME_QR_DEBUG", "createQrUrl failed", e)
             null
         }
     }
@@ -554,7 +553,7 @@ class NcmApi @Inject constructor(
                             cookieStr = setCookies.joinToString("; ")
                         }
                         val cleanedCookie = UserSessionManager.cleanCookieString(cookieStr)
-                        Log.i("AME_LOGIN_DEBUG", "803 Success! Extracted & Cleaned cookie: $cleanedCookie")
+                        AppLogger.i("AME_LOGIN_DEBUG", "803 Success! Extracted & Cleaned cookie: $cleanedCookie")
                         if (cleanedCookie.isNotBlank()) {
                             sessionManager?.saveCookie(cleanedCookie)
                             getUserProfile()
@@ -566,7 +565,7 @@ class NcmApi @Inject constructor(
                 return QrCheckResult(status = status, message = message, cookie = sessionManager?.getCookie() ?: "")
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.e("AME_LOGIN_DEBUG", "Direct checkQrStatus exception", e)
+                AppLogger.e("AME_LOGIN_DEBUG", "Direct checkQrStatus exception", e)
                 return QrCheckResult(status = QrStatus.UNKNOWN, message = e.message ?: "Network error")
             }
         }
@@ -593,7 +592,7 @@ class NcmApi @Inject constructor(
                         }
                     }
                     val cleanedCookie = UserSessionManager.cleanCookieString(cookieStr)
-                    Log.i("AME_LOGIN_DEBUG", "803 Success! Extracted & Cleaned cookie: $cleanedCookie")
+                    AppLogger.i("AME_LOGIN_DEBUG", "803 Success! Extracted & Cleaned cookie: $cleanedCookie")
                     if (cleanedCookie.isNotBlank()) {
                         sessionManager?.saveCookie(cleanedCookie)
                         getUserProfile()
@@ -605,7 +604,7 @@ class NcmApi @Inject constructor(
             QrCheckResult(status = status, message = message, cookie = sessionManager?.getCookie() ?: "")
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.e("AME_LOGIN_DEBUG", "checkQrStatus exception", e)
+            AppLogger.e("AME_LOGIN_DEBUG", "checkQrStatus exception", e)
             QrCheckResult(status = QrStatus.UNKNOWN, message = e.message ?: "Network error")
         }
     }
@@ -667,13 +666,13 @@ class NcmApi @Inject constructor(
                         vipType = vipType,
                         signature = signature
                     )
-                    Log.i("AME_LOGIN_DEBUG", "Direct getUserProfile success: userId=$userId, nickname=${profile.nickname}")
+                    AppLogger.i("AME_LOGIN_DEBUG", "Direct getUserProfile success: userId=$userId, nickname=${profile.nickname}")
                     sessionManager?.saveUserProfile(profile)
                     return profile
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_LOGIN_DEBUG", "Direct getUserProfile failed: ${e.message}")
+                AppLogger.w("AME_LOGIN_DEBUG", "Direct getUserProfile failed: ${e.message}")
             }
         }
         return try {
@@ -681,7 +680,7 @@ class NcmApi @Inject constructor(
                 parameter("timestamp", System.currentTimeMillis())
             }
             val body = response.bodyAsText()
-            Log.i("AME_LOGIN_DEBUG", "/user/account body: $body")
+            AppLogger.i("AME_LOGIN_DEBUG", "/user/account body: $body")
             val rootObj = try { Json.parseToJsonElement(body).asJsonObjectOrNull } catch (_: Exception) { null }
 
             val profileObj = rootObj?.get("profile")?.asJsonObjectOrNull
@@ -716,7 +715,7 @@ class NcmApi @Inject constructor(
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
-                    Log.e("AME_LOGIN_DEBUG", "fetch /user/detail failed", e)
+                    AppLogger.e("AME_LOGIN_DEBUG", "fetch /user/detail failed", e)
                 }
             }
 
@@ -748,14 +747,14 @@ class NcmApi @Inject constructor(
                     vipType = vipType,
                     signature = signature
                 )
-                Log.i("AME_LOGIN_DEBUG", "getUserProfile success: userId=$userId, nickname=${profile.nickname}, avatar=$avatarUrl")
+                AppLogger.i("AME_LOGIN_DEBUG", "getUserProfile success: userId=$userId, nickname=${profile.nickname}, avatar=$avatarUrl")
                 sessionManager?.saveUserProfile(profile)
                 return profile
             }
             null
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.e("AME_LOGIN_DEBUG", "getUserProfile Exception", e)
+            AppLogger.e("AME_LOGIN_DEBUG", "getUserProfile Exception", e)
             null
         }
     }
@@ -784,7 +783,7 @@ class NcmApi @Inject constructor(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_HOMEPAGE", "Direct getHomepageDragonBalls failed: ${e.message}")
+                AppLogger.w("AME_HOMEPAGE", "Direct getHomepageDragonBalls failed: ${e.message}")
             }
         }
         return try {
@@ -819,7 +818,7 @@ class NcmApi @Inject constructor(
                 )
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_HOMEPAGE", "Direct getHomepageBlocks failed: ${e.message}")
+                AppLogger.w("AME_HOMEPAGE", "Direct getHomepageBlocks failed: ${e.message}")
                 null
             }
         } else null
@@ -876,7 +875,7 @@ class NcmApi @Inject constructor(
             }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.e("AME_HOMEPAGE", "getHomepageBlocks Error", e)
+            AppLogger.e("AME_HOMEPAGE", "getHomepageBlocks Error", e)
             emptyList()
         }
     }
@@ -907,7 +906,7 @@ class NcmApi @Inject constructor(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_PLAYLIST_DEBUG", "Direct getDailyRecommendPlaylists failed: ${e.message}")
+                AppLogger.w("AME_PLAYLIST_DEBUG", "Direct getDailyRecommendPlaylists failed: ${e.message}")
             }
         }
         return try {
@@ -968,7 +967,7 @@ class NcmApi @Inject constructor(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_PLAYLIST_DEBUG", "Direct getHighQualityPlaylists failed: ${e.message}")
+                AppLogger.w("AME_PLAYLIST_DEBUG", "Direct getHighQualityPlaylists failed: ${e.message}")
             }
         }
         return try {
@@ -1016,7 +1015,7 @@ class NcmApi @Inject constructor(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_PLAYLIST_DEBUG", "Direct getDailyRecommendSongs failed: ${e.message}")
+                AppLogger.w("AME_PLAYLIST_DEBUG", "Direct getDailyRecommendSongs failed: ${e.message}")
             }
         }
         return try {
@@ -1067,11 +1066,11 @@ class NcmApi @Inject constructor(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_PLAYLIST_DEBUG", "Direct getUserPlaylists failed: ${e.message}")
+                AppLogger.w("AME_PLAYLIST_DEBUG", "Direct getUserPlaylists failed: ${e.message}")
             }
         }
         return try {
-            Log.i("AME_PLAYLIST_DEBUG", "getUserPlaylists requesting with uid=$uid")
+            AppLogger.i("AME_PLAYLIST_DEBUG", "getUserPlaylists requesting with uid=$uid")
             val response = client.get("$baseUrl/user/playlist") {
                 if (uid > 0L) parameter("uid", uid)
                 parameter("limit", 100)
@@ -1095,7 +1094,7 @@ class NcmApi @Inject constructor(
             }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.e("AME_PLAYLIST_DEBUG", "getUserPlaylists Exception", e)
+            AppLogger.e("AME_PLAYLIST_DEBUG", "getUserPlaylists Exception", e)
             emptyList()
         }
     }
@@ -1166,7 +1165,7 @@ data class NcmPlaylistDetailResult(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w("AME_PLAYLIST_DEBUG", "Direct getPlaylistTracks failed: ${e.message}")
+                AppLogger.w("AME_PLAYLIST_DEBUG", "Direct getPlaylistTracks failed: ${e.message}")
             }
         }
 
@@ -1177,7 +1176,7 @@ data class NcmPlaylistDetailResult(
 
         while (hasMore && offset < 10000) {
             try {
-                Log.d("AME_PLAYLIST_DEBUG", "getPlaylistTracks requesting playlistId=$playlistId, limit=$limit, offset=$offset")
+                AppLogger.d("AME_PLAYLIST_DEBUG", "getPlaylistTracks requesting playlistId=$playlistId, limit=$limit, offset=$offset")
                 val response = withTimeoutOrNull(10_000L) {
                     client.get("$baseUrl/playlist/track/all") {
                         parameter("id", playlistId)
@@ -1188,7 +1187,7 @@ data class NcmPlaylistDetailResult(
                 }
 
                 if (response == null) {
-                    Log.w("AME_PLAYLIST_DEBUG", "getPlaylistTracks request timeout at offset=$offset")
+                    AppLogger.w("AME_PLAYLIST_DEBUG", "getPlaylistTracks request timeout at offset=$offset")
                     hasMore = false
                     break
                 }
@@ -1237,13 +1236,13 @@ data class NcmPlaylistDetailResult(
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.e("AME_PLAYLIST_DEBUG", "getPlaylistTracks offset=$offset Exception", e)
+                AppLogger.e("AME_PLAYLIST_DEBUG", "getPlaylistTracks offset=$offset Exception", e)
                 hasMore = false
             }
         }
         val expectedTotal = if (totalCount > 0) totalCount else allSongs.size
         onProgress?.invoke(allSongs.size, expectedTotal)
-        Log.i("AME_PLAYLIST_DEBUG", "getPlaylistTracks completed for playlistId=$playlistId with total ${allSongs.size} tracks")
+        AppLogger.i("AME_PLAYLIST_DEBUG", "getPlaylistTracks completed for playlistId=$playlistId with total ${allSongs.size} tracks")
         return NcmPlaylistDetailResult(parsedPlaylistMeta, allSongs)
     }
 
@@ -1277,11 +1276,11 @@ data class NcmPlaylistDetailResult(
                 )
                 val json = Json.parseToJsonElement(body).asJsonObjectOrNull
                 val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
-                Log.i("AME_CLOUD_SYNC", "Direct likeSong songId=$songId, like=$like, code=$code")
+                AppLogger.i("AME_CLOUD_SYNC", "Direct likeSong songId=$songId, like=$like, code=$code")
                 if (code == 200) return true
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.e("AME_CLOUD_SYNC", "Direct likeSong failed for id=$songId", e)
+                AppLogger.e("AME_CLOUD_SYNC", "Direct likeSong failed for id=$songId", e)
             }
         }
         return try {
@@ -1293,11 +1292,11 @@ data class NcmPlaylistDetailResult(
             val body = response.bodyAsText()
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull
             val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
-            Log.i("AME_CLOUD_SYNC", "likeSong songId=$songId, like=$like, code=$code")
+            AppLogger.i("AME_CLOUD_SYNC", "likeSong songId=$songId, like=$like, code=$code")
             code == 200
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.e("AME_CLOUD_SYNC", "likeSong failed for id=$songId", e)
+            AppLogger.e("AME_CLOUD_SYNC", "likeSong failed for id=$songId", e)
             false
         }
     }
@@ -1321,11 +1320,11 @@ data class NcmPlaylistDetailResult(
                 )
                 val json = Json.parseToJsonElement(body).asJsonObjectOrNull
                 val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
-                Log.i("AME_CLOUD_SYNC", "Direct updatePlaylistTracks op=$op, playlistId=$playlistId, songId=$songId, code=$code")
+                AppLogger.i("AME_CLOUD_SYNC", "Direct updatePlaylistTracks op=$op, playlistId=$playlistId, songId=$songId, code=$code")
                 if (code == 200) return true
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.e("AME_CLOUD_SYNC", "Direct updatePlaylistTracks failed op=$op, pid=$playlistId, songId=$songId", e)
+                AppLogger.e("AME_CLOUD_SYNC", "Direct updatePlaylistTracks failed op=$op, pid=$playlistId, songId=$songId", e)
             }
         }
         return try {
@@ -1338,11 +1337,11 @@ data class NcmPlaylistDetailResult(
             val body = response.bodyAsText()
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull
             val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
-            Log.i("AME_CLOUD_SYNC", "updatePlaylistTracks op=$op, playlistId=$playlistId, songId=$songId, code=$code")
+            AppLogger.i("AME_CLOUD_SYNC", "updatePlaylistTracks op=$op, playlistId=$playlistId, songId=$songId, code=$code")
             code == 200
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.e("AME_CLOUD_SYNC", "updatePlaylistTracks failed op=$op, pid=$playlistId, songId=$songId", e)
+            AppLogger.e("AME_CLOUD_SYNC", "updatePlaylistTracks failed op=$op, pid=$playlistId, songId=$songId", e)
             false
         }
     }

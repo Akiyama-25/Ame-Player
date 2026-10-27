@@ -9,7 +9,7 @@ import Akari.NCM.player.core.RepeatMode
 import Akari.NCM.player.data.NcmDataSource
 import android.content.Context
 import android.net.Uri
-import android.util.Log
+import Akari.NCM.player.core.AppLogger
 import androidx.core.net.toUri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -176,7 +176,7 @@ class AmePlayerEngine @Inject constructor(
         }.getOrDefault(true)
 
         if (isDead) {
-            Log.w("[AME_ONLINE_PLAY]", ">>> ExoPlayer internal thread is dead or released. Recovering player instance...")
+            AppLogger.w("[AME_ONLINE_PLAY]", ">>> ExoPlayer internal thread is dead or released. Recovering player instance...")
             isReleased = false
             if (!scope.isActive) {
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -208,7 +208,7 @@ class AmePlayerEngine @Inject constructor(
         val httpFactory = ResolvingDataSource.Factory(httpDataSourceFactory) { dataSpec ->
             val key = dataSpec.key
             val uriStr = dataSpec.uri.toString()
-            Log.d("[AME_ONLINE_PLAY]", ">>> [ExoPlayer ResolvingDataSource] Intercepting dataSpec key='$key', uri='$uriStr'")
+            AppLogger.d("[AME_ONLINE_PLAY]", ">>> [ExoPlayer ResolvingDataSource] Intercepting dataSpec key='$key', uri='$uriStr'")
 
             val media: PlayableMedia.Online? = (if (!key.isNullOrBlank()) mediaMap[key] as? PlayableMedia.Online else null)
                 ?: mediaMap.values.filterIsInstance<PlayableMedia.Online>().find { online ->
@@ -218,10 +218,10 @@ class AmePlayerEngine @Inject constructor(
             if (media != null) {
                 val cachedUrl = resolvedUrlCache[media.id]
                 val url = if (!cachedUrl.isNullOrBlank()) {
-                    Log.d("[AME_ONLINE_PLAY]", ">>> Using cached resolved URL for '${media.title}' (id=${media.id}): $cachedUrl")
+                    AppLogger.d("[AME_ONLINE_PLAY]", ">>> Using cached resolved URL for '${media.title}' (id=${media.id}): $cachedUrl")
                     cachedUrl
                 } else {
-                    Log.i("[AME_ONLINE_PLAY]", ">>> Matched Online Track: id='${media.id}', title='${media.title}'")
+                    AppLogger.i("[AME_ONLINE_PLAY]", ">>> Matched Online Track: id='${media.id}', title='${media.title}'")
                     val fetchedUrl = runBlocking { ncmApi.getSongUrl(media) }
                     if (fetchedUrl != null) {
                         resolvedUrlCache[media.id] = fetchedUrl
@@ -230,10 +230,10 @@ class AmePlayerEngine @Inject constructor(
                 }
 
                 if (url != null) {
-                    Log.i("[AME_ONLINE_PLAY]", ">>> Injecting resolved URL into ExoPlayer DataSpec: $url")
+                    AppLogger.i("[AME_ONLINE_PLAY]", ">>> Injecting resolved URL into ExoPlayer DataSpec: $url")
                     dataSpec.withUri(url.toUri())
                 } else {
-                    Log.e("[AME_ONLINE_PLAY]", ">>> CRITICAL: Failed to get URL for '${media.title}', throwing PlaybackException")
+                    AppLogger.e("[AME_ONLINE_PLAY]", ">>> CRITICAL: Failed to get URL for '${media.title}', throwing PlaybackException")
                     throw PlaybackException(
                         "Failed to resolve song URL for ${media.title}",
                         null,
@@ -241,7 +241,7 @@ class AmePlayerEngine @Inject constructor(
                     )
                 }
             } else {
-                Log.w("[AME_ONLINE_PLAY]", ">>> WARNING: No PlayableMedia.Online match found in mediaMap for key='$key', uri='$uriStr'")
+                AppLogger.w("[AME_ONLINE_PLAY]", ">>> WARNING: No PlayableMedia.Online match found in mediaMap for key='$key', uri='$uriStr'")
                 dataSpec
             }
         }
@@ -330,7 +330,7 @@ class AmePlayerEngine @Inject constructor(
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _isPlaying.value = isPlaying
-                Log.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onIsPlayingChanged: $isPlaying")
+                AppLogger.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onIsPlayingChanged: $isPlaying")
                 if (isPlaying) {
                     syncIslandState()
                 } else {
@@ -346,7 +346,7 @@ class AmePlayerEngine @Inject constructor(
                     Player.STATE_ENDED -> "ENDED"
                     else -> "UNKNOWN"
                 }
-                Log.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onPlaybackStateChanged: $stateName ($playbackState)")
+                AppLogger.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onPlaybackStateChanged: $stateName ($playbackState)")
                 _playbackState.value = when (playbackState) {
                     Player.STATE_IDLE -> PlaybackState.IDLE
                     Player.STATE_BUFFERING -> PlaybackState.BUFFERING
@@ -379,7 +379,7 @@ class AmePlayerEngine @Inject constructor(
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val id = mediaItem?.mediaId
-                Log.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onMediaItemTransition: mediaId='$id', reason=$reason")
+                AppLogger.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onMediaItemTransition: mediaId='$id', reason=$reason")
                 val currentMedia = id?.let { mediaMap[it] }
                 _currentMedia.value = currentMedia
                 _currentIndex.value = player.currentMediaItemIndex
@@ -390,7 +390,7 @@ class AmePlayerEngine @Inject constructor(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                Log.e("[AME_ONLINE_PLAY]", ">>> ExoPlayer Playback ERROR: errorCode=${error.errorCode}, message=${error.message}, cause=${error.cause}", error)
+                AppLogger.e("[AME_ONLINE_PLAY]", ">>> ExoPlayer Playback ERROR: errorCode=${error.errorCode}, message=${error.message}, cause=${error.cause}", error)
                 val errorMessage = error.message ?: "播放遇到了错误 (${error.errorCode})"
                 _error.value = errorMessage
                 _isPlaying.value = false
@@ -463,7 +463,7 @@ class AmePlayerEngine @Inject constructor(
         // Observe audio quality preference changes to clear URL cache dynamically
         scope.launch {
             sessionManager.qualityState.collect { quality ->
-                Log.i("[AME_ONLINE_PLAY]", ">>> Audio quality preference changed to '${quality.label}' (${quality.value}), clearing resolved URL cache.")
+                AppLogger.i("[AME_ONLINE_PLAY]", ">>> Audio quality preference changed to '${quality.label}' (${quality.value}), clearing resolved URL cache.")
                 resolvedUrlCache.clear()
             }
         }
@@ -555,7 +555,7 @@ class AmePlayerEngine @Inject constructor(
                                 }
                             }
                         } catch (e: Exception) {
-                            Log.e("[AME_COVER_DEBUG]", "Failed to extract ID3 cover for ${currentMedia.title}", e)
+                            AppLogger.e("[AME_COVER_DEBUG]", "Failed to extract ID3 cover for ${currentMedia.title}", e)
                         }
                     }
 
@@ -591,7 +591,7 @@ class AmePlayerEngine @Inject constructor(
                                 _currentMedia.value = updatedMedia
                             }
                         }
-                        Log.i("[AME_ONLINE_PLAY]", "Lazy loaded cover for ${currentMedia.title}: $finalCoverUrl")
+                        AppLogger.i("[AME_ONLINE_PLAY]", "Lazy loaded cover for ${currentMedia.title}: $finalCoverUrl")
                     }
                 }
 
@@ -636,7 +636,7 @@ class AmePlayerEngine @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e("[AME_ONLINE_PLAY]", "Failed to resolve cover/metadata for media session", e)
+                AppLogger.e("[AME_ONLINE_PLAY]", "Failed to resolve cover/metadata for media session", e)
             }
         }
     }
@@ -715,7 +715,7 @@ class AmePlayerEngine @Inject constructor(
         ensureActive()
         val mediaItem = buildMediaItem(media)
         mediaMap[media.id] = media
-        Log.i("[AME_ONLINE_PLAY]", ">>> load single track '${media.title}' (id=${media.id})")
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> load single track '${media.title}' (id=${media.id})")
         exoPlayer.setMediaItem(mediaItem)
         exoPlayer.prepare()
         _currentMedia.value = media
@@ -724,7 +724,7 @@ class AmePlayerEngine @Inject constructor(
 
     override fun loadPlaylist(items: List<PlayableMedia>, startIndex: Int) {
         ensureActive()
-        Log.i("[AME_ONLINE_PLAY]", ">>> loadPlaylist size=${items.size}, startIndex=$startIndex")
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> loadPlaylist size=${items.size}, startIndex=$startIndex")
         mediaMap.clear()
         resolvedUrlCache.clear()
         val mediaItems = items.map { media ->
@@ -742,13 +742,13 @@ class AmePlayerEngine @Inject constructor(
 
     override fun play() {
         ensureActive()
-        Log.i("[AME_ONLINE_PLAY]", ">>> play() called")
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> play() called")
         exoPlayer.play()
     }
 
     override fun pause() {
         ensureActive()
-        Log.i("[AME_ONLINE_PLAY]", ">>> pause() called")
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> pause() called")
         exoPlayer.pause()
     }
 
@@ -818,7 +818,7 @@ class AmePlayerEngine @Inject constructor(
         currentList.add(insertIndex, media)
         _playlist.value = currentList
         exoPlayer.addMediaItem(insertIndex, mediaItem)
-        Log.i("[AME_ONLINE_PLAY]", ">>> Inserted '${media.title}' as next track at index $insertIndex")
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Inserted '${media.title}' as next track at index $insertIndex")
     }
 
     override fun setRepeatMode(mode: RepeatMode) {
@@ -851,8 +851,9 @@ class AmePlayerEngine @Inject constructor(
     private fun applyUsbAudioRouting(device: AudioDeviceInfo?, isExclusive: Boolean) {
         if (isExclusive && device != null) {
             val uac = usbAudioManager.uacVersion.value ?: "UAC"
-            Log.i("[AME_USB_AUDIO]", ">>> Applying USB Exclusive Routing to device: '${device.productName}' ($uac, id=${device.id}, type=${device.type})")
-            exoPlayer.setPreferredAudioDevice(device)
+            AppLogger.i("[AME_USB_AUDIO]", ">>> Applying USB Exclusive Routing to device: '${device.productName}' ($uac, id=${device.id}, type=${device.type})")
+            val routeSuccess = exoPlayer.setPreferredAudioDevice(device)
+            AppLogger.i("[AME_USB_AUDIO]", ">>> exoPlayer.setPreferredAudioDevice result: $routeSuccess")
             val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                 .setUsage(C.USAGE_MEDIA)
@@ -860,10 +861,10 @@ class AmePlayerEngine @Inject constructor(
                 .build()
             exoPlayer.setAudioAttributes(audioAttributes, false)
         } else {
-            Log.i("[AME_USB_AUDIO]", ">>> Reverting USB Audio routing to default (isExclusive=$isExclusive, device=${device?.productName})")
+            AppLogger.i("[AME_USB_AUDIO]", ">>> Reverting USB Audio routing to default (isExclusive=$isExclusive, device=${device?.productName})")
             exoPlayer.setPreferredAudioDevice(null)
             if (isExclusive && device == null && _isPlaying.value) {
-                Log.w("[AME_USB_AUDIO]", ">>> USB Audio DAC unplugged during exclusive playback! Pausing audio to protect ears/speakers.")
+                AppLogger.w("[AME_USB_AUDIO]", ">>> USB Audio DAC unplugged during exclusive playback! Pausing audio to protect ears/speakers.")
                 pause()
             }
         }
@@ -871,7 +872,7 @@ class AmePlayerEngine @Inject constructor(
 
     override fun clearUrlCache() {
         resolvedUrlCache.clear()
-        Log.i("[AME_ONLINE_PLAY]", ">>> Manually cleared resolved URL cache")
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Manually cleared resolved URL cache")
     }
 
     override fun release() {

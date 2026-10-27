@@ -5,7 +5,7 @@ import Akari.NCM.player.core.PlayableMedia
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.util.Log
+import Akari.NCM.player.core.AppLogger
 import androidx.documentfile.provider.DocumentFile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +50,7 @@ class LocalFolderManager @Inject constructor(
                 try {
                     cr.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (e: Exception) {
-                    Log.w("LocalFolder", "takePersistableUriPermission failed for $dirUriStr")
+                    AppLogger.w("LocalFolder", "takePersistableUriPermission failed for $dirUriStr")
                 }
                 
                 val root = DocumentFile.fromTreeUri(context, treeUri) ?: continue
@@ -77,7 +77,7 @@ class LocalFolderManager @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e("LocalFolder", "Error scanning $dirUriStr", e)
+                AppLogger.e("LocalFolder", "Error scanning $dirUriStr", e)
             }
         }
         

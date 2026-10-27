@@ -13,7 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
-import android.util.Log
+import Akari.NCM.player.core.AppLogger
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.i("AME_DEBUG", "MainActivity onCreate started")
+        AppLogger.i("AME_DEBUG", "MainActivity onCreate started")
         enableEdgeToEdge()
         
         Akari.NCM.player.data.ThemePrefs.init(this)
@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
             val sessionToken = SessionToken(this, ComponentName(this, AmePlaybackService::class.java))
             controllerFuture = MediaController.Builder(this, sessionToken).buildAsync()
         }.onFailure { e ->
-            Log.w("AME_DEBUG", "Failed to bind MediaController to AmePlaybackService", e)
+            AppLogger.w("AME_DEBUG", "Failed to bind MediaController to AmePlaybackService", e)
         }
     }
 

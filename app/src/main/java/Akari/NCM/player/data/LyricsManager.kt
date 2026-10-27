@@ -7,7 +7,7 @@ import Akari.NCM.player.core.PlayableMedia
 import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.net.Uri
-import android.util.Log
+import Akari.NCM.player.core.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -32,7 +32,7 @@ class LyricsManager(
             if (!embeddedLrc.isNullOrBlank()) {
                 val parsed = LrcParser.parse(embeddedLrc)
                 if (parsed.isNotEmpty()) {
-                    Log.d("LyricsManager", "Found embedded lyrics for ${media.title}")
+                    AppLogger.d("LyricsManager", "Found embedded lyrics for ${media.title}")
                     return@withContext LyricResult(parsed, LyricSource.EMBEDDED)
                 }
             }
@@ -42,7 +42,7 @@ class LyricsManager(
             if (!lrcFileContent.isNullOrBlank()) {
                 val parsed = LrcParser.parse(lrcFileContent)
                 if (parsed.isNotEmpty()) {
-                    Log.d("LyricsManager", "Found local .lrc file for ${media.title}")
+                    AppLogger.d("LyricsManager", "Found local .lrc file for ${media.title}")
                     return@withContext LyricResult(parsed, LyricSource.LOCAL_LRC)
                 }
             }
@@ -91,7 +91,7 @@ class LyricsManager(
                     val merged = LrcParser.mergeWithTranslation(mP, tP)
                     // 必须有实质性的歌词，不能是空的或者纯音乐标识
                     if (merged.isNotEmpty() && merged.any { it.text.isNotBlank() && !it.text.contains("纯音乐") }) {
-                        android.util.Log.d("LyricsManager", "Fetched fallback online lyrics from ${song.title} - ${song.artist}")
+                        AppLogger.d("LyricsManager", "Fetched fallback online lyrics from ${song.title} - ${song.artist}")
                         return LyricResult(merged, LyricSource.ONLINE)
                     }
                 }
@@ -107,7 +107,7 @@ class LyricsManager(
                 val transParsed = LrcParser.parse(transLrc)
                 val merged = LrcParser.mergeWithTranslation(mainParsed, transParsed)
                 if (merged.isNotEmpty()) {
-                    Log.d("LyricsManager", "Fetched online lyrics by exact ID for ${media.title}")
+                    AppLogger.d("LyricsManager", "Fetched online lyrics by exact ID for ${media.title}")
                     return@withContext LyricResult(merged, LyricSource.ONLINE)
                 }
             }

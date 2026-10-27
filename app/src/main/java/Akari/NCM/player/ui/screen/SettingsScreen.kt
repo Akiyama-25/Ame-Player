@@ -763,13 +763,13 @@ item(span = { GridItemSpan(maxLineSpan) }) {
             text = {
                 Column {
                     Text(
-                        text = "当前等级: ${currentLogLevel.label}（默认等级: ERROR）",
+                        text = "当前等级: ${currentLogLevel.label}（默认等级: DEBUG）",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp)
                     )
                     LogLevel.entries.forEach { level ->
-                        val displayLabel = if (level == LogLevel.ERROR) "${level.label} (默认)" else level.label
+                        val displayLabel = if (level == LogLevel.DEBUG) "${level.label} (默认)" else level.label
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

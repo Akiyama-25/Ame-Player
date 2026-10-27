@@ -1844,14 +1844,14 @@ private fun UsbExclusiveDialog(
                                     )
                                 }
                                 val statusText = when {
-                                    isExclusive && isClaimed -> "独占状态: 🟢 硬件接口已排他抢占 (Bit-Perfect Direct)"
-                                    isExclusive -> "独占状态: 🟡 优先路由锁定 (点击开关可重新申请硬件授权)"
+                                    isExclusive && hasDevice -> "独占状态: 🟢 硬件独占直通生效中 (Bit-Perfect Direct)"
+                                    isExclusive -> "独占状态: 🟡 等待 USB DAC 硬件接入"
                                     else -> "独占状态: ⚪ 系统共享音频路由"
                                 }
                                 Text(
                                     statusText,
                                     fontSize = 11.sp,
-                                    color = if (isExclusive && isClaimed) Color(0xFF34D399) else Color.White.copy(alpha = 0.6f)
+                                    color = if (isExclusive && hasDevice) Color(0xFF34D399) else Color.White.copy(alpha = 0.6f)
                                 )
                             }
                         }
@@ -1859,11 +1859,11 @@ private fun UsbExclusiveDialog(
                 }
 
                 Column(modifier = Modifier.padding(horizontal = 4.dp)) {
-                    Text("💡 方案三独占架构说明：", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.8f))
+                    Text("💡 USB 独占直通架构说明：", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.8f))
                     Spacer(Modifier.height(4.dp))
                     Text("1. UAC 协议自动识别：读取 USB 设备描述符，精准识别 UAC 1.0 / 2.0 通道协议与传输特性。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
                     Spacer(Modifier.height(2.dp))
-                    Text("2. 硬件排他性抢占：基于 USB Host API 独占锁定音频传输接口，规避系统通知音与 AudioFlinger 强制重采样。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
+                    Text("2. 硬件专属通道锁定：锁定音频专属直通路由与无损采样率输出，规避系统通知音与混音干扰。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
                     Spacer(Modifier.height(2.dp))
                     Text("3. 拔出防爆音保护：耳放意外拔出时自动触发安全暂停，避免杂音与爆音保护听力安全。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
                 }

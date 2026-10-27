@@ -3,7 +3,7 @@ package Akari.NCM.player.data
 import android.content.ContentResolver
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.util.Log
+import Akari.NCM.player.core.AppLogger
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
@@ -291,10 +291,10 @@ class NcmDataSource : DataSource {
                     val magic = readBytesStatic(stream, 8)
                     val magicHex = magic.joinToString("") { "%02x".format(it) }
                     val magicStr = String(magic, Charsets.US_ASCII)
-                    // Log.d("AmeScanner", "scanMetadata: first8bytes=[$magicHex] ascii=[$magicStr]")
+                    // AppLogger.d("AmeScanner", "scanMetadata: first8bytes=[$magicHex] ascii=[$magicStr]")
                     val expected = byteArrayOf(67, 84, 69, 78, 70, 68, 65, 77)
                     if (!magic.contentEquals(expected)) {
-                        // Log.d("AmeScanner", "scanMetadata: NOT NCM (magic mismatch)")
+                        // AppLogger.d("AmeScanner", "scanMetadata: NOT NCM (magic mismatch)")
                         return null
                     }
 
@@ -302,22 +302,22 @@ class NcmDataSource : DataSource {
 
                     // Skip key block
                     val keyLen = readUint32LEStatic(stream)
-                    // Log.d("AmeScanner", "scanMetadata: keyBlockLen=$keyLen")
+                    // AppLogger.d("AmeScanner", "scanMetadata: keyBlockLen=$keyLen")
                     skipBytesStatic(stream, keyLen.toLong())
 
                     // Read meta block
                     val metaLen = readUint32LEStatic(stream)
-                    // Log.d("AmeScanner", "scanMetadata: metaBlockLen=$metaLen")
+                    // AppLogger.d("AmeScanner", "scanMetadata: metaBlockLen=$metaLen")
                     val metaEnc = readBytesStatic(stream, metaLen)
                     for (i in metaEnc.indices) {
                         metaEnc[i] = (metaEnc[i].toInt() xor 0x63).toByte()
                     }
 
                     val metadata = parseMetaBlockStatic(metaEnc)
-                    // Log.d("AmeScanner", "scanMetadata: parsed id=${metadata.musicId}, name=${metadata.musicName}, format=${metadata.format}, artists=${metadata.artists}")
+                    // AppLogger.d("AmeScanner", "scanMetadata: parsed id=${metadata.musicId}, name=${metadata.musicName}, format=${metadata.format}, artists=${metadata.artists}")
                     // Invalid NCM if metadata is empty (magic matched but content is not NCM)
                     if (metadata.musicId == 0L && metadata.musicName == "Unknown") {
-                        // Log.d("AmeScanner", "scanMetadata: empty metadata, rejecting as NCM")
+                        // AppLogger.d("AmeScanner", "scanMetadata: empty metadata, rejecting as NCM")
                         return null
                     }
 
@@ -328,21 +328,21 @@ class NcmDataSource : DataSource {
                     // Extract embedded cover image
                     skipBytesStatic(stream, 5) // Skip 5 bytes CRC/gap
                     val imageLen = readUint32LEStatic(stream)
-                    // Log.i("[AME_COVER_DEBUG]", "Embedded imageLen=$imageLen")
+                    // AppLogger.i("[AME_COVER_DEBUG]", "Embedded imageLen=$imageLen")
                     val coverBytes = if (imageLen in 1..(20 * 1024 * 1024)) {
                         try {
                             readBytesStatic(stream, imageLen)
                         } catch (e: Exception) {
-                            Log.e("[AME_COVER_DEBUG]", "Failed to read image bytes: ${e.message}", e)
+                            AppLogger.e("[AME_COVER_DEBUG]", "Failed to read image bytes: ${e.message}", e)
                             null
                         }
                     } else null
 
-                    // Log.i("[AME_COVER_DEBUG]", "Scan complete. format=$format, coverBytesSize=${coverBytes?.size ?: 0}")
+                    // AppLogger.i("[AME_COVER_DEBUG]", "Scan complete. format=$format, coverBytesSize=${coverBytes?.size ?: 0}")
                     Triple(metadata, format, coverBytes)
                 }
             } catch (e: Exception) {
-                Log.e("[AME_COVER_DEBUG]", "scanMetadata exception=${e.javaClass.simpleName}: ${e.message}", e)
+                AppLogger.e("[AME_COVER_DEBUG]", "scanMetadata exception=${e.javaClass.simpleName}: ${e.message}", e)
                 null
             }
         }
@@ -354,7 +354,7 @@ class NcmDataSource : DataSource {
                 val decoded = android.util.Base64.decode(payload, android.util.Base64.DEFAULT)
                 val decrypted = AesEcbDecryptor.decrypt(decoded, META_KEY)
                 val jsonStr = String(decrypted)
-                // Log.i("[AME_COVER_DEBUG]", "Raw metadata JSON: $jsonStr")
+                // AppLogger.i("[AME_COVER_DEBUG]", "Raw metadata JSON: $jsonStr")
                 val cleanJson = jsonStr.substringAfter(":").trim()
                 val json = JSONObject(cleanJson)
                 val metaJson = if (jsonStr.startsWith("dj:")) {
@@ -383,7 +383,7 @@ class NcmDataSource : DataSource {
                     albumPic += "${separator}param=500y500"
                 }
 
-                // Log.i("[AME_COVER_DEBUG]", "Parsed metadata: musicId=${metaJson.optLong("musicId")}, rawAlbumPic='$rawAlbumPic', finalAlbumPic='$albumPic'")
+                // AppLogger.i("[AME_COVER_DEBUG]", "Parsed metadata: musicId=${metaJson.optLong("musicId")}, rawAlbumPic='$rawAlbumPic', finalAlbumPic='$albumPic'")
 
                 NcmMetadata(
                     musicId = metaJson.optLong("musicId", 0L),
@@ -395,7 +395,7 @@ class NcmDataSource : DataSource {
                     duration = metaJson.optLong("duration", 0L)
                 )
             } catch (e: Exception) {
-                Log.e("[AME_COVER_DEBUG]", "parseMetaBlockStatic exception: ${e.message}", e)
+                AppLogger.e("[AME_COVER_DEBUG]", "parseMetaBlockStatic exception: ${e.message}", e)
                 NcmMetadata()
             }
         }

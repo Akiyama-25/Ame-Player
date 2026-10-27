@@ -48,7 +48,7 @@ object AppLogger {
     private var logFile: File? = null
     private var crashHandlerInstalled = false
 
-    private val _currentLevel = MutableStateFlow(LogLevel.ERROR)
+    private val _currentLevel = MutableStateFlow(LogLevel.DEBUG)
     val currentLevel: StateFlow<LogLevel> = _currentLevel.asStateFlow()
 
     private val _maxFileSizeKb = MutableStateFlow(DEFAULT_MAX_SIZE_KB)
@@ -58,7 +58,7 @@ object AppLogger {
 
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val levelStr = prefs.getString(KEY_LOG_LEVEL, LogLevel.ERROR.name) ?: LogLevel.ERROR.name
+        val levelStr = prefs.getString(KEY_LOG_LEVEL, LogLevel.DEBUG.name) ?: LogLevel.DEBUG.name
         _currentLevel.value = LogLevel.fromString(levelStr)
         _maxFileSizeKb.value = prefs.getLong(KEY_MAX_FILE_SIZE_KB, DEFAULT_MAX_SIZE_KB)
 

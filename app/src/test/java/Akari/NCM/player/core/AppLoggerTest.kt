@@ -38,20 +38,20 @@ class AppLoggerTest {
 
     @Test
     fun testDefaultLogLevelFiltersLowerPriorityLogs() {
-        // Default level is ERROR
-        assertEquals(LogLevel.ERROR, AppLogger.currentLevel.value)
+        // Default level is DEBUG
+        assertEquals(LogLevel.DEBUG, AppLogger.currentLevel.value)
 
         AppLogger.v("TestTag", "Verbose message should be ignored")
-        AppLogger.d("TestTag", "Debug message should be ignored")
-        AppLogger.i("TestTag", "Info message should be ignored")
-        AppLogger.w("TestTag", "Warn message should be ignored")
+        AppLogger.d("TestTag", "Debug message should be recorded")
+        AppLogger.i("TestTag", "Info message should be recorded")
+        AppLogger.w("TestTag", "Warn message should be recorded")
         AppLogger.e("TestTag", "Error message should be recorded")
 
         val content = AppLogger.getLogContent()
         assertFalse(content.contains("Verbose message should be ignored"))
-        assertFalse(content.contains("Debug message should be ignored"))
-        assertFalse(content.contains("Info message should be ignored"))
-        assertFalse(content.contains("Warn message should be ignored"))
+        assertTrue(content.contains("[DEBUG] [TestTag]: Debug message should be recorded"))
+        assertTrue(content.contains("[INFO] [TestTag]: Info message should be recorded"))
+        assertTrue(content.contains("[WARN] [TestTag]: Warn message should be recorded"))
         assertTrue(content.contains("[ERROR] [TestTag]: Error message should be recorded"))
     }
 
