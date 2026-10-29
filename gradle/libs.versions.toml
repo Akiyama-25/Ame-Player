@@ -39,7 +39,7 @@ androidx-material-icons-extended = { module = "androidx.compose.material:materia
 androidx-compose-material3-adaptive = { module = "androidx.compose.material3.adaptive:adaptive", version.ref = "adaptive" }
 androidx-compose-material3-adaptive-layout = { module = "androidx.compose.material3.adaptive:adaptive-layout", version.ref = "adaptive" }
 androidx-compose-material3-adaptive-navigation = { module = "androidx.compose.material3.adaptive:adaptive-navigation", version.ref = "adaptive" }
-androidx-compose-material3-adaptive-navigation-suite = { module = "androidx.compose.material3.adaptive:adaptive-navigation-suite", version.ref = "adaptive-navigation-suite" }
+androidx-compose-material3-adaptive-navigation-suite = { module = "androidx.compose.material3:material3-adaptive-navigation-suite", version.ref = "adaptive-navigation-suite" }
 
 # Media3
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
