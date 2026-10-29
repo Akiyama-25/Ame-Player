@@ -123,12 +123,7 @@ private fun WordItem(
                 fontSize = fontSize,
                 fontWeight = FontWeight.Bold,
                 style = TextStyle(brush = sweepBrush),
-                lineHeight = lineHeight,
-                modifier = Modifier.graphicsLayer {
-                    val pop = kotlin.math.sin(progress * Math.PI.toFloat()) * 0.05f
-                    scaleX = 1f + pop
-                    scaleY = 1f + pop
-                }
+                lineHeight = lineHeight
             )
         }
     }

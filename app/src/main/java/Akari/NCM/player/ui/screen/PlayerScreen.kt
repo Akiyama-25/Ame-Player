@@ -22,6 +22,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -558,17 +559,16 @@ private fun PlayerMainContentView(
                         )
                         AnimatedVisibility(
                             visible = showTranslation && !currentLyricLine.translation.isNullOrBlank(),
-                            enter = fadeIn(animationSpec = tween(350, easing = LinearOutSlowInEasing)) +
+                            enter = fadeIn(animationSpec = tween(550, easing = FastOutSlowInEasing)) +
                                     expandVertically(
-                                        animationSpec = spring(
-                                            dampingRatio = Spring.DampingRatioNoBouncy,
-                                            stiffness = Spring.StiffnessMediumLow
-                                        ),
+                                        animationSpec = tween(550, easing = FastOutSlowInEasing),
+                                        clip = false,
                                         expandFrom = Alignment.Top
                                     ),
-                            exit = fadeOut(animationSpec = tween(250, easing = FastOutLinearInEasing)) +
+                            exit = fadeOut(animationSpec = tween(550, easing = FastOutSlowInEasing)) +
                                     shrinkVertically(
-                                        animationSpec = tween(250, easing = FastOutLinearInEasing),
+                                        animationSpec = tween(550, easing = FastOutSlowInEasing),
+                                        clip = false,
                                         shrinkTowards = Alignment.Top
                                     )
                         ) {
@@ -813,12 +813,12 @@ private fun PlayerMainContentView(
                                     Box(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), contentAlignment = Alignment.CenterEnd) {
                                         val translateAlpha by animateFloatAsState(
                                             targetValue = if (showTranslation) 1f else 0.45f,
-                                            animationSpec = tween(300),
+                                            animationSpec = tween(550, easing = FastOutSlowInEasing),
                                             label = "LandscapeTranslateAlpha"
                                         )
                                         val translateBg by animateColorAsState(
                                             targetValue = if (showTranslation) Color.White.copy(alpha = 0.15f) else Color.Transparent,
-                                            animationSpec = tween(300),
+                                            animationSpec = tween(550, easing = FastOutSlowInEasing),
                                             label = "LandscapeTranslateBg"
                                         )
                                         IconButton(
@@ -1013,6 +1013,11 @@ private fun PlayerMainContentView(
                             Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White)
                         }
                         
+                        val topTranslateAlpha by animateFloatAsState(
+                            targetValue = if (showTranslation) 1f else 0.45f,
+                            animationSpec = tween(550, easing = FastOutSlowInEasing),
+                            label = "TopTranslateAlpha"
+                        )
                         IconButton(
                             onClick = { showTranslation = !showTranslation },
                             modifier = Modifier.graphicsLayer { alpha = 1f - p }
@@ -1020,7 +1025,7 @@ private fun PlayerMainContentView(
                             Icon(
                                 Icons.Rounded.Translate,
                                 contentDescription = "Translate Toggle",
-                                tint = if (showTranslation) Color.White else Color.White.copy(alpha = 0.5f)
+                                tint = Color.White.copy(alpha = topTranslateAlpha)
                             )
                         }
                     }
@@ -1524,7 +1529,21 @@ private fun SaltFullLyricsView(
                 listState.scrollToItem(currentIndex)
                 isInitialScroll = false
             } else {
-                listState.animateScrollToItem(currentIndex)
+                val layoutInfo = listState.layoutInfo
+                val targetItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == currentIndex }
+                if (targetItem != null) {
+                    val viewportCenter = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset) / 2f
+                    val itemCenter = targetItem.offset + targetItem.size / 2f
+                    val delta = itemCenter - viewportCenter
+                    if (kotlin.math.abs(delta) > 1f) {
+                        listState.animateScrollBy(
+                            value = delta,
+                            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+                        )
+                    }
+                } else {
+                    listState.animateScrollToItem(currentIndex)
+                }
             }
         }
     }
@@ -1569,18 +1588,9 @@ private fun SaltFullLyricsView(
                     itemsIndexed(lyricResult.lines) { index, line ->
                         val isSelected = index == currentIndex
 
-                        val lineScale by animateFloatAsState(
-                            targetValue = if (isSelected) 1.05f else 1.0f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            ),
-                            label = "lineScale_$index"
-                        )
-
                         val lineAlpha by animateFloatAsState(
                             targetValue = if (isSelected) 1.0f else 0.35f,
-                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
                             label = "lineAlpha_$index"
                         )
 
@@ -1590,8 +1600,6 @@ private fun SaltFullLyricsView(
                                 .clickable { onLyricClick(line.timeMs) }
                                 .padding(vertical = 4.dp)
                                 .graphicsLayer {
-                                    scaleX = lineScale
-                                    scaleY = lineScale
                                     alpha = lineAlpha
                                 },
                             horizontalAlignment = Alignment.CenterHorizontally
@@ -1621,17 +1629,16 @@ private fun SaltFullLyricsView(
 
                             AnimatedVisibility(
                                 visible = showTranslation && !line.translation.isNullOrBlank(),
-                                enter = fadeIn(animationSpec = tween(durationMillis = 350, easing = LinearOutSlowInEasing)) +
+                                enter = fadeIn(animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing)) +
                                         expandVertically(
-                                            animationSpec = spring(
-                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                stiffness = Spring.StiffnessMediumLow
-                                            ),
+                                            animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
+                                            clip = false,
                                             expandFrom = Alignment.Top
                                         ),
-                                exit = fadeOut(animationSpec = tween(durationMillis = 250, easing = FastOutLinearInEasing)) +
+                                exit = fadeOut(animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing)) +
                                         shrinkVertically(
-                                            animationSpec = tween(durationMillis = 250, easing = FastOutLinearInEasing),
+                                            animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
+                                            clip = false,
                                             shrinkTowards = Alignment.Top
                                         )
                             ) {
@@ -1689,12 +1696,12 @@ private fun SaltFullLyricsView(
 
             val translateAlpha by animateFloatAsState(
                 targetValue = if (showTranslation) 1f else 0.45f,
-                animationSpec = tween(300),
+                animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
                 label = "FullLyricsTranslateAlpha"
             )
             val translateBg by animateColorAsState(
                 targetValue = if (showTranslation) Color.White.copy(alpha = 0.15f) else Color.Transparent,
-                animationSpec = tween(300),
+                animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
                 label = "FullLyricsTranslateBg"
             )
 
