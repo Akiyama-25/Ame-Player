@@ -23,7 +23,9 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -1523,28 +1525,62 @@ private fun SaltFullLyricsView(
     onLyricClick: (Long) -> Unit
 ) {
     var isInitialScroll by remember { mutableStateOf(true) }
-    LaunchedEffect(currentIndex, showTranslation) {
-        if (currentIndex >= 0 && lyricResult.lines.isNotEmpty() && !listState.isScrollInProgress) {
-            if (isInitialScroll) {
-                listState.scrollToItem(currentIndex)
-                isInitialScroll = false
-            } else {
-                val layoutInfo = listState.layoutInfo
-                val targetItem = layoutInfo.visibleItemsInfo.firstOrNull { it.index == currentIndex }
-                if (targetItem != null) {
-                    val viewportCenter = (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset) / 2f
-                    val itemCenter = targetItem.offset + targetItem.size / 2f
-                    val delta = itemCenter - viewportCenter
-                    if (kotlin.math.abs(delta) > 1f) {
+    val isDragged by listState.interactionSource.collectIsDraggedAsState()
+
+    LaunchedEffect(currentIndex, showTranslation, listState.layoutInfo.viewportSize.height) {
+        if (currentIndex < 0 || lyricResult.lines.isEmpty()) return@LaunchedEffect
+
+        suspend fun centerItem(index: Int, animate: Boolean) {
+            val layoutInfo = listState.layoutInfo
+            val containerHeight = layoutInfo.viewportSize.height
+            if (containerHeight <= 0) return
+
+            val target = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+            if (target != null) {
+                val targetOffset = (containerHeight - target.size) / 2f
+                val delta = target.offset - targetOffset
+                if (kotlin.math.abs(delta) > 1f) {
+                    if (animate) {
                         listState.animateScrollBy(
                             value = delta,
                             animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
                         )
+                    } else {
+                        listState.scrollBy(delta)
                     }
-                } else {
-                    listState.animateScrollToItem(currentIndex)
+                }
+            } else {
+                listState.scrollToItem(index)
+                val updatedLayout = listState.layoutInfo
+                val updatedContainerHeight = updatedLayout.viewportSize.height
+                if (updatedContainerHeight > 0) {
+                    val updatedTarget = updatedLayout.visibleItemsInfo.firstOrNull { it.index == index }
+                    if (updatedTarget != null) {
+                        val targetOffset = (updatedContainerHeight - updatedTarget.size) / 2f
+                        val delta = updatedTarget.offset - targetOffset
+                        if (kotlin.math.abs(delta) > 1f) {
+                            if (animate) {
+                                listState.animateScrollBy(
+                                    value = delta,
+                                    animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
+                                )
+                            } else {
+                                listState.scrollBy(delta)
+                            }
+                        }
+                    }
                 }
             }
+        }
+
+        if (isInitialScroll) {
+            val h = listState.layoutInfo.viewportSize.height
+            if (h > 0) {
+                centerItem(currentIndex, animate = false)
+                isInitialScroll = false
+            }
+        } else if (!isDragged) {
+            centerItem(currentIndex, animate = true)
         }
     }
 
