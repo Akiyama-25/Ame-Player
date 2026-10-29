@@ -233,6 +233,8 @@ fun PlayerScreen(
             val playlist by playerState.playlist.collectAsState()
             val currentIndex by playerState.currentIndex.collectAsState()
             val isPlaying by playerState.isPlaying.collectAsState()
+            val infinitePlayMode by playerState.infinitePlayMode.collectAsState()
+            val isFetchingRecommendations by playerState.isFetchingRecommendations.collectAsState()
             
             @OptIn(ExperimentalMaterial3Api::class)
             androidx.compose.material3.ModalBottomSheet(
@@ -244,18 +246,64 @@ fun PlayerScreen(
                         .heightIn(max = configuration.screenHeightDp.dp * 0.85f)
                         .padding(bottom = 16.dp)
                 ) {
-                    Text(
-                        "播放队列 (${playlist.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(16.dp)
-                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "播放队列 (${playlist.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (infinitePlayMode.isActive) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "∞ ${infinitePlayMode.label}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (isFetchingRecommendations) {
+                                        Spacer(Modifier.width(6.dp))
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(12.dp),
+                                            strokeWidth = 1.5.dp,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                    Spacer(Modifier.width(6.dp))
+                                    Icon(
+                                        imageVector = Icons.Rounded.Close,
+                                        contentDescription = "退出无限推荐",
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .clickable { playerController.disableInfinitePlayback() }
+                                    )
+                                }
+                            }
+                        }
+                    }
                     if (playlist.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxWidth().height(200.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("队列为空", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                if (isFetchingRecommendations) "正在加载推荐曲目..." else "队列为空",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     } else {
                         LazyColumn(
@@ -1184,6 +1232,8 @@ private fun SaltPlayQueueView(
     val currentIndex   by playerState.currentIndex.collectAsState()
     val repeatMode     by playerState.repeatMode.collectAsState()
     val shuffleEnabled by playerState.shuffleEnabled.collectAsState()
+    val infinitePlayMode by playerState.infinitePlayMode.collectAsState()
+    val isFetchingRecommendations by playerState.isFetchingRecommendations.collectAsState()
 
     val coverUrl = currentTrack?.coverUrl
 
@@ -1352,24 +1402,49 @@ private fun SaltPlayQueueView(
                 Spacer(Modifier.weight(1f))
 
                 Text(
-                    text = "播放队列",
-                    fontSize = 15.sp,
+                    text = if (infinitePlayMode.isActive) "∞ ${infinitePlayMode.label}" else "播放队列",
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    letterSpacing = 1.sp
+                    letterSpacing = 0.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 200.dp)
                 )
+
+                if (isFetchingRecommendations) {
+                    Spacer(Modifier.width(6.dp))
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(12.dp),
+                        strokeWidth = 1.5.dp,
+                        color = Color.White.copy(alpha = 0.8f)
+                    )
+                }
 
                 Spacer(Modifier.weight(1f))
 
-                TextButton(
-                    onClick = { /* Clear or reset queue */ },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                ) {
-                    Text(
-                        text = "清空",
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.5f)
-                    )
+                if (infinitePlayMode.isActive) {
+                    TextButton(
+                        onClick = { playerController.disableInfinitePlayback() },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Text(
+                            text = "退出漫游",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.75f)
+                        )
+                    }
+                } else {
+                    TextButton(
+                        onClick = { /* Clear or reset queue */ },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                    ) {
+                        Text(
+                            text = "清空",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
                 }
             }
 

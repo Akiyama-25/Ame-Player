@@ -844,38 +844,144 @@ class NcmApi @Inject constructor(
             return emptyList()
         }
 
+        return parseHomepageBlocksJson(body)
+    }
+
+    internal fun parseHomepageBlocksJson(body: String): List<HomepageBlock> {
         return try {
-            val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+            val rootElement = Json.parseToJsonElement(body)
+            val json = if (rootElement is JsonPrimitive && rootElement.isString) {
+                Json.parseToJsonElement(rootElement.content).asJsonObjectOrNull
+            } else {
+                rootElement.asJsonObjectOrNull
+            }
             val data = json?.get("data")?.asJsonObjectOrNull
             val blocks = data?.get("blocks")?.jsonArray ?: return emptyList()
+            val excludedBlocks = setOf(
+                "HOMEPAGE_BANNER",
+                "HOMEPAGE_BLOCK_OLD_DRAGON_BALL",
+                "HOMEPAGE_VOICELIST_RCMD",
+                "HOMEPAGE_PODCAST24",
+                "HOMEPAGE_BLOCK_YUNCUN_PRODUCED",
+                "HOMEPAGE_BLOCK_HOT_TOPIC",
+                "HOMEPAGE_MUSIC_CALENDAR",
+                "HOMEPAGE_BLOCK_NEW_HOT_COMMENT",
+                "HOMEPAGE_VOICEBOOK_RCMD"
+            )
+
             blocks.mapNotNull { blockElement ->
                 val block = blockElement.asJsonObjectOrNull ?: return@mapNotNull null
                 val blockCode = block["blockCode"]?.jsonPrimitive?.contentOrNull ?: ""
+                if (blockCode in excludedBlocks) return@mapNotNull null
+
                 val uiElement = block["uiElement"]?.asJsonObjectOrNull
-                val title = uiElement?.get("subTitle")?.asJsonObjectOrNull?.get("title")?.jsonPrimitive?.contentOrNull ?: ""
+                val title = uiElement?.get("subTitle")?.asJsonObjectOrNull?.get("title")?.jsonPrimitive?.contentOrNull
+                    ?: uiElement?.get("mainTitle")?.asJsonObjectOrNull?.get("title")?.jsonPrimitive?.contentOrNull
+                    ?: ""
 
                 val creativesElement = block["creatives"]?.jsonArray ?: return@mapNotNull null
-                val creativesList = creativesElement.mapNotNull { creativeElement ->
-                    val creative = creativeElement.asJsonObjectOrNull ?: return@mapNotNull null
+                val creativesList = mutableListOf<HomepageBlock.Creative>()
+
+                for (creativeElement in creativesElement) {
+                    val creative = creativeElement.asJsonObjectOrNull ?: continue
                     val creativeType = creative["creativeType"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val resources = creative["resources"]?.jsonArray ?: return@mapNotNull null
-                    if (resources.isEmpty()) return@mapNotNull null
+                    val creativeAction = creative["action"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val creativeActionType = creative["actionType"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val creativeLogInfo = creative["logInfo"]?.jsonPrimitive?.contentOrNull
+                    val resources = creative["resources"]?.jsonArray ?: continue
+                    if (resources.isEmpty()) continue
 
-                    val resource = resources[0].asJsonObjectOrNull ?: return@mapNotNull null
-                    val resourceId = resource["resourceId"]?.jsonPrimitive?.contentOrNull ?: ""
-                    val resourceUiElement = resource["uiElement"]?.asJsonObjectOrNull
-                    val creativeTitle = resourceUiElement?.get("mainTitle")?.asJsonObjectOrNull?.get("title")?.jsonPrimitive?.contentOrNull ?: ""
-                    val imageUrl = resourceUiElement?.get("image")?.asJsonObjectOrNull?.get("imageUrl")?.jsonPrimitive?.contentOrNull ?: ""
-                    val playCount = resource["resourceExtInfo"]?.asJsonObjectOrNull?.get("playCount")?.jsonPrimitive?.longOrNull ?: 0L
+                    val firstResType = resources[0].asJsonObjectOrNull
+                        ?.get("resourceType")?.jsonPrimitive?.contentOrNull ?: "list"
 
-                    HomepageBlock.Creative(
-                        creativeType = creativeType,
-                        title = creativeTitle,
-                        imageUrl = imageUrl,
-                        resourceId = resourceId,
-                        playCount = playCount
-                    )
+                    // 单曲推荐卡片（如风格精选、新歌）每个 creative 内含多首单曲 resource，展开以便单独点击起播；
+                    // 歌单类卡片（如 scroll_playlist）只取首个主歌单 resource
+                    val targetResources = if (firstResType.equals("song", ignoreCase = true)) {
+                        resources.mapNotNull { it.asJsonObjectOrNull }
+                    } else {
+                        listOfNotNull(resources[0].asJsonObjectOrNull)
+                    }
+
+                    for (resource in targetResources) {
+                        val resourceType = resource["resourceType"]?.jsonPrimitive?.contentOrNull?.ifBlank { "list" } ?: "list"
+                        if (!resourceType.equals("list", ignoreCase = true) &&
+                            !resourceType.equals("song", ignoreCase = true)
+                        ) {
+                            continue
+                        }
+
+                        val resourceId = resource["resourceId"]?.jsonPrimitive?.contentOrNull ?: ""
+                        if (resourceId.isBlank()) continue
+
+                        val creativeUiElement = creative["uiElement"]?.asJsonObjectOrNull
+                        val resourceUiElement = resource["uiElement"]?.asJsonObjectOrNull
+                        val creativeTitle = resourceUiElement?.get("mainTitle")?.asJsonObjectOrNull?.get("title")?.jsonPrimitive?.contentOrNull
+                            ?: creativeUiElement?.get("mainTitle")?.asJsonObjectOrNull?.get("title")?.jsonPrimitive?.contentOrNull
+                            ?: ""
+                        val imageUrl = resourceUiElement?.get("image")?.asJsonObjectOrNull?.get("imageUrl")?.jsonPrimitive?.contentOrNull
+                            ?: creativeUiElement?.get("image")?.asJsonObjectOrNull?.get("imageUrl")?.jsonPrimitive?.contentOrNull
+                            ?: ""
+                        val extInfo = resource["resourceExtInfo"]?.asJsonObjectOrNull
+                        val playCount = extInfo?.get("playCount")?.jsonPrimitive?.longOrNull ?: 0L
+                        val specialType = extInfo?.get("specialType")?.jsonPrimitive?.intOrNull ?: 0
+                        val action = resource["action"]?.jsonPrimitive?.contentOrNull?.ifBlank { creativeAction } ?: creativeAction
+                        val actionType = resource["actionType"]?.jsonPrimitive?.contentOrNull?.ifBlank { creativeActionType } ?: creativeActionType
+
+                        val logInfoRaw = resource["logInfo"]?.jsonPrimitive?.contentOrNull ?: creativeLogInfo
+                        val relatedSongId = extractRelatedSongId(logInfoRaw)
+
+                        val isSongResource = resourceType.equals("song", ignoreCase = true) ||
+                            creativeType.contains("SONG", ignoreCase = true)
+
+                        val seedSongId = when {
+                            isSongResource -> resourceId
+                            !relatedSongId.isNullOrBlank() -> relatedSongId
+                            else -> null
+                        }
+
+                        val seedSong = if (isSongResource) {
+                            val rawSongObj = extInfo?.get("song")?.asJsonObjectOrNull
+                                ?: extInfo?.get("songData")?.asJsonObjectOrNull
+                            val parsed = parseSong(rawSongObj)
+                            if (parsed != null) {
+                                if (parsed.coverUrl.isNullOrBlank() && imageUrl.isNotBlank()) {
+                                    parsed.copy(coverUrl = imageUrl)
+                                } else {
+                                    parsed
+                                }
+                            } else {
+                                val artists = extInfo?.get("artists")?.jsonArray?.mapNotNull {
+                                    it.asJsonObjectOrNull?.get("name")?.jsonPrimitive?.contentOrNull
+                                }?.joinToString("/") ?: ""
+                                PlayableMedia.Online(
+                                    id = resourceId,
+                                    title = creativeTitle.ifBlank { "推荐单曲" },
+                                    artist = artists,
+                                    album = "",
+                                    coverUrl = imageUrl.ifBlank { null }
+                                )
+                            }
+                        } else null
+
+                        creativesList.add(
+                            HomepageBlock.Creative(
+                                creativeType = creativeType,
+                                title = creativeTitle,
+                                imageUrl = imageUrl,
+                                resourceId = resourceId,
+                                playCount = playCount,
+                                resourceType = resourceType,
+                                action = action,
+                                actionType = actionType,
+                                seedSongId = seedSongId,
+                                seedSong = seedSong,
+                                specialType = specialType
+                            )
+                        )
+                    }
                 }
+
+                if (creativesList.isEmpty()) return@mapNotNull null
 
                 HomepageBlock(
                     blockCode = blockCode,
@@ -886,6 +992,230 @@ class NcmApi @Inject constructor(
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             AppLogger.e("AME_HOMEPAGE", "getHomepageBlocks Error", e)
+            emptyList()
+        }
+    }
+
+    private fun extractRelatedSongId(logInfoRaw: String?): String? {
+        if (logInfoRaw.isNullOrBlank()) return null
+        return try {
+            val logObj = Json.parseToJsonElement(logInfoRaw).asJsonObjectOrNull ?: return null
+            logObj["relatedSong"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() && it != "null" }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 获取相似推荐歌曲（用于单曲漫游与带种子歌曲的雷达歌单无限续播）
+     */
+    suspend fun getSimiSongs(songId: String): List<PlayableMedia.Online> {
+        if (songId.isBlank()) return emptyList()
+        if (isDirectMode) {
+            try {
+                val songIdLong = songId.toLongOrNull() ?: 0L
+                val payload = buildJsonObject {
+                    put("songid", songIdLong)
+                    put("limit", 50)
+                    put("offset", 0)
+                }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_SIMI_SONG,
+                    NeteaseEndpoints.PATH_EAPI_SIMI_SONG,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val songs = json?.get("songs")?.jsonArray
+                if (songs != null && songs.isNotEmpty()) {
+                    val parsed = songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    if (parsed.isNotEmpty()) return parsed
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_INFINITE_PLAY", "Direct EAPI getSimiSongs failed: ${e.message}")
+            }
+
+            try {
+                val songIdLong = songId.toLongOrNull() ?: 0L
+                val payload = buildJsonObject {
+                    put("songid", songIdLong)
+                    put("limit", 50)
+                    put("offset", 0)
+                    put("csrf_token", "")
+                }.toString()
+                val (body, _) = directClient.postWeapi(
+                    client,
+                    NeteaseEndpoints.URL_WEAPI_SIMI_SONG,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val songs = json?.get("songs")?.jsonArray
+                if (songs != null && songs.isNotEmpty()) {
+                    val parsed = songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    if (parsed.isNotEmpty()) return parsed
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_INFINITE_PLAY", "Direct WEAPI getSimiSongs failed: ${e.message}")
+            }
+        }
+
+        return try {
+            val response = client.get("$baseUrl/simi/song") {
+                parameter("id", songId)
+            }
+            val body = response.bodyAsText()
+            val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+            val songs = json?.get("songs")?.jsonArray ?: return emptyList()
+            songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            emptyList()
+        }
+    }
+
+    /**
+     * 获取私人 FM 推荐歌曲（用于私人 FM 无限推荐队列）
+     */
+    suspend fun getPersonalFmSongs(): List<PlayableMedia.Online> {
+        if (isDirectMode) {
+            try {
+                val (body, _) = directClient.postWeapi(
+                    client,
+                    NeteaseEndpoints.URL_WEAPI_PERSONAL_FM,
+                    """{"csrf_token":""}"""
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val data = json?.get("data")?.jsonArray
+                if (data != null && data.isNotEmpty()) {
+                    val parsed = data.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    if (parsed.isNotEmpty()) return parsed
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_INFINITE_PLAY", "Direct WEAPI getPersonalFmSongs failed: ${e.message}")
+            }
+
+            try {
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_PERSONAL_FM,
+                    NeteaseEndpoints.PATH_EAPI_PERSONAL_FM,
+                    "{}"
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val data = json?.get("data")?.jsonArray
+                if (data != null && data.isNotEmpty()) {
+                    val parsed = data.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    if (parsed.isNotEmpty()) return parsed
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_INFINITE_PLAY", "Direct EAPI getPersonalFmSongs failed: ${e.message}")
+            }
+        }
+
+        return try {
+            val response = client.get("$baseUrl/personal_fm") {
+                parameter("timestamp", System.currentTimeMillis())
+            }
+            val body = response.bodyAsText()
+            val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+            val data = json?.get("data")?.jsonArray ?: return emptyList()
+            data.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            emptyList()
+        }
+    }
+
+    /**
+     * 获取心动模式智能推荐列表（用于心动模式无限推荐队列）
+     */
+    suspend fun getIntelligenceList(
+        playlistId: Long,
+        songId: String,
+        startMusicId: String = songId
+    ): List<PlayableMedia.Online> {
+        if (playlistId <= 0L || songId.isBlank()) return emptyList()
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject {
+                    put("songId", songId)
+                    put("type", "fromPlayOne")
+                    put("playlistId", playlistId)
+                    put("startMusicId", startMusicId.ifBlank { songId })
+                    put("count", 1)
+                }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_INTELLIGENCE_LIST,
+                    NeteaseEndpoints.PATH_EAPI_INTELLIGENCE_LIST,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val data = json?.get("data")?.jsonArray
+                if (data != null && data.isNotEmpty()) {
+                    val parsed = data.mapNotNull { item ->
+                        val itemObj = item.asJsonObjectOrNull ?: return@mapNotNull null
+                        val songObj = itemObj["songInfo"]?.asJsonObjectOrNull ?: itemObj
+                        parseSong(songObj)
+                    }
+                    if (parsed.isNotEmpty()) return parsed
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_INFINITE_PLAY", "Direct EAPI getIntelligenceList failed: ${e.message}")
+            }
+
+            try {
+                val payload = buildJsonObject {
+                    put("songId", songId)
+                    put("type", "fromPlayOne")
+                    put("playlistId", playlistId)
+                    put("startMusicId", startMusicId.ifBlank { songId })
+                    put("count", 1)
+                    put("csrf_token", "")
+                }.toString()
+                val (body, _) = directClient.postWeapi(
+                    client,
+                    NeteaseEndpoints.URL_WEAPI_INTELLIGENCE_LIST,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val data = json?.get("data")?.jsonArray
+                if (data != null && data.isNotEmpty()) {
+                    val parsed = data.mapNotNull { item ->
+                        val itemObj = item.asJsonObjectOrNull ?: return@mapNotNull null
+                        val songObj = itemObj["songInfo"]?.asJsonObjectOrNull ?: itemObj
+                        parseSong(songObj)
+                    }
+                    if (parsed.isNotEmpty()) return parsed
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_INFINITE_PLAY", "Direct WEAPI getIntelligenceList failed: ${e.message}")
+            }
+        }
+
+        return try {
+            val response = client.get("$baseUrl/playmode/intelligence/list") {
+                parameter("id", songId)
+                parameter("pid", playlistId)
+                parameter("sid", startMusicId.ifBlank { songId })
+                parameter("timestamp", System.currentTimeMillis())
+            }
+            val body = response.bodyAsText()
+            val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+            val data = json?.get("data")?.jsonArray ?: return emptyList()
+            data.mapNotNull { item ->
+                val itemObj = item.asJsonObjectOrNull ?: return@mapNotNull null
+                val songObj = itemObj["songInfo"]?.asJsonObjectOrNull ?: itemObj
+                parseSong(songObj)
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             emptyList()
         }
     }

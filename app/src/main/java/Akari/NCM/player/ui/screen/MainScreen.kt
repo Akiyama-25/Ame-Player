@@ -80,6 +80,8 @@ fun MainScreen(
     val currentIndex by playerEngine.currentIndex.collectAsState()
     val positionMs by playerEngine.currentPositionMs.collectAsState()
     val durationMs by playerEngine.durationMs.collectAsState()
+    val infinitePlayMode by playerEngine.infinitePlayMode.collectAsState()
+    val isFetchingRecommendations by playerEngine.isFetchingRecommendations.collectAsState()
     val openPlayerCount by openPlayerRequests.collectAsState()
 
     var showPlayerScreen by remember { mutableStateOf(false) }
@@ -167,6 +169,12 @@ fun MainScreen(
     val ncmApi = remember { NcmApi(sessionManager) }
     val searchHistoryManager = remember { SearchHistoryManager(context) }
     val localFolderManager = remember { LocalFolderManager(context, sessionManager, playlistManager, ncmApi) }
+
+    LaunchedEffect(playlistManager) {
+        playerEngine.localTrackMatcher = { online ->
+            playlistManager.findLocalMatch(online) ?: online
+        }
+    }
 
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
@@ -434,6 +442,10 @@ fun MainScreen(
                                                                 description = "根据你的音乐口味生成 · 每天 6:00 更新",
                                                                 isDailyRecommend = true
                                                             )
+                                                        },
+                                                        onInfinitePlayClick = { mode, initialTracks, toastMsg ->
+                                                            playerEngine.startInfinitePlayback(mode, initialTracks)
+                                                            Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                                                         }
                                                     )
                                                     val onlineScrimAlpha = 0.35f * (1f - PredictiveBackEasing.transform(onlinePlaylistBackState.progress.coerceIn(0f, 1f)))
@@ -500,6 +512,10 @@ fun MainScreen(
                                                                 description = "根据你的音乐口味生成 · 每天 6:00 更新",
                                                                 isDailyRecommend = true
                                                             )
+                                                        },
+                                                        onInfinitePlayClick = { mode, initialTracks, toastMsg ->
+                                                            playerEngine.startInfinitePlayback(mode, initialTracks)
+                                                            Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
                                                         }
                                                     )
                                                 }
@@ -976,18 +992,68 @@ fun MainScreen(
                     .fillMaxWidth()
                     .padding(bottom = 16.dp)
             ) {
-                Text(
-                    "播放队列 (${playlist.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(16.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "播放队列 (${playlist.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (infinitePlayMode.isActive) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "∞ ${infinitePlayMode.label}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 180.dp)
+                                )
+                                if (isFetchingRecommendations) {
+                                    Spacer(Modifier.width(6.dp))
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(12.dp),
+                                        strokeWidth = 1.5.dp,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "退出无限推荐",
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .clickable {
+                                            playerEngine.disableInfinitePlayback()
+                                            Toast.makeText(context, "已关闭无限推荐", Toast.LENGTH_SHORT).show()
+                                        }
+                                )
+                            }
+                        }
+                    }
+                }
                 if (playlist.isEmpty()) {
                     Box(
                         modifier = Modifier.fillMaxWidth().height(200.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("队列为空", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (isFetchingRecommendations) "正在加载推荐曲目..." else "队列为空",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 } else {
                     LazyColumn(
@@ -1000,7 +1066,7 @@ fun MainScreen(
                                 isCurrentTrack = index == currentIndex,
                                 isPlaying = isPlaying && index == currentIndex,
                                 onClick = {
-                                    playerEngine.loadPlaylist(playlist, index)
+                                    playerEngine.skipToIndex(index)
                                     playerEngine.play()
                                 },
                                 onActionClick = {

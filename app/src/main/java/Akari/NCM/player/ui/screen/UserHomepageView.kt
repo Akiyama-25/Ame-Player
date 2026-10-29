@@ -4,8 +4,11 @@ import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.core.HomepageBlock
 import Akari.NCM.player.core.HomepageDragonBall
 import Akari.NCM.player.core.HomepageMode
+import Akari.NCM.player.core.InfinitePlayMode
 import Akari.NCM.player.core.NcmUserPlaylist
 import Akari.NCM.player.core.OnlinePlaylistTarget
+import Akari.NCM.player.core.PlayableMedia
+import Akari.NCM.player.core.PlaylistLoadType
 import Akari.NCM.player.data.UserSessionManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -61,12 +64,20 @@ fun UserHomepageView(
     sessionManager: UserSessionManager,
     refreshTrigger: Int = 0,
     onPlaylistClick: (OnlinePlaylistTarget) -> Unit,
-    onDailyRecommendClick: () -> Unit
+    onDailyRecommendClick: () -> Unit,
+    onInfinitePlayClick: ((InfinitePlayMode, List<PlayableMedia>, String) -> Unit)? = null
 ) {
     val mode by sessionManager.homepageModeState.collectAsState()
     
     when (mode) {
-        HomepageMode.APP_LIKE -> DiscoverBlocksHomepage(ncmApi, sessionManager, refreshTrigger, onPlaylistClick, onDailyRecommendClick)
+        HomepageMode.APP_LIKE -> DiscoverBlocksHomepage(
+            ncmApi = ncmApi,
+            sessionManager = sessionManager,
+            refreshTrigger = refreshTrigger,
+            onPlaylistClick = onPlaylistClick,
+            onDailyRecommendClick = onDailyRecommendClick,
+            onInfinitePlayClick = onInfinitePlayClick
+        )
         HomepageMode.DAILY_ONLY -> DailyOnlyHomepage(ncmApi, sessionManager, refreshTrigger, onPlaylistClick)
         HomepageMode.HIGH_QUALITY_ONLY -> HighQualityOnlyHomepage(ncmApi, refreshTrigger, onPlaylistClick)
     }
@@ -78,7 +89,8 @@ internal fun DiscoverBlocksHomepage(
     sessionManager: UserSessionManager,
     refreshTrigger: Int = 0,
     onPlaylistClick: (OnlinePlaylistTarget) -> Unit,
-    onDailyRecommendClick: () -> Unit
+    onDailyRecommendClick: () -> Unit,
+    onInfinitePlayClick: ((InfinitePlayMode, List<PlayableMedia>, String) -> Unit)? = null
 ) {
     val cookieState by sessionManager.cookieState.collectAsState()
     val isLoggedIn = remember(cookieState) { sessionManager.isLoggedIn() }
@@ -263,24 +275,64 @@ internal fun DiscoverBlocksHomepage(
                                     onClick = {
                                         if (ball.name.contains("推荐")) {
                                             onDailyRecommendClick()
-                                        } else if (ball.name.contains("FM") || ball.name.contains("心动")) {
-                                            val realId = ball.url?.substringAfterLast("id=")?.toLongOrNull() ?: recommendPlaylistIds.getOrNull(0)
-                                            if (realId != null) {
-                                                onPlaylistClick(
-                                                    OnlinePlaylistTarget(
-                                                        id = realId,
-                                                        title = ball.name,
-                                                        coverImgUrl = bgUrl ?: ""
-                                                    )
-                                                )
-                                            } else if (ball.id > 0) {
-                                                onPlaylistClick(
-                                                    OnlinePlaylistTarget(
-                                                        id = ball.id,
-                                                        title = ball.name,
-                                                        coverImgUrl = bgUrl ?: ""
-                                                    )
-                                                )
+                                        } else {
+                                            when (ball.resolveLoadType()) {
+                                                PlaylistLoadType.PERSONAL_FM -> {
+                                                    if (onInfinitePlayClick != null) {
+                                                        onInfinitePlayClick(
+                                                            InfinitePlayMode.PersonalFm,
+                                                            emptyList(),
+                                                            "已开启私人 FM · 无限推荐"
+                                                        )
+                                                    } else {
+                                                        val realId = ball.url.substringAfterLast("id=").toLongOrNull()
+                                                            ?: recommendPlaylistIds.getOrNull(0)
+                                                            ?: ball.id.takeIf { it > 0 }
+                                                        if (realId != null) {
+                                                            onPlaylistClick(
+                                                                OnlinePlaylistTarget(
+                                                                    id = realId,
+                                                                    title = ball.name,
+                                                                    coverImgUrl = bgUrl ?: ""
+                                                                )
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                PlaylistLoadType.HEARTBEAT_INTELLIGENCE -> {
+                                                    val realId = ball.url.substringAfterLast("id=").toLongOrNull()
+                                                        ?: recommendPlaylistIds.getOrNull(0)
+                                                        ?: ball.id.takeIf { it > 0 }
+                                                        ?: 0L
+                                                    if (onInfinitePlayClick != null) {
+                                                        onInfinitePlayClick(
+                                                            InfinitePlayMode.Heartbeat(playlistId = realId),
+                                                            emptyList(),
+                                                            "已开启心动模式 · 智能推荐"
+                                                        )
+                                                    } else if (realId > 0L) {
+                                                        onPlaylistClick(
+                                                            OnlinePlaylistTarget(
+                                                                id = realId,
+                                                                title = ball.name,
+                                                                coverImgUrl = bgUrl ?: ""
+                                                            )
+                                                        )
+                                                    }
+                                                }
+                                                else -> {
+                                                    val realId = ball.url.substringAfterLast("id=").toLongOrNull()
+                                                        ?: ball.id.takeIf { it > 0 }
+                                                    if (realId != null) {
+                                                        onPlaylistClick(
+                                                            OnlinePlaylistTarget(
+                                                                id = realId,
+                                                                title = ball.name,
+                                                                coverImgUrl = bgUrl ?: ""
+                                                            )
+                                                        )
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -316,23 +368,76 @@ internal fun DiscoverBlocksHomepage(
                                 key = { it.resourceId.ifBlank { it.title } }
                             ) { creative ->
                                 BlockCreativeCard(
-                                      modifier = Modifier.animateItem(),
-                                      creative = creative,
+                                    modifier = Modifier.animateItem(),
+                                    creative = creative,
                                     cardWidth = creativeCardWidth,
                                     cornerRadius = creativeCornerRadius,
                                     titleSize = creativeTitleSize,
                                     lineHeight = creativeLineHeight,
                                     onClick = {
-                                        val id = creative.resourceId.toLongOrNull()
-                                        if (id != null) {
-                                            onPlaylistClick(
-                                                OnlinePlaylistTarget(
-                                                    id = id,
-                                                    title = creative.title,
-                                                    coverImgUrl = creative.imageUrl,
-                                                    playCount = creative.playCount
-                                                )
-                                            )
+                                        when (creative.resolveLoadType()) {
+                                            PlaylistLoadType.SONG_RADIO -> {
+                                                val seedId = creative.seedSongId?.takeIf { it.isNotBlank() } ?: creative.resourceId
+                                                if (onInfinitePlayClick != null && seedId.isNotBlank()) {
+                                                    onInfinitePlayClick(
+                                                        InfinitePlayMode.SongRadio(
+                                                            seedSongId = seedId,
+                                                            seedSongTitle = creative.title
+                                                        ),
+                                                        listOfNotNull(creative.seedSong),
+                                                        "正在从《${creative.title}》开启单曲漫游"
+                                                    )
+                                                } else {
+                                                    val id = creative.resourceId.toLongOrNull()
+                                                    if (id != null) {
+                                                        onPlaylistClick(
+                                                            OnlinePlaylistTarget(
+                                                                id = id,
+                                                                title = creative.title,
+                                                                coverImgUrl = creative.imageUrl,
+                                                                playCount = creative.playCount
+                                                            )
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            PlaylistLoadType.SEED_RADAR_RADIO -> {
+                                                val seedId = creative.seedSongId ?: ""
+                                                val fallbackPlaylistId = creative.resourceId.toLongOrNull()
+                                                if (onInfinitePlayClick != null && seedId.isNotBlank()) {
+                                                    onInfinitePlayClick(
+                                                        InfinitePlayMode.SongRadio(
+                                                            seedSongId = seedId,
+                                                            seedSongTitle = creative.title,
+                                                            fallbackPlaylistId = fallbackPlaylistId
+                                                        ),
+                                                        listOfNotNull(creative.seedSong),
+                                                        "正在开启雷达漫游：${creative.title}"
+                                                    )
+                                                } else if (fallbackPlaylistId != null) {
+                                                    onPlaylistClick(
+                                                        OnlinePlaylistTarget(
+                                                            id = fallbackPlaylistId,
+                                                            title = creative.title,
+                                                            coverImgUrl = creative.imageUrl,
+                                                            playCount = creative.playCount
+                                                        )
+                                                    )
+                                                }
+                                            }
+                                            else -> {
+                                                val id = creative.resourceId.toLongOrNull()
+                                                if (id != null) {
+                                                    onPlaylistClick(
+                                                        OnlinePlaylistTarget(
+                                                            id = id,
+                                                            title = creative.title,
+                                                            coverImgUrl = creative.imageUrl,
+                                                            playCount = creative.playCount
+                                                        )
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 )
@@ -661,9 +766,17 @@ internal fun BlockCreativeCard(
     lineHeight: TextUnit = 16.sp,
     onClick: () -> Unit
 ) {
+    val loadType = remember(creative) { creative.resolveLoadType() }
+    val badgeLabel = when (loadType) {
+        PlaylistLoadType.SONG_RADIO -> "♪ 单曲漫游"
+        PlaylistLoadType.SEED_RADAR_RADIO -> "∞ 雷达漫游"
+        else -> null
+    }
+
     Column(
         modifier = modifier
-            .width(cardWidth)            .clickable(onClick = onClick)
+            .width(cardWidth)
+            .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier
@@ -677,6 +790,24 @@ internal fun BlockCreativeCard(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
+            if (badgeLabel != null) {
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.62f),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                ) {
+                    Text(
+                        text = badgeLabel,
+                        color = androidx.compose.ui.graphics.Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+                        maxLines = 1
+                    )
+                }
+            }
         }
         Spacer(modifier = Modifier.height(6.dp))
         Text(

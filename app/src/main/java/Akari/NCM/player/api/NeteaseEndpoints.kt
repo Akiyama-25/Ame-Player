@@ -41,6 +41,19 @@ internal object NeteaseEndpoints {
     const val PATH_EAPI_RECOMMEND_SONGS = "/api/v3/discovery/recommend/songs"
     const val URL_EAPI_RECOMMEND_SONGS = "$HOST_SERVICE/eapi/v3/discovery/recommend/songs"
 
+    // Infinite recommendation endpoints (Simi Song / Personal FM / Heartbeat Intelligence List)
+    const val PATH_EAPI_SIMI_SONG = "/api/v1/discovery/simiSong"
+    const val URL_EAPI_SIMI_SONG = "$HOST_SERVICE/eapi/v1/discovery/simiSong"
+    const val URL_WEAPI_SIMI_SONG = "$HOST_DEFAULT/weapi/v1/discovery/simiSong"
+
+    const val PATH_EAPI_PERSONAL_FM = "/api/v1/radio/get"
+    const val URL_EAPI_PERSONAL_FM = "$HOST_SERVICE/eapi/v1/radio/get"
+    const val URL_WEAPI_PERSONAL_FM = "$HOST_DEFAULT/weapi/v1/radio/get"
+
+    const val PATH_EAPI_INTELLIGENCE_LIST = "/api/playmode/intelligence/list"
+    const val URL_EAPI_INTELLIGENCE_LIST = "$HOST_SERVICE/eapi/playmode/intelligence/list"
+    const val URL_WEAPI_INTELLIGENCE_LIST = "$HOST_DEFAULT/weapi/playmode/intelligence/list"
+
     // WEAPI endpoints
     const val URL_WEAPI_LOGIN_QR_KEY = "$HOST_DEFAULT/weapi/login/qrcode/unikey"
     const val URL_WEAPI_LOGIN_QR_CHECK = "$HOST_DEFAULT/weapi/login/qrcode/client/login"

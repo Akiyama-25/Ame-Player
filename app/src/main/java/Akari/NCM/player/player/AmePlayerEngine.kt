@@ -1,6 +1,7 @@
 package Akari.NCM.player.player
 
 import Akari.NCM.player.api.NcmApi
+import Akari.NCM.player.core.InfinitePlayMode
 import Akari.NCM.player.core.PlayableMedia
 import Akari.NCM.player.core.PlaybackState
 import Akari.NCM.player.core.PlayerController
@@ -154,6 +155,20 @@ class AmePlayerEngine @Inject constructor(
     override val connectedUsbDeviceName: StateFlow<String?> = usbAudioManager.connectedUsbDeviceName
     override val usbUacVersion: StateFlow<String?> = usbAudioManager.uacVersion
     override val usbDeviceDetails: StateFlow<UsbDeviceDetails?> = usbAudioManager.usbDeviceDetails
+
+    private val _infinitePlayMode = MutableStateFlow<InfinitePlayMode>(InfinitePlayMode.None)
+    override val infinitePlayMode: StateFlow<InfinitePlayMode> = _infinitePlayMode.asStateFlow()
+
+    private val _isFetchingRecommendations = MutableStateFlow(false)
+    override val isFetchingRecommendations: StateFlow<Boolean> = _isFetchingRecommendations.asStateFlow()
+
+    /** Optional local library matcher so recommended online tracks automatically resolve to local NCM/FLAC files when matched */
+    var localTrackMatcher: ((PlayableMedia.Online) -> PlayableMedia)? = null
+
+    private val seenInfiniteTrackIds = ConcurrentHashMap.newKeySet<String>()
+    private val fallbackRecommendationPool = mutableListOf<PlayableMedia.Online>()
+    private var infiniteStartJob: Job? = null
+    private var infinitePrefetchJob: Job? = null
 
     // Map mediaId to PlayableMedia for quick resolution
     private val mediaMap = ConcurrentHashMap<String, PlayableMedia>()
@@ -381,6 +396,9 @@ class AmePlayerEngine @Inject constructor(
                 if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
                     islandManager.cancelIsland()
                 }
+                if (playbackState == Player.STATE_ENDED && _infinitePlayMode.value.isActive) {
+                    checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = true)
+                }
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -393,6 +411,9 @@ class AmePlayerEngine @Inject constructor(
 
                 onTrackChanged(currentMedia)
                 syncIslandState()
+                if (_infinitePlayMode.value.isActive) {
+                    checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
+                }
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -721,9 +742,12 @@ class AmePlayerEngine @Inject constructor(
     // --- PlayerController ---
 
     override fun load(media: PlayableMedia) {
+        disableInfinitePlayback()
         ensureActive()
         val mediaItem = buildMediaItem(media)
         mediaMap[media.id] = media
+        _playlist.value = listOf(media)
+        _currentIndex.value = 0
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> load single track '${media.title}' (id=${media.id})")
         exoPlayer.setMediaItem(mediaItem)
         exoPlayer.prepare()
@@ -732,8 +756,19 @@ class AmePlayerEngine @Inject constructor(
     }
 
     override fun loadPlaylist(items: List<PlayableMedia>, startIndex: Int) {
+        loadPlaylistInternal(items, startIndex, keepInfiniteMode = false)
+    }
+
+    private fun loadPlaylistInternal(
+        items: List<PlayableMedia>,
+        startIndex: Int,
+        keepInfiniteMode: Boolean
+    ) {
+        if (!keepInfiniteMode) {
+            disableInfinitePlayback()
+        }
         ensureActive()
-        AppLogger.i("[AME_ONLINE_PLAY]", ">>> loadPlaylist size=${items.size}, startIndex=$startIndex")
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> loadPlaylist size=${items.size}, startIndex=$startIndex, keepInfiniteMode=$keepInfiniteMode")
         mediaMap.clear()
         resolvedUrlCache.clear()
         val mediaItems = items.map { media ->
@@ -747,6 +782,330 @@ class AmePlayerEngine @Inject constructor(
         _currentMedia.value = startMedia
         _currentIndex.value = startIndex
         onTrackChanged(startMedia)
+    }
+
+    override fun disableInfinitePlayback() {
+        infiniteStartJob?.cancel()
+        infinitePrefetchJob?.cancel()
+        _isFetchingRecommendations.value = false
+        seenInfiniteTrackIds.clear()
+        fallbackRecommendationPool.clear()
+        if (_infinitePlayMode.value != InfinitePlayMode.None) {
+            AppLogger.i("AME_INFINITE_PLAY", ">>> Exiting InfinitePlayMode (${_infinitePlayMode.value.label})")
+            _infinitePlayMode.value = InfinitePlayMode.None
+        }
+    }
+
+    override fun startInfinitePlayback(mode: InfinitePlayMode, initialTracks: List<PlayableMedia>) {
+        if (!mode.isActive) {
+            disableInfinitePlayback()
+            if (initialTracks.isNotEmpty()) {
+                loadPlaylist(initialTracks, 0)
+                play()
+            }
+            return
+        }
+
+        infiniteStartJob?.cancel()
+        infinitePrefetchJob?.cancel()
+        seenInfiniteTrackIds.clear()
+        fallbackRecommendationPool.clear()
+        _infinitePlayMode.value = mode
+        AppLogger.i("AME_INFINITE_PLAY", ">>> Starting InfinitePlayMode: ${mode.label}, initialTracks=${initialTracks.size}")
+
+        // 若传入了已知的起始种子歌曲（例如单曲推荐卡片直接内嵌了歌曲元数据），立即加入新队列起播，随后后台预加载后续推荐
+        if (initialTracks.isNotEmpty()) {
+            val mappedInitial = initialTracks.map { media ->
+                val resolved = if (media is PlayableMedia.Online) {
+                    localTrackMatcher?.invoke(media) ?: media
+                } else media
+                seenInfiniteTrackIds.add(media.id)
+                seenInfiniteTrackIds.add(resolved.id)
+                resolved
+            }
+            loadPlaylistInternal(mappedInitial, startIndex = 0, keepInfiniteMode = true)
+            play()
+            checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
+            return
+        }
+
+        infiniteStartJob = scope.launch {
+            _isFetchingRecommendations.value = true
+            try {
+                val resolvedSeeds = withContext(Dispatchers.IO) {
+                    fetchInitialSeedsForMode(mode)
+                }
+                if (resolvedSeeds.isNotEmpty() && _infinitePlayMode.value == mode) {
+                    val mappedSeeds = resolvedSeeds.map { online ->
+                        val resolved = localTrackMatcher?.invoke(online) ?: online
+                        seenInfiniteTrackIds.add(online.id)
+                        seenInfiniteTrackIds.add(resolved.id)
+                        resolved
+                    }
+                    loadPlaylistInternal(mappedSeeds, startIndex = 0, keepInfiniteMode = true)
+                    play()
+                    checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
+                } else {
+                    AppLogger.w("AME_INFINITE_PLAY", ">>> No initial tracks resolved for mode=${mode.label}")
+                    _error.value = "未能获取无限推荐起始曲目，请检查网络或登录状态"
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.e("AME_INFINITE_PLAY", ">>> Failed to startInfinitePlayback for mode=${mode.label}", e)
+            } finally {
+                _isFetchingRecommendations.value = false
+            }
+        }
+    }
+
+    private suspend fun fetchInitialSeedsForMode(mode: InfinitePlayMode): List<PlayableMedia.Online> {
+        return when (mode) {
+            is InfinitePlayMode.SongRadio -> {
+                val seedDetails = if (mode.seedSongId.isNotBlank()) {
+                    ncmApi.getSongDetails(listOf(mode.seedSongId))
+                } else emptyList()
+
+                if (seedDetails.isNotEmpty()) {
+                    // 只将这一首特定种子歌曲加入初始播放队列，后续曲目通过预加载器无限续接
+                    listOf(seedDetails.first())
+                } else if (mode.fallbackPlaylistId != null && mode.fallbackPlaylistId > 0L) {
+                    val radarTracks = ncmApi.getPlaylistTracks(mode.fallbackPlaylistId)
+                    if (radarTracks.size > 1) {
+                        synchronized(fallbackRecommendationPool) {
+                            fallbackRecommendationPool.addAll(radarTracks.drop(1))
+                        }
+                    }
+                    radarTracks.take(1)
+                } else {
+                    emptyList()
+                }
+            }
+            is InfinitePlayMode.PersonalFm -> {
+                val fmTracks = ncmApi.getPersonalFmSongs()
+                if (fmTracks.isNotEmpty()) {
+                    if (fmTracks.size > 1) {
+                        synchronized(fallbackRecommendationPool) {
+                            fallbackRecommendationPool.addAll(fmTracks.drop(1))
+                        }
+                    }
+                    fmTracks.take(1)
+                } else {
+                    val dailyFallback = ncmApi.getDailyRecommendSongs()
+                    if (dailyFallback.size > 1) {
+                        synchronized(fallbackRecommendationPool) {
+                            fallbackRecommendationPool.addAll(dailyFallback.drop(1))
+                        }
+                    }
+                    dailyFallback.take(1)
+                }
+            }
+            is InfinitePlayMode.Heartbeat -> {
+                var targetPlaylistId = mode.playlistId
+                if (targetPlaylistId <= 0L) {
+                    val uid = sessionManager.getUserProfile()?.userId ?: 0L
+                    targetPlaylistId = ncmApi.getUserPlaylists(uid).firstOrNull()?.id ?: 0L
+                }
+                val playlistTracks = if (targetPlaylistId > 0L) {
+                    ncmApi.getPlaylistTracks(targetPlaylistId)
+                } else emptyList()
+
+                val seedSong = if (mode.seedSongId.isNotBlank()) {
+                    playlistTracks.find { it.id == mode.seedSongId }
+                        ?: ncmApi.getSongDetails(listOf(mode.seedSongId)).firstOrNull()
+                } else {
+                    playlistTracks.randomOrNull()
+                }
+
+                if (seedSong != null && targetPlaylistId > 0L) {
+                    val intelTracks = ncmApi.getIntelligenceList(
+                        playlistId = targetPlaylistId,
+                        songId = seedSong.id,
+                        startMusicId = seedSong.id
+                    )
+                    synchronized(fallbackRecommendationPool) {
+                        fallbackRecommendationPool.addAll(intelTracks.filter { it.id != seedSong.id })
+                        fallbackRecommendationPool.addAll(playlistTracks.filter { it.id != seedSong.id })
+                    }
+                    listOf(seedSong)
+                } else if (seedSong != null) {
+                    listOf(seedSong)
+                } else {
+                    val daily = ncmApi.getDailyRecommendSongs()
+                    if (daily.size > 1) {
+                        synchronized(fallbackRecommendationPool) {
+                            fallbackRecommendationPool.addAll(daily.drop(1))
+                        }
+                    }
+                    daily.take(1)
+                }
+            }
+            InfinitePlayMode.None -> emptyList()
+        }
+    }
+
+    /**
+     * 检查当前无限播放队列剩余待播曲目数，当少于 2 首时静默预加载并追加推荐歌曲，保留已播历史。
+     */
+    internal fun checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended: Boolean = false) {
+        val mode = _infinitePlayMode.value
+        if (!mode.isActive) return
+
+        val currentSize = _playlist.value.size
+        val remaining = (currentSize - 1 - _currentIndex.value).coerceAtLeast(0)
+        if (remaining >= 2 && !autoAdvanceWhenAppended) {
+            return
+        }
+        if (infinitePrefetchJob?.isActive == true) {
+            return
+        }
+
+        infinitePrefetchJob = scope.launch {
+            _isFetchingRecommendations.value = true
+            try {
+                val nextBatch = withContext(Dispatchers.IO) {
+                    fetchNextRecommendationBatch(mode, batchSize = 3)
+                }
+                if (nextBatch.isNotEmpty() && _infinitePlayMode.value == mode) {
+                    val prevLastIndex = _playlist.value.lastIndex
+                    val appendedCount = appendTracksToQueue(nextBatch)
+                    if (autoAdvanceWhenAppended && appendedCount > 0) {
+                        val nextIdx = (prevLastIndex + 1).coerceAtMost(_playlist.value.lastIndex)
+                        skipToIndex(nextIdx)
+                    }
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_INFINITE_PLAY", ">>> Prefetch recommendation batch failed: ${e.message}")
+            } finally {
+                _isFetchingRecommendations.value = false
+            }
+        }
+    }
+
+    private suspend fun fetchNextRecommendationBatch(
+        mode: InfinitePlayMode,
+        batchSize: Int = 3
+    ): List<PlayableMedia> {
+        val candidates = mutableListOf<PlayableMedia.Online>()
+
+        when (mode) {
+            is InfinitePlayMode.SongRadio -> {
+                // 优先基于队列最后一首（或当前播放歌曲/初始种子歌曲）调用相似歌曲接口 (simiSong)
+                val referenceSongId = (_playlist.value.lastOrNull() as? PlayableMedia.Online)?.id
+                    ?: (_currentMedia.value as? PlayableMedia.Online)?.id
+                    ?: mode.seedSongId
+
+                val simiSongs = ncmApi.getSimiSongs(referenceSongId)
+                    .filter { it.id !in seenInfiniteTrackIds }
+                candidates.addAll(simiSongs.take(batchSize))
+
+                // 若当前末尾歌曲的相似歌曲已被耗尽，尝试基于初始种子歌曲请求相似推荐
+                if (candidates.isEmpty() && referenceSongId != mode.seedSongId && mode.seedSongId.isNotBlank()) {
+                    val seedSimi = ncmApi.getSimiSongs(mode.seedSongId)
+                        .filter { it.id !in seenInfiniteTrackIds }
+                    candidates.addAll(seedSimi.take(batchSize))
+                }
+
+                // 若相似歌曲接口无返回（例如未登录或冷门单曲），在种子雷达歌单下从原雷达歌单池中补充
+                if (candidates.isEmpty() && mode.fallbackPlaylistId != null && mode.fallbackPlaylistId > 0L) {
+                    val needLoadRadar = synchronized(fallbackRecommendationPool) {
+                        fallbackRecommendationPool.none { it.id !in seenInfiniteTrackIds }
+                    }
+                    if (needLoadRadar) {
+                        val radarTracks = ncmApi.getPlaylistTracks(mode.fallbackPlaylistId)
+                        synchronized(fallbackRecommendationPool) {
+                            fallbackRecommendationPool.addAll(radarTracks)
+                        }
+                    }
+                    synchronized(fallbackRecommendationPool) {
+                        val fromPool = fallbackRecommendationPool.filter { it.id !in seenInfiniteTrackIds }.take(batchSize)
+                        candidates.addAll(fromPool)
+                    }
+                }
+
+                // 最终兜底：私人 FM 或每日推荐
+                if (candidates.isEmpty()) {
+                    val fmFallback = ncmApi.getPersonalFmSongs().filter { it.id !in seenInfiniteTrackIds }
+                    candidates.addAll(fmFallback.take(batchSize))
+                }
+            }
+            is InfinitePlayMode.PersonalFm -> {
+                synchronized(fallbackRecommendationPool) {
+                    val buffered = fallbackRecommendationPool.filter { it.id !in seenInfiniteTrackIds }.take(batchSize)
+                    candidates.addAll(buffered)
+                    fallbackRecommendationPool.removeAll(buffered.toSet())
+                }
+                if (candidates.size < batchSize) {
+                    val fmSongs = ncmApi.getPersonalFmSongs().filter { it.id !in seenInfiniteTrackIds }
+                    candidates.addAll(fmSongs.take(batchSize - candidates.size))
+                    if (fmSongs.size > batchSize) {
+                        synchronized(fallbackRecommendationPool) {
+                            fallbackRecommendationPool.addAll(fmSongs.drop(batchSize))
+                        }
+                    }
+                }
+            }
+            is InfinitePlayMode.Heartbeat -> {
+                synchronized(fallbackRecommendationPool) {
+                    val buffered = fallbackRecommendationPool.filter { it.id !in seenInfiniteTrackIds }.take(batchSize)
+                    candidates.addAll(buffered)
+                    fallbackRecommendationPool.removeAll(buffered.toSet())
+                }
+                if (candidates.isEmpty()) {
+                    val referenceSongId = (_playlist.value.lastOrNull() as? PlayableMedia.Online)?.id
+                        ?: mode.seedSongId
+                    if (mode.playlistId > 0L && referenceSongId.isNotBlank()) {
+                        val intelList = ncmApi.getIntelligenceList(
+                            playlistId = mode.playlistId,
+                            songId = referenceSongId,
+                            startMusicId = referenceSongId
+                        ).filter { it.id !in seenInfiniteTrackIds }
+                        candidates.addAll(intelList.take(batchSize))
+                        if (intelList.size > batchSize) {
+                            synchronized(fallbackRecommendationPool) {
+                                fallbackRecommendationPool.addAll(intelList.drop(batchSize))
+                            }
+                        }
+                    }
+                    if (candidates.isEmpty() && referenceSongId.isNotBlank()) {
+                        val simiFallback = ncmApi.getSimiSongs(referenceSongId).filter { it.id !in seenInfiniteTrackIds }
+                        candidates.addAll(simiFallback.take(batchSize))
+                    }
+                }
+            }
+            InfinitePlayMode.None -> Unit
+        }
+
+        return candidates.distinctBy { it.id }.map { online ->
+            localTrackMatcher?.invoke(online) ?: online
+        }
+    }
+
+    /**
+     * 将推荐曲目无缝追加至当前播放队列尾部，不打断当前播放且完整保留已播历史。
+     */
+    internal fun appendTracksToQueue(newTracks: List<PlayableMedia>): Int {
+        if (newTracks.isEmpty()) return 0
+        ensureActive()
+        val currentList = _playlist.value.toMutableList()
+        val existingIds = currentList.map { it.id }.toHashSet()
+        val uniqueToAdd = newTracks.filter { track ->
+            track.id !in existingIds && seenInfiniteTrackIds.add(track.id)
+        }
+        if (uniqueToAdd.isEmpty()) return 0
+
+        val mediaItemsToAdd = uniqueToAdd.map { media ->
+            mediaMap[media.id] = media
+            buildMediaItem(media)
+        }
+        currentList.addAll(uniqueToAdd)
+        _playlist.value = currentList
+        exoPlayer.addMediaItems(mediaItemsToAdd)
+        AppLogger.i(
+            "AME_INFINITE_PLAY",
+            ">>> Appended ${uniqueToAdd.size} recommended tracks to queue (total=${currentList.size}): ${uniqueToAdd.joinToString { it.title }}"
+        )
+        return uniqueToAdd.size
     }
 
     override fun play() {
@@ -780,6 +1139,13 @@ class AmePlayerEngine @Inject constructor(
             exoPlayer.seekToNext()
             exoPlayer.prepare()
             exoPlayer.play()
+            if (_infinitePlayMode.value.isActive) {
+                checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
+            }
+        } else if (_infinitePlayMode.value.isActive) {
+            // 在无限播放模式下处于队尾时点击下一首，立即触发拉取并在追加后自动切到新曲目
+            AppLogger.i("AME_INFINITE_PLAY", ">>> skipToNext at end of infinite queue, triggering immediate fetch & advance")
+            checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = true)
         } else if (exoPlayer.mediaItemCount > 0) {
             exoPlayer.seekToDefaultPosition(0)
             exoPlayer.prepare()
@@ -810,6 +1176,9 @@ class AmePlayerEngine @Inject constructor(
         exoPlayer.play()
         _currentIndex.value = index
         _currentMedia.value = _playlist.value.getOrNull(index)
+        if (_infinitePlayMode.value.isActive) {
+            checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
+        }
     }
 
     override fun insertAsNext(media: PlayableMedia) {
