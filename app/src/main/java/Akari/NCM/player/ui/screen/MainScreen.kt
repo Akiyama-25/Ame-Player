@@ -575,7 +575,7 @@ fun MainScreen(
                                                                 verticalAlignment = Alignment.CenterVertically
                                                             ) {
                                                                 IconButton(onClick = { selectedPlaylistForDetail = null }) {
-                                                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
+                                                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
                                                                 }
                                                                 Column(modifier = Modifier.weight(1f)) {
                                                                     Text(
@@ -607,7 +607,7 @@ fun MainScreen(
                                                                         IconButton(onClick = { reSyncPlaylist(currentPlaylist) }) {
                                                                             Icon(
                                                                                 Icons.Rounded.Sync,
-                                                                                contentDescription = "Re-sync",
+                                                                                contentDescription = "重新同步",
                                                                                 tint = MaterialTheme.colorScheme.primary
                                                                             )
                                                                         }
@@ -651,7 +651,7 @@ fun MainScreen(
                                                                         ) {
                                                                             Icon(Icons.Rounded.PlayArrow, contentDescription = null)
                                                                             Spacer(modifier = Modifier.width(4.dp))
-                                                                            Text(if (inPlaylistSearchQuery.isNotBlank()) "播放筛选" else "Play All")
+                                                                            Text(if (inPlaylistSearchQuery.isNotBlank()) "播放筛选" else "播放全部")
                                                                         }
                                                                     }
                                                                 }
@@ -695,7 +695,7 @@ fun MainScreen(
                                                                     contentAlignment = Alignment.Center
                                                                 ) {
                                                                     Text(
-                                                                        "No songs in this playlist yet",
+                                                                        "歌单内暂无歌曲",
                                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                                     )
                                                                 }
@@ -1510,7 +1510,7 @@ fun SongItem(
                     ) {
                         Icon(
                             Icons.Rounded.Check,
-                            contentDescription = "Local Match",
+                            contentDescription = "本地匹配",
                             tint = MaterialTheme.colorScheme.onPrimary,
                             modifier = Modifier.size(10.dp)
                         )
@@ -1526,7 +1526,7 @@ fun SongItem(
                     ) {
                         Icon(
                             Icons.Rounded.Equalizer,
-                            contentDescription = "Playing",
+                            contentDescription = "正在播放",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
@@ -1540,7 +1540,7 @@ fun SongItem(
                     ) {
                         Icon(
                             Icons.Rounded.Pause,
-                            contentDescription = "Paused",
+                            contentDescription = "已暂停",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
@@ -1658,7 +1658,7 @@ private fun MiniPlayerBar(
                 IconButton(onClick = onSkipPrevious) {
                     Icon(
                         Icons.Rounded.SkipPrevious,
-                        contentDescription = "Previous",
+                        contentDescription = "上一首",
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -1666,7 +1666,7 @@ private fun MiniPlayerBar(
                 IconButton(onClick = onTogglePlayPause) {
                     Icon(
                         if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (isPlaying) "Pause" else "Play",
+                        contentDescription = if (isPlaying) "暂停" else "播放",
                         modifier = Modifier.size(32.dp)
                     )
                 }
@@ -1674,7 +1674,7 @@ private fun MiniPlayerBar(
                 IconButton(onClick = onSkipNext) {
                     Icon(
                         Icons.Rounded.SkipNext,
-                        contentDescription = "Next",
+                        contentDescription = "下一首",
                         modifier = Modifier.size(28.dp)
                     )
                 }
@@ -1682,7 +1682,7 @@ private fun MiniPlayerBar(
                 IconButton(onClick = onQueueClick) {
                     Icon(
                         Icons.AutoMirrored.Rounded.QueueMusic,
-                        contentDescription = "Queue",
+                        contentDescription = "播放队列",
                         modifier = Modifier.size(28.dp)
                     )
                 }

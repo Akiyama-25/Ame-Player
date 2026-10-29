@@ -663,7 +663,7 @@ private fun PlayerMainContentView(
                 verticalAlignment     = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { playerController.skipToPrevious() }, modifier = Modifier.size(skipSize)) {
-                    Icon(Icons.Rounded.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(skipIconSize))
+                    Icon(Icons.Rounded.SkipPrevious, "上一首", tint = Color.White, modifier = Modifier.size(skipIconSize))
                 }
                 Surface(
                     onClick  = { playerController.togglePlayPause() },
@@ -674,14 +674,14 @@ private fun PlayerMainContentView(
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = "Play/Pause",
+                            contentDescription = "播放/暂停",
                             tint               = Color(0xFF0F172A),
                             modifier           = Modifier.size(playIconSize)
                         )
                     }
                 }
                 IconButton(onClick = { playerController.skipToNext() }, modifier = Modifier.size(skipSize)) {
-                    Icon(Icons.Rounded.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(skipIconSize))
+                    Icon(Icons.Rounded.SkipNext, "下一首", tint = Color.White, modifier = Modifier.size(skipIconSize))
                 }
             }
         }
@@ -717,7 +717,7 @@ private fun PlayerMainContentView(
                     )
                 }
                 IconButton(onClick = onOpenQueueClick, modifier = Modifier.size(btnSize)) {
-                    Icon(Icons.AutoMirrored.Rounded.QueueMusic, "Queue", tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(iconSize))
+                    Icon(Icons.AutoMirrored.Rounded.QueueMusic, "播放队列", tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(iconSize))
                 }
                 IconButton(onClick = { showQuickFunctionsDialog = true }, modifier = Modifier.size(btnSize)) {
                     Icon(Icons.Rounded.MoreHoriz, "快捷功能", tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(iconSize))
@@ -830,7 +830,7 @@ private fun PlayerMainContentView(
                                         ) {
                                             Icon(
                                                 Icons.Rounded.Translate,
-                                                contentDescription = "Translate Toggle",
+                                                contentDescription = "翻译开关",
                                                 tint = Color.White.copy(alpha = translateAlpha)
                                             )
                                         }
@@ -996,7 +996,7 @@ private fun PlayerMainContentView(
                 // Back Button Absolute Top Left
                 Box(modifier = Modifier.fillMaxSize()) {
                     IconButton(onClick = onBackClick, modifier = Modifier.padding(16.dp)) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White, modifier = Modifier.size(28.dp))
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "返回", tint = Color.White, modifier = Modifier.size(28.dp))
                     }
                 }
             } else {
@@ -1013,7 +1013,7 @@ private fun PlayerMainContentView(
                         verticalAlignment  = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = onBackClick) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back", tint = Color.White)
+                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "返回", tint = Color.White)
                         }
                         
                         val topTranslateAlpha by animateFloatAsState(
@@ -1027,7 +1027,7 @@ private fun PlayerMainContentView(
                         ) {
                             Icon(
                                 Icons.Rounded.Translate,
-                                contentDescription = "Translate Toggle",
+                                contentDescription = "翻译开关",
                                 tint = Color.White.copy(alpha = topTranslateAlpha)
                             )
                         }
@@ -1438,7 +1438,7 @@ private fun SaltPlayQueueView(
                                     Spacer(Modifier.width(8.dp))
                                     Icon(
                                         Icons.Rounded.Equalizer,
-                                        contentDescription = "Playing",
+                                        contentDescription = "正在播放",
                                         tint = Color(0xFF60A5FA),
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -1459,9 +1459,9 @@ private fun SaltPlayQueueView(
                 contentAlignment = Alignment.Center
             ) {
                 val modeText = when {
-                    shuffleEnabled -> "Circle playback Mode"
-                    repeatMode == RepeatMode.ONE -> "Circle playback Mode"
-                    else -> "Sequential playback Mode"
+                    shuffleEnabled -> "随机播放"
+                    repeatMode == RepeatMode.ONE -> "单曲循环"
+                    else -> "顺序播放"
                 }
 
                 Surface(
@@ -1750,7 +1750,7 @@ private fun SaltFullLyricsView(
             ) {
                 Icon(
                     Icons.Rounded.Translate,
-                    contentDescription = "Translate Toggle",
+                    contentDescription = "翻译开关",
                     tint = Color.White.copy(alpha = translateAlpha)
                 )
             }
@@ -1971,7 +1971,7 @@ private fun UsbExclusiveDialog(
                                 Text(
                                     if (hasDevice) {
                                         val mfg = deviceDetails?.manufacturerName?.takeIf { it.isNotBlank() }
-                                        if (mfg != null) "$mfg · $usbDeviceName" else (usbDeviceName ?: "Unknown USB Audio")
+                                        if (mfg != null) "$mfg · $usbDeviceName" else (usbDeviceName ?: "未知 USB 音频设备")
                                     } else "请插紧 USB 耳放/小尾巴或检查 Type-C 连接",
                                     fontSize = 12.sp,
                                     color = Color.White.copy(alpha = 0.75f)

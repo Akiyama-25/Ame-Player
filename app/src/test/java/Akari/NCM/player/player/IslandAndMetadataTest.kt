@@ -208,4 +208,32 @@ class IslandAndMetadataTest {
         assertFalse(ThemePrefs.liveIslandEnabled)
         assertFalse(ThemePrefs.liveIslandEnabledFlow.value)
     }
+
+    @Test
+    fun testPlaybackModePersistence() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        ThemePrefs.init(context)
+
+        // Default should be OFF and false
+        assertEquals("OFF", ThemePrefs.playbackRepeatMode)
+        assertFalse(ThemePrefs.playbackShuffleEnabled)
+
+        // Update to single repeat
+        ThemePrefs.playbackRepeatMode = "ONE"
+        ThemePrefs.playbackShuffleEnabled = false
+        assertEquals("ONE", ThemePrefs.playbackRepeatMode)
+        assertFalse(ThemePrefs.playbackShuffleEnabled)
+
+        // Re-init from context prefs
+        ThemePrefs.init(context)
+        assertEquals("ONE", ThemePrefs.playbackRepeatMode)
+        assertFalse(ThemePrefs.playbackShuffleEnabled)
+
+        // Update to shuffle
+        ThemePrefs.playbackRepeatMode = "OFF"
+        ThemePrefs.playbackShuffleEnabled = true
+        ThemePrefs.init(context)
+        assertEquals("OFF", ThemePrefs.playbackRepeatMode)
+        assertTrue(ThemePrefs.playbackShuffleEnabled)
+    }
 }

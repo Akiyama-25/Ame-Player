@@ -307,7 +307,7 @@ init {
     fun createPlaylist(name: String): CustomPlaylist {
         val newPlaylist = CustomPlaylist(
             id = UUID.randomUUID().toString(),
-            name = name.ifBlank { "Untitled Playlist" }
+            name = name.ifBlank { "未命名歌单" }
         )
         _playlists.value = _playlists.value + newPlaylist
         savePlaylists()

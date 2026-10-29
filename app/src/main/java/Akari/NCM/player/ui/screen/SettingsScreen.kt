@@ -225,7 +225,7 @@ fun SettingsScreen(
                             if (!userProfile?.avatarUrl.isNullOrBlank()) {
                                 AsyncImage(
                                     model = userProfile?.avatarUrl,
-                                    contentDescription = "Avatar",
+                                    contentDescription = "用户头像",
                                     modifier = Modifier
                                         .size(52.dp)
                                         .clip(CircleShape)
@@ -1179,7 +1179,7 @@ private fun UserProfileDetailDialog(
                 if (userProfile.avatarUrl.isNotBlank()) {
                     AsyncImage(
                         model = userProfile.avatarUrl,
-                        contentDescription = "User Avatar",
+                        contentDescription = "用户头像",
                         modifier = Modifier
                             .size(80.dp)
                             .clip(CircleShape)
@@ -1385,7 +1385,7 @@ private fun QrLoginDialog(
                         if (bitmap != null) {
                             Image(
                                 bitmap = bitmap,
-                                contentDescription = "QR Code",
+                                contentDescription = "登录二维码",
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .clickable {
@@ -1407,7 +1407,7 @@ private fun QrLoginDialog(
                         if (bitmap != null) {
                             Image(
                                 bitmap = bitmap,
-                                contentDescription = "QR Code",
+                                contentDescription = "登录二维码",
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .clickable {

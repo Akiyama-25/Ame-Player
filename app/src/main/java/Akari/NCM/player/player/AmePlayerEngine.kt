@@ -126,10 +126,16 @@ class AmePlayerEngine @Inject constructor(
     private val _volume = MutableStateFlow(1f)
     override val volume: StateFlow<Float> = _volume.asStateFlow()
 
-    private val _repeatMode = MutableStateFlow(RepeatMode.OFF)
+    private val _repeatMode = MutableStateFlow(
+        when (ThemePrefs.playbackRepeatMode) {
+            "ONE" -> RepeatMode.ONE
+            "ALL" -> RepeatMode.ALL
+            else -> RepeatMode.OFF
+        }
+    )
     override val repeatMode: StateFlow<RepeatMode> = _repeatMode.asStateFlow()
 
-    private val _shuffleEnabled = MutableStateFlow(false)
+    private val _shuffleEnabled = MutableStateFlow(ThemePrefs.playbackShuffleEnabled)
     override val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled.asStateFlow()
 
     private val _playlist = MutableStateFlow<List<PlayableMedia>>(emptyList())
@@ -400,16 +406,19 @@ class AmePlayerEngine @Inject constructor(
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
-                _repeatMode.value = when (repeatMode) {
+                val mode = when (repeatMode) {
                     Player.REPEAT_MODE_OFF -> RepeatMode.OFF
                     Player.REPEAT_MODE_ALL -> RepeatMode.ALL
                     Player.REPEAT_MODE_ONE -> RepeatMode.ONE
                     else -> RepeatMode.OFF
                 }
+                _repeatMode.value = mode
+                ThemePrefs.playbackRepeatMode = mode.name
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                 _shuffleEnabled.value = shuffleModeEnabled
+                ThemePrefs.playbackShuffleEnabled = shuffleModeEnabled
             }
 
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
@@ -828,11 +837,16 @@ class AmePlayerEngine @Inject constructor(
             RepeatMode.ALL -> Player.REPEAT_MODE_ALL
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
         }
+        _repeatMode.value = mode
+        ThemePrefs.playbackRepeatMode = mode.name
     }
 
     override fun toggleShuffle() {
         ensureActive()
-        exoPlayer.shuffleModeEnabled = !exoPlayer.shuffleModeEnabled
+        val next = !exoPlayer.shuffleModeEnabled
+        exoPlayer.shuffleModeEnabled = next
+        _shuffleEnabled.value = next
+        ThemePrefs.playbackShuffleEnabled = next
     }
 
     override fun setVolume(volume: Float) {

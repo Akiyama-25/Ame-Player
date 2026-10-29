@@ -23,6 +23,8 @@ object ThemePrefs {
     private const val KEY_GRID_COLUMNS = "settings_grid_columns"
     private const val KEY_SHOW_MATCH_STATUS = "show_match_status"
     private const val KEY_LIVE_ISLAND_ENABLED = "live_island_enabled"
+    private const val KEY_PLAYBACK_REPEAT_MODE = "playback_repeat_mode"
+    private const val KEY_PLAYBACK_SHUFFLE_ENABLED = "playback_shuffle_enabled"
 
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
@@ -192,5 +194,21 @@ object ThemePrefs {
                 prefs.edit().putBoolean(KEY_LIVE_ISLAND_ENABLED, value).apply()
             }
             _liveIslandEnabledFlow.value = value
+        }
+
+    var playbackRepeatMode: String
+        get() = if (::prefs.isInitialized) prefs.getString(KEY_PLAYBACK_REPEAT_MODE, "OFF") ?: "OFF" else "OFF"
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putString(KEY_PLAYBACK_REPEAT_MODE, value).apply()
+            }
+        }
+
+    var playbackShuffleEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_PLAYBACK_SHUFFLE_ENABLED, false) else false
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_PLAYBACK_SHUFFLE_ENABLED, value).apply()
+            }
         }
 }
