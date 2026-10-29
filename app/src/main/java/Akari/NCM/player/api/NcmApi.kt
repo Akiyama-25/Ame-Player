@@ -413,7 +413,13 @@ class NcmApi @Inject constructor(
         }
     }
 
-    suspend fun getLyric(songId: String): Pair<String?, String?>? {
+    data class NcmLyricData(
+    val lrc: String? = null,
+    val tlyric: String? = null,
+    val yrc: String? = null
+)
+
+    suspend fun getLyric(songId: String): NcmLyricData? {
         if (isDirectMode) {
             try {
                 val songIdLong = songId.toLongOrNull() ?: 0L
@@ -425,6 +431,8 @@ class NcmApi @Inject constructor(
                     put("rv", 0)
                     put("kv", 0)
                     put("yv", 0)
+                    put("ytv", 0)
+                    put("yrv", 0)
                 }.toString()
                 val body = directClient.postEapi(
                     client,
@@ -435,7 +443,8 @@ class NcmApi @Inject constructor(
                 val json = Json.parseToJsonElement(body).asJsonObjectOrNull
                 val lrc = json?.get("lrc")?.asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val tlyric = json?.get("tlyric")?.asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-                if (lrc != null || tlyric != null) return Pair(lrc, tlyric)
+                val yrc = json?.get("yrc")?.asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                if (lrc != null || tlyric != null || yrc != null) return NcmLyricData(lrc, tlyric, yrc)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 AppLogger.w("AME_NCM_API", "Direct getLyric failed: ${e.message}")
@@ -449,7 +458,8 @@ class NcmApi @Inject constructor(
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull ?: return null
             val lrc = json["lrc"]?.asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
             val tlyric = json["tlyric"]?.asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
-            if (lrc != null || tlyric != null) Pair(lrc, tlyric) else null
+            val yrc = json["yrc"]?.asJsonObjectOrNull?.get("lyric")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+            if (lrc != null || tlyric != null || yrc != null) NcmLyricData(lrc, tlyric, yrc) else null
         } catch (_: Exception) {
             null
         }

@@ -7,6 +7,7 @@ enum class LyricSource {
     LOCAL_LRC,  // 本地 .lrc 文件歌词
     ONLINE,     // 网易云在线 API 抓取歌词
     TTML,       // AMLL TTML 逐词歌词
+    YRC,        // 网易云 YRC 逐字歌词
     NONE        // 无歌词
 }
 

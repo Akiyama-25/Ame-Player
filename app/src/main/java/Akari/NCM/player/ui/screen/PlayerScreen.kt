@@ -10,8 +10,10 @@ import Akari.NCM.player.core.RepeatMode
 import Akari.NCM.player.data.LyricResult
 import Akari.NCM.player.data.LyricsManager
 import Akari.NCM.player.ui.component.PredictiveBackEasing
+import Akari.NCM.player.ui.component.WordByWordLyricView
 import Akari.NCM.player.ui.component.predictiveBackForeground
 import Akari.NCM.player.ui.component.rememberPredictiveBackState
+import Akari.NCM.player.ui.component.rememberSmoothPosition
 import android.annotation.SuppressLint
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.*
@@ -354,6 +356,7 @@ private fun PlayerMainContentView(
     val durationMs     by playerState.durationMs.collectAsState()
     val repeatMode     by playerState.repeatMode.collectAsState()
     val shuffleEnabled by playerState.shuffleEnabled.collectAsState()
+    val smoothPositionMs by rememberSmoothPosition(positionMs, isPlaying, durationMs)
 
     // ── 歌词 ───────────────────────────────────────────────────────────────────
     val lyricsManager   = remember { Akari.NCM.player.data.LyricsManager(context, ncmApi) }
@@ -365,10 +368,10 @@ private fun PlayerMainContentView(
             ?: Akari.NCM.player.data.LyricResult(emptyList(), Akari.NCM.player.core.LyricSource.NONE)
     }
 
-    val currentLineIndex = remember(lyricResult.lines, positionMs) {
+    val currentLineIndex = remember(lyricResult.lines, smoothPositionMs) {
         val lines = lyricResult.lines
         if (lines.isEmpty()) -1
-        else lines.indexOfLast { it.timeMs <= positionMs }.let { if (it == -1) 0 else it }
+        else lines.indexOfLast { it.timeMs <= smoothPositionMs }.let { if (it == -1) 0 else it }
     }
 
     // 当前播放歌词行
@@ -518,24 +521,23 @@ private fun PlayerMainContentView(
 
         val CurrentLyricBlock: @Composable (Alignment.Horizontal) -> Unit = { align ->
             Box(
-                modifier = Modifier.fillMaxWidth().height(64.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
                 contentAlignment = if (align == Alignment.CenterHorizontally) Alignment.Center else Alignment.CenterStart
             ) {
                 if (currentLyricLine != null) {
-                    val textToShow = if (currentLyricLine.text.isBlank()) "..." else currentLyricLine.text.trim()
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = align,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Text(
-                            text       = textToShow,
-                            fontSize   = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            color      = Color.White,
-                            textAlign  = if (align == Alignment.CenterHorizontally) TextAlign.Center else TextAlign.Start,
-                            maxLines   = 1,
-                            overflow   = TextOverflow.Ellipsis
+                        WordByWordLyricView(
+                            line = currentLyricLine,
+                            currentPositionMs = smoothPositionMs,
+                            fontSize = 22.sp,
+                            lineHeight = 28.sp,
+                            activeColor = Color.White,
+                            inactiveColor = Color.White.copy(alpha = 0.4f),
+                            horizontalAlignment = align
                         )
                         if (showTranslation) {
                             Spacer(Modifier.height(4.dp))
@@ -759,6 +761,7 @@ private fun PlayerMainContentView(
                                     modifier = Modifier.fillMaxSize().graphicsLayer { alpha = p },
                                     lyricResult = lyricResult,
                                     currentIndex = currentLineIndex,
+                                    currentPositionMs = smoothPositionMs,
                                     showTranslation = showTranslation,
                                     listState = lyricsListState,
                                     onToggleTranslation = { showTranslation = !showTranslation },
@@ -931,6 +934,7 @@ private fun PlayerMainContentView(
                             modifier = Modifier.fillMaxSize(),
                             lyricResult = lyricResult,
                             currentIndex = currentLineIndex,
+                            currentPositionMs = smoothPositionMs,
                             showTranslation = showTranslation,
                             listState = lyricsListState,
                             onToggleTranslation = { showTranslation = !showTranslation },
@@ -1050,6 +1054,7 @@ private fun PlayerMainContentView(
                                 modifier             = Modifier.fillMaxSize().graphicsLayer { alpha = p },
                                 lyricResult          = lyricResult,
                                 currentIndex         = currentLineIndex,
+                                currentPositionMs    = smoothPositionMs,
                                 showTranslation      = showTranslation,
                                 listState            = lyricsListState,
                                 onToggleTranslation  = { showTranslation = !showTranslation },
@@ -1460,6 +1465,7 @@ private fun SaltFullLyricsView(
     modifier: Modifier = Modifier,
     lyricResult: LyricResult,
     currentIndex: Int,
+    currentPositionMs: Long,
     showTranslation: Boolean,
     listState: androidx.compose.foundation.lazy.LazyListState,
     onToggleTranslation: () -> Unit,
@@ -1467,7 +1473,7 @@ private fun SaltFullLyricsView(
 ) {
     var isInitialScroll by remember { mutableStateOf(true) }
     LaunchedEffect(currentIndex, showTranslation) {
-        if (currentIndex >= 0 && lyricResult.lines.isNotEmpty()) {
+        if (currentIndex >= 0 && lyricResult.lines.isNotEmpty() && !listState.isScrollInProgress) {
             if (isInitialScroll) {
                 listState.scrollToItem(currentIndex)
                 isInitialScroll = false
@@ -1524,14 +1530,26 @@ private fun SaltFullLyricsView(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                Text(
-                                    text       = line.text.trim(),
-                                    fontSize   = if (isSelected) 22.sp else 18.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color      = Color.White.copy(alpha = if (isSelected) 1f else 0.35f),
-                                    lineHeight = 28.sp,
-                                    textAlign  = TextAlign.Center
-                                )
+                                if (isSelected) {
+                                    WordByWordLyricView(
+                                        line = line,
+                                        currentPositionMs = currentPositionMs,
+                                        fontSize = 22.sp,
+                                        lineHeight = 28.sp,
+                                        activeColor = Color.White,
+                                        inactiveColor = Color.White.copy(alpha = 0.4f),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    )
+                                } else {
+                                    Text(
+                                        text       = line.text.trim(),
+                                        fontSize   = 18.sp,
+                                        fontWeight = FontWeight.Normal,
+                                        color      = Color.White.copy(alpha = 0.35f),
+                                        lineHeight = 28.sp,
+                                        textAlign  = TextAlign.Center
+                                    )
+                                }
                             }
                             if (showTranslation && !line.translation.isNullOrBlank()) {
                                 Spacer(Modifier.height(4.dp))
@@ -1554,11 +1572,33 @@ private fun SaltFullLyricsView(
 
         Spacer(Modifier.height(8.dp))
 
-        // 译文开关
-        Box(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp, end = 24.dp),
-            contentAlignment = Alignment.CenterEnd
+        // 底部指示与译文开关
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            val badgeText = when (lyricResult.source) {
+                LyricSource.TTML -> "AMLL TTML 逐词"
+                LyricSource.YRC -> "网易云 YRC 逐字"
+                LyricSource.LOCAL_LRC -> "本地歌词"
+                LyricSource.EMBEDDED -> "内嵌歌词"
+                LyricSource.ONLINE -> "网易云 LRC"
+                LyricSource.NONE -> ""
+            }
+            if (badgeText.isNotEmpty()) {
+                Text(
+                    text = badgeText,
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.45f),
+                    fontWeight = FontWeight.Medium
+                )
+            } else {
+                Spacer(Modifier.width(1.dp))
+            }
+
             IconButton(onClick = onToggleTranslation) {
                 Icon(
                     Icons.Rounded.Translate,

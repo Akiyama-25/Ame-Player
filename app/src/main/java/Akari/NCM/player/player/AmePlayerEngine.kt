@@ -437,7 +437,7 @@ class AmePlayerEngine @Inject constructor(
                     updateAudioFormatFromExo(exoPlayer.audioFormat)
                     updateCurrentLyricForPosition(pos)
                 }
-                delay(200.milliseconds)
+                delay(50.milliseconds)
             }
         }
 

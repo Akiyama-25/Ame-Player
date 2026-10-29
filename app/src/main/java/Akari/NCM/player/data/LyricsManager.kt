@@ -37,7 +37,7 @@ class LyricsManager(
                 val parsed = TtmlLyricParser.parse(ttmlFileContent)
                 if (parsed.isNotEmpty()) {
                     AppLogger.d("LyricsManager", "Found local .ttml file for ${media.title}")
-                    return@withContext LyricResult(parsed, LyricSource.TTML)
+                    return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(parsed), LyricSource.TTML)
                 }
             }
 
@@ -47,7 +47,7 @@ class LyricsManager(
                 val parsed = LrcParser.parse(embeddedLrc)
                 if (parsed.isNotEmpty()) {
                     AppLogger.d("LyricsManager", "Found embedded lyrics for ${media.title}")
-                    return@withContext LyricResult(parsed, LyricSource.EMBEDDED)
+                    return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(parsed), LyricSource.EMBEDDED)
                 }
             }
 
@@ -57,7 +57,7 @@ class LyricsManager(
                 val parsed = LrcParser.parse(lrcFileContent)
                 if (parsed.isNotEmpty()) {
                     AppLogger.d("LyricsManager", "Found local .lrc file for ${media.title}")
-                    return@withContext LyricResult(parsed, LyricSource.LOCAL_LRC)
+                    return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(parsed), LyricSource.LOCAL_LRC)
                 }
             }
         }
@@ -96,7 +96,7 @@ class LyricsManager(
                 }
             }
 
-            // 逐个尝试获取歌词：优先尝试 AMLL TTML 逐词歌词，未命中再尝试 NCM API 在线 LRC
+            // 逐个尝试获取歌词：优先尝试 AMLL TTML 逐词歌词，其次尝试 NCM YRC 逐字，未命中再尝试 NCM API 在线 LRC
             for (song in prioritizedResults) {
                 val songIdLong = song.id.toLongOrNull()
                 if (songIdLong != null && songIdLong > 0) {
@@ -105,19 +105,33 @@ class LyricsManager(
                         val parsed = TtmlLyricParser.parse(ttmlXml)
                         if (parsed.isNotEmpty()) {
                             AppLogger.d("LyricsManager", "Fetched fallback AMLL TTML lyrics from ${song.title} - ${song.artist}")
-                            return LyricResult(parsed, LyricSource.TTML)
+                            return LyricResult(SoftLyricSegmenter.fillMissingWords(parsed), LyricSource.TTML)
                         }
                     }
                 }
 
-                val (m, t) = ncmApi.getLyric(song.id) ?: Pair(null, null)
-                if (!m.isNullOrBlank() || !t.isNullOrBlank()) {
-                    val mP = LrcParser.parse(m)
-                    val tP = LrcParser.parse(t)
+                val lyricData = ncmApi.getLyric(song.id)
+                val yrc = lyricData?.yrc
+                val mainLrc = lyricData?.lrc
+                val transLrc = lyricData?.tlyric
+
+                if (!yrc.isNullOrBlank()) {
+                    val yrcParsed = YrcLyricParser.parse(yrc)
+                    if (yrcParsed.isNotEmpty()) {
+                        val transParsed = LrcParser.parse(transLrc)
+                        val merged = LrcParser.mergeWithTranslation(yrcParsed, transParsed)
+                        AppLogger.d("LyricsManager", "Fetched fallback YRC word-by-word lyrics from ${song.title} - ${song.artist}")
+                        return LyricResult(SoftLyricSegmenter.fillMissingWords(merged), LyricSource.YRC)
+                    }
+                }
+
+                if (!mainLrc.isNullOrBlank() || !transLrc.isNullOrBlank()) {
+                    val mP = LrcParser.parse(mainLrc)
+                    val tP = LrcParser.parse(transLrc)
                     val merged = LrcParser.mergeWithTranslation(mP, tP)
                     if (merged.isNotEmpty() && merged.any { it.text.isNotBlank() && !it.text.contains("纯音乐") }) {
                         AppLogger.d("LyricsManager", "Fetched fallback online lyrics from ${song.title} - ${song.artist}")
-                        return LyricResult(merged, LyricSource.ONLINE)
+                        return LyricResult(SoftLyricSegmenter.fillMissingWords(merged), LyricSource.ONLINE)
                     }
                 }
             }
@@ -133,19 +147,33 @@ class LyricsManager(
                     val parsed = TtmlLyricParser.parse(ttmlXml)
                     if (parsed.isNotEmpty()) {
                         AppLogger.d("LyricsManager", "Fetched AMLL TTML lyrics by exact ID for ${media.title} (id=$songIdLong)")
-                        return@withContext LyricResult(parsed, LyricSource.TTML)
+                        return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(parsed), LyricSource.TTML)
                     }
                 }
             }
 
-            val (mainLrc, transLrc) = ncmApi.getLyric(onlineSongId) ?: Pair(null, null)
+            val lyricData = ncmApi.getLyric(onlineSongId)
+            val yrc = lyricData?.yrc
+            val mainLrc = lyricData?.lrc
+            val transLrc = lyricData?.tlyric
+
+            if (!yrc.isNullOrBlank()) {
+                val yrcParsed = YrcLyricParser.parse(yrc)
+                if (yrcParsed.isNotEmpty()) {
+                    val transParsed = LrcParser.parse(transLrc)
+                    val merged = LrcParser.mergeWithTranslation(yrcParsed, transParsed)
+                    AppLogger.d("LyricsManager", "Fetched online YRC lyrics by exact ID for ${media.title}")
+                    return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(merged), LyricSource.YRC)
+                }
+            }
+
             if (!mainLrc.isNullOrBlank() || !transLrc.isNullOrBlank()) {
                 val mainParsed = LrcParser.parse(mainLrc)
                 val transParsed = LrcParser.parse(transLrc)
                 val merged = LrcParser.mergeWithTranslation(mainParsed, transParsed)
                 if (merged.isNotEmpty()) {
                     AppLogger.d("LyricsManager", "Fetched online lyrics by exact ID for ${media.title}")
-                    return@withContext LyricResult(merged, LyricSource.ONLINE)
+                    return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(merged), LyricSource.ONLINE)
                 }
             }
         }
