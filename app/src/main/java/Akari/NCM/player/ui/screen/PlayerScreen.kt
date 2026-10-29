@@ -15,14 +15,10 @@ import Akari.NCM.player.ui.component.predictiveBackForeground
 import Akari.NCM.player.ui.component.rememberPredictiveBackState
 import Akari.NCM.player.ui.component.rememberSmoothPosition
 import android.annotation.SuppressLint
+import android.app.Activity
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.*
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,6 +36,8 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 import androidx.compose.ui.platform.LocalConfiguration
 import android.content.res.Configuration
@@ -101,6 +99,25 @@ fun PlayerScreen(
     val context = LocalContext.current
     val density = LocalDensity.current
     val rawTrack by playerState.currentMedia.collectAsState()
+
+    // 播放页面为沉浸式全屏深色背景，强制状态栏与导航栏图标为亮色（白色），退出时恢复
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        DisposableEffect(view) {
+            val window = (view.context as? Activity)?.window
+            val insetsController = window?.let { WindowCompat.getInsetsController(it, view) }
+            val originalLightStatusBars = insetsController?.isAppearanceLightStatusBars ?: false
+            val originalLightNavBars = insetsController?.isAppearanceLightNavigationBars ?: false
+
+            insetsController?.isAppearanceLightStatusBars = false
+            insetsController?.isAppearanceLightNavigationBars = false
+
+            onDispose {
+                insetsController?.isAppearanceLightStatusBars = originalLightStatusBars
+                insetsController?.isAppearanceLightNavigationBars = originalLightNavBars
+            }
+        }
+    }
 
     // 缓存缓冲当前渲染曲目：网络/磁盘封面图片加载完成前不切换曲目信息与画面，防切歌空白
     var displayedTrack by remember { mutableStateOf(rawTrack) }
@@ -539,19 +556,35 @@ private fun PlayerMainContentView(
                             inactiveColor = Color.White.copy(alpha = 0.4f),
                             horizontalAlignment = align
                         )
-                        if (showTranslation) {
-                            Spacer(Modifier.height(4.dp))
-                            if (!currentLyricLine.translation.isNullOrBlank()) {
+                        AnimatedVisibility(
+                            visible = showTranslation && !currentLyricLine.translation.isNullOrBlank(),
+                            enter = fadeIn(animationSpec = tween(350, easing = LinearOutSlowInEasing)) +
+                                    expandVertically(
+                                        animationSpec = spring(
+                                            dampingRatio = Spring.DampingRatioNoBouncy,
+                                            stiffness = Spring.StiffnessMediumLow
+                                        ),
+                                        expandFrom = Alignment.Top
+                                    ),
+                            exit = fadeOut(animationSpec = tween(250, easing = FastOutLinearInEasing)) +
+                                    shrinkVertically(
+                                        animationSpec = tween(250, easing = FastOutLinearInEasing),
+                                        shrinkTowards = Alignment.Top
+                                    )
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = align
+                            ) {
+                                Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text       = currentLyricLine.translation.trim(),
+                                    text       = currentLyricLine.translation?.trim().orEmpty(),
                                     fontSize   = 16.sp,
                                     color      = Color.White.copy(alpha = 0.75f),
                                     textAlign  = if (align == Alignment.CenterHorizontally) TextAlign.Center else TextAlign.Start,
                                     maxLines   = 1,
                                     overflow   = TextOverflow.Ellipsis
                                 )
-                            } else {
-                                Text(" ", fontSize = 16.sp)
                             }
                         }
                     }
@@ -778,11 +811,24 @@ private fun PlayerMainContentView(
                                     verticalArrangement = Arrangement.Center
                                 ) {
                                     Box(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), contentAlignment = Alignment.CenterEnd) {
-                                        IconButton(onClick = { showTranslation = !showTranslation }) {
+                                        val translateAlpha by animateFloatAsState(
+                                            targetValue = if (showTranslation) 1f else 0.45f,
+                                            animationSpec = tween(300),
+                                            label = "LandscapeTranslateAlpha"
+                                        )
+                                        val translateBg by animateColorAsState(
+                                            targetValue = if (showTranslation) Color.White.copy(alpha = 0.15f) else Color.Transparent,
+                                            animationSpec = tween(300),
+                                            label = "LandscapeTranslateBg"
+                                        )
+                                        IconButton(
+                                            onClick = { showTranslation = !showTranslation },
+                                            modifier = Modifier.clip(CircleShape).background(translateBg)
+                                        ) {
                                             Icon(
                                                 Icons.Rounded.Translate,
                                                 contentDescription = "Translate Toggle",
-                                                tint = if (showTranslation) Color.White else Color.White.copy(alpha = 0.5f)
+                                                tint = Color.White.copy(alpha = translateAlpha)
                                             )
                                         }
                                     }
@@ -1522,11 +1568,32 @@ private fun SaltFullLyricsView(
                 ) {
                     itemsIndexed(lyricResult.lines) { index, line ->
                         val isSelected = index == currentIndex
+
+                        val lineScale by animateFloatAsState(
+                            targetValue = if (isSelected) 1.05f else 1.0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            ),
+                            label = "lineScale_$index"
+                        )
+
+                        val lineAlpha by animateFloatAsState(
+                            targetValue = if (isSelected) 1.0f else 0.35f,
+                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                            label = "lineAlpha_$index"
+                        )
+
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onLyricClick(line.timeMs) }
-                                .padding(vertical = 4.dp),
+                                .padding(vertical = 4.dp)
+                                .graphicsLayer {
+                                    scaleX = lineScale
+                                    scaleY = lineScale
+                                    alpha = lineAlpha
+                                },
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -1534,7 +1601,7 @@ private fun SaltFullLyricsView(
                                     WordByWordLyricView(
                                         line = line,
                                         currentPositionMs = currentPositionMs,
-                                        fontSize = 22.sp,
+                                        fontSize = 20.sp,
                                         lineHeight = 28.sp,
                                         activeColor = Color.White,
                                         inactiveColor = Color.White.copy(alpha = 0.4f),
@@ -1543,25 +1610,46 @@ private fun SaltFullLyricsView(
                                 } else {
                                     Text(
                                         text       = line.text.trim(),
-                                        fontSize   = 18.sp,
+                                        fontSize   = 20.sp,
                                         fontWeight = FontWeight.Normal,
-                                        color      = Color.White.copy(alpha = 0.35f),
+                                        color      = Color.White,
                                         lineHeight = 28.sp,
                                         textAlign  = TextAlign.Center
                                     )
                                 }
                             }
-                            if (showTranslation && !line.translation.isNullOrBlank()) {
-                                Spacer(Modifier.height(4.dp))
-                                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        text       = line.translation.trim(),
-                                        fontSize   = if (isSelected) 16.sp else 14.sp,
-                                        fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
-                                        color      = Color.White.copy(alpha = if (isSelected) 0.85f else 0.3f),
-                                        lineHeight = 22.sp,
-                                        textAlign  = TextAlign.Center
-                                    )
+
+                            AnimatedVisibility(
+                                visible = showTranslation && !line.translation.isNullOrBlank(),
+                                enter = fadeIn(animationSpec = tween(durationMillis = 350, easing = LinearOutSlowInEasing)) +
+                                        expandVertically(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            ),
+                                            expandFrom = Alignment.Top
+                                        ),
+                                exit = fadeOut(animationSpec = tween(durationMillis = 250, easing = FastOutLinearInEasing)) +
+                                        shrinkVertically(
+                                            animationSpec = tween(durationMillis = 250, easing = FastOutLinearInEasing),
+                                            shrinkTowards = Alignment.Top
+                                        )
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text       = line.translation?.trim().orEmpty(),
+                                            fontSize   = if (isSelected) 15.sp else 14.sp,
+                                            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                                            color      = Color.White.copy(alpha = if (isSelected) 0.85f else 0.75f),
+                                            lineHeight = 22.sp,
+                                            textAlign  = TextAlign.Center
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1599,11 +1687,27 @@ private fun SaltFullLyricsView(
                 Spacer(Modifier.width(1.dp))
             }
 
-            IconButton(onClick = onToggleTranslation) {
+            val translateAlpha by animateFloatAsState(
+                targetValue = if (showTranslation) 1f else 0.45f,
+                animationSpec = tween(300),
+                label = "FullLyricsTranslateAlpha"
+            )
+            val translateBg by animateColorAsState(
+                targetValue = if (showTranslation) Color.White.copy(alpha = 0.15f) else Color.Transparent,
+                animationSpec = tween(300),
+                label = "FullLyricsTranslateBg"
+            )
+
+            IconButton(
+                onClick = onToggleTranslation,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(translateBg)
+            ) {
                 Icon(
                     Icons.Rounded.Translate,
                     contentDescription = "Translate Toggle",
-                    tint = if (showTranslation) Color.White else Color.White.copy(alpha = 0.5f)
+                    tint = Color.White.copy(alpha = translateAlpha)
                 )
             }
         }
