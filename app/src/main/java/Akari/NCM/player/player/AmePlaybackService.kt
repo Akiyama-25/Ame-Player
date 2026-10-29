@@ -133,6 +133,15 @@ class AmePlaybackService : MediaSessionService() {
         setMediaNotificationProvider(notificationProvider)
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent == null) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        super.onStartCommand(intent, flags, startId)
+        return START_NOT_STICKY
+    }
+
     override fun onDestroy() {
         serviceScope.cancel()
         // 只释放 MediaSession，不释放 ExoPlayer（由 AmePlayerEngine 管理）
@@ -145,12 +154,20 @@ class AmePlaybackService : MediaSessionService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val player = mediaSession?.player
-        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
-            // 没有在播放则停止服务（通知也会消失）
+        super.onTaskRemoved(rootIntent)
+        // 用户从“近期任务”划除应用时，立即暂停播放并完全停止前台服务与进程
+        runCatching {
+            playerEngine.pause()
+            pauseAllPlayersAndStopSelf()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            mediaSession?.let {
+                removeSession(it)
+                it.release()
+            }
+            mediaSession = null
             stopSelf()
         }
-        // 正在播放时保持服务存活，让用户可以从通知/灵动岛实时窗控制播放
+        android.os.Process.killProcess(android.os.Process.myPid())
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =

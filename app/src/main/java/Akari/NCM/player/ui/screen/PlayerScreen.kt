@@ -78,6 +78,7 @@ import coil.size.Size
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -1525,20 +1526,42 @@ private fun SaltFullLyricsView(
     onLyricClick: (Long) -> Unit
 ) {
     var isInitialScroll by remember { mutableStateOf(true) }
+    var lastScrolledIndex by remember { mutableIntStateOf(-1) }
     val isDragged by listState.interactionSource.collectIsDraggedAsState()
 
-    LaunchedEffect(currentIndex, showTranslation, listState.layoutInfo.viewportSize.height) {
+    LaunchedEffect(currentIndex, showTranslation, isDragged, listState.layoutInfo.viewportSize.height) {
         if (currentIndex < 0 || lyricResult.lines.isEmpty()) return@LaunchedEffect
+        val containerHeight = listState.layoutInfo.viewportSize.height
+        if (containerHeight <= 0) return@LaunchedEffect
+
+        if (isDragged) return@LaunchedEffect
+
+        // 若用户刚刚拖拽完松手（且播放行未变），给予 2.5 秒阅读时间后再平滑居中回滚
+        if (!isInitialScroll && currentIndex == lastScrolledIndex) {
+            delay(2500)
+        }
 
         suspend fun centerItem(index: Int, animate: Boolean) {
-            val layoutInfo = listState.layoutInfo
-            val containerHeight = layoutInfo.viewportSize.height
-            if (containerHeight <= 0) return
+            var layoutInfo = listState.layoutInfo
+            var viewportHeight = layoutInfo.viewportSize.height
+            if (viewportHeight <= 0) return
 
-            val target = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
-            if (target != null) {
-                val targetOffset = (containerHeight - target.size) / 2f
-                val delta = target.offset - targetOffset
+            var target = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+            if (target == null) {
+                listState.scrollToItem(index)
+                delay(30)
+                layoutInfo = listState.layoutInfo
+                viewportHeight = layoutInfo.viewportSize.height
+                target = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+            }
+
+            if (target != null && viewportHeight > 0) {
+                // LazyListItemInfo.offset 不包含 beforeContentPadding，需加上 beforeContentPadding 换算为视口真实 Y 坐标
+                val itemTopInViewport = target.offset + layoutInfo.beforeContentPadding
+                val itemCenterInViewport = itemTopInViewport + (target.size / 2f)
+                val viewportCenter = viewportHeight / 2f
+                val delta = itemCenterInViewport - viewportCenter
+
                 if (kotlin.math.abs(delta) > 1f) {
                     if (animate) {
                         listState.animateScrollBy(
@@ -1549,38 +1572,16 @@ private fun SaltFullLyricsView(
                         listState.scrollBy(delta)
                     }
                 }
-            } else {
-                listState.scrollToItem(index)
-                val updatedLayout = listState.layoutInfo
-                val updatedContainerHeight = updatedLayout.viewportSize.height
-                if (updatedContainerHeight > 0) {
-                    val updatedTarget = updatedLayout.visibleItemsInfo.firstOrNull { it.index == index }
-                    if (updatedTarget != null) {
-                        val targetOffset = (updatedContainerHeight - updatedTarget.size) / 2f
-                        val delta = updatedTarget.offset - targetOffset
-                        if (kotlin.math.abs(delta) > 1f) {
-                            if (animate) {
-                                listState.animateScrollBy(
-                                    value = delta,
-                                    animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing)
-                                )
-                            } else {
-                                listState.scrollBy(delta)
-                            }
-                        }
-                    }
-                }
             }
         }
 
         if (isInitialScroll) {
-            val h = listState.layoutInfo.viewportSize.height
-            if (h > 0) {
-                centerItem(currentIndex, animate = false)
-                isInitialScroll = false
-            }
-        } else if (!isDragged) {
+            centerItem(currentIndex, animate = false)
+            isInitialScroll = false
+            lastScrolledIndex = currentIndex
+        } else {
             centerItem(currentIndex, animate = true)
+            lastScrolledIndex = currentIndex
         }
     }
 
@@ -1686,8 +1687,8 @@ private fun SaltFullLyricsView(
                                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                         Text(
                                             text       = line.translation?.trim().orEmpty(),
-                                            fontSize   = if (isSelected) 15.sp else 14.sp,
-                                            fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal,
+                                            fontSize   = 14.sp,
+                                            fontWeight = FontWeight.Normal,
                                             color      = Color.White.copy(alpha = if (isSelected) 0.85f else 0.75f),
                                             lineHeight = 22.sp,
                                             textAlign  = TextAlign.Center
