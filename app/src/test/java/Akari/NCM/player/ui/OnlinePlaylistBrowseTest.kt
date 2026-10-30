@@ -492,4 +492,91 @@ class OnlinePlaylistBrowseTest {
         playerEngine.loadPlaylist(listOf(recTrack1), 0)
         assertEquals(Akari.NCM.player.core.InfinitePlayMode.None, playerEngine.infinitePlayMode.value)
     }
+
+    @Test
+    fun testInfinitePlayback_forcesSequentialMode_andRestoresFixedModeIndependently() {
+        val seedTrack = PlayableMedia.Online(
+            id = "online_1001",
+            title = "Seed Song",
+            artist = "Artist A",
+            album = "Album A",
+            durationMs = 200000L
+        )
+        val fixedTrack = PlayableMedia.Online(
+            id = "online_2001",
+            title = "Fixed Song",
+            artist = "Artist B",
+            album = "Album B",
+            durationMs = 210000L
+        )
+
+        // 1. Set fixed playlist playback mode to RepeatMode.ONE and Shuffle = true
+        playerEngine.setRepeatMode(Akari.NCM.player.core.RepeatMode.ONE)
+        if (!playerEngine.shuffleEnabled.value) {
+            playerEngine.toggleShuffle()
+        }
+        assertEquals(Akari.NCM.player.core.RepeatMode.ONE, playerEngine.repeatMode.value)
+        assertEquals(true, playerEngine.shuffleEnabled.value)
+        assertEquals("ONE", ThemePrefs.playbackRepeatMode)
+        assertEquals(true, ThemePrefs.playbackShuffleEnabled)
+
+        // 2. Start infinite playback -> must force RepeatMode.OFF and shuffleEnabled = false
+        playerEngine.startInfinitePlayback(
+            mode = Akari.NCM.player.core.InfinitePlayMode.SongRadio(
+                seedSongId = "1001",
+                seedSongTitle = "Seed Song"
+            ),
+            initialTracks = listOf(seedTrack)
+        )
+        assertEquals(Akari.NCM.player.core.RepeatMode.OFF, playerEngine.repeatMode.value)
+        assertEquals(false, playerEngine.shuffleEnabled.value)
+
+        // 3. Attempting to change repeat mode or shuffle during infinite mode is locked to sequential
+        playerEngine.setRepeatMode(Akari.NCM.player.core.RepeatMode.ONE)
+        playerEngine.toggleShuffle()
+        assertEquals(Akari.NCM.player.core.RepeatMode.OFF, playerEngine.repeatMode.value)
+        assertEquals(false, playerEngine.shuffleEnabled.value)
+        // Fixed playlist preferences remain untouched
+        assertEquals("ONE", ThemePrefs.playbackRepeatMode)
+        assertEquals(true, ThemePrefs.playbackShuffleEnabled)
+
+        // 4. Switching back to a fixed playlist restores the fixed playlist's RepeatMode.ONE and Shuffle = true
+        playerEngine.loadPlaylist(listOf(fixedTrack), 0)
+        assertEquals(Akari.NCM.player.core.InfinitePlayMode.None, playerEngine.infinitePlayMode.value)
+        assertEquals(Akari.NCM.player.core.RepeatMode.ONE, playerEngine.repeatMode.value)
+        assertEquals(true, playerEngine.shuffleEnabled.value)
+    }
+
+    @Test
+    fun testPlayerScreen_infiniteMode_rendersInfinityIconAndDescription() {
+        val seedTrack = PlayableMedia.Online(
+            id = "online_1001",
+            title = "Seed Song",
+            artist = "Artist A",
+            album = "Album A",
+            durationMs = 200000L
+        )
+        playerEngine.startInfinitePlayback(
+            mode = Akari.NCM.player.core.InfinitePlayMode.SongRadio(
+                seedSongId = "1001",
+                seedSongTitle = "Seed Song"
+            ),
+            initialTracks = listOf(seedTrack)
+        )
+
+        composeTestRule.setContent {
+            Akari.NCM.player.ui.screen.PlayerScreen(
+                playerState = playerEngine,
+                playerController = playerEngine,
+                ncmApi = ncmApi,
+                onBackClick = {},
+                onToggleQueueClick = {},
+                onAddToPlaylistClick = {}
+            )
+        }
+
+        // Verify the playback mode button displays icon "∞" and contentDescription "无限模式"
+        composeTestRule.onNodeWithText("∞").assertIsDisplayed()
+        composeTestRule.onNode(androidx.compose.ui.test.hasContentDescription("无限模式")).assertIsDisplayed()
+    }
 }

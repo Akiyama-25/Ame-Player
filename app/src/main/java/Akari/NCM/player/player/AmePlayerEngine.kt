@@ -127,16 +127,17 @@ class AmePlayerEngine @Inject constructor(
     private val _volume = MutableStateFlow(1f)
     override val volume: StateFlow<Float> = _volume.asStateFlow()
 
-    private val _repeatMode = MutableStateFlow(
-        when (ThemePrefs.playbackRepeatMode) {
-            "ONE" -> RepeatMode.ONE
-            "ALL" -> RepeatMode.ALL
-            else -> RepeatMode.OFF
-        }
-    )
+    private var fixedRepeatMode: RepeatMode = when (ThemePrefs.playbackRepeatMode) {
+        "ONE" -> RepeatMode.ONE
+        "ALL" -> RepeatMode.ALL
+        else -> RepeatMode.OFF
+    }
+    private var fixedShuffleEnabled: Boolean = ThemePrefs.playbackShuffleEnabled
+
+    private val _repeatMode = MutableStateFlow(fixedRepeatMode)
     override val repeatMode: StateFlow<RepeatMode> = _repeatMode.asStateFlow()
 
-    private val _shuffleEnabled = MutableStateFlow(ThemePrefs.playbackShuffleEnabled)
+    private val _shuffleEnabled = MutableStateFlow(fixedShuffleEnabled)
     override val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled.asStateFlow()
 
     private val _playlist = MutableStateFlow<List<PlayableMedia>>(emptyList())
@@ -427,17 +428,33 @@ class AmePlayerEngine @Inject constructor(
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
+                if (_infinitePlayMode.value.isActive) {
+                    if (repeatMode != Player.REPEAT_MODE_OFF) {
+                        player.repeatMode = Player.REPEAT_MODE_OFF
+                    }
+                    _repeatMode.value = RepeatMode.OFF
+                    return
+                }
                 val mode = when (repeatMode) {
                     Player.REPEAT_MODE_OFF -> RepeatMode.OFF
                     Player.REPEAT_MODE_ALL -> RepeatMode.ALL
                     Player.REPEAT_MODE_ONE -> RepeatMode.ONE
                     else -> RepeatMode.OFF
                 }
+                fixedRepeatMode = mode
                 _repeatMode.value = mode
                 ThemePrefs.playbackRepeatMode = mode.name
             }
 
             override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                if (_infinitePlayMode.value.isActive) {
+                    if (shuffleModeEnabled) {
+                        player.shuffleModeEnabled = false
+                    }
+                    _shuffleEnabled.value = false
+                    return
+                }
+                fixedShuffleEnabled = shuffleModeEnabled
                 _shuffleEnabled.value = shuffleModeEnabled
                 ThemePrefs.playbackShuffleEnabled = shuffleModeEnabled
             }
@@ -791,8 +808,18 @@ class AmePlayerEngine @Inject constructor(
         seenInfiniteTrackIds.clear()
         fallbackRecommendationPool.clear()
         if (_infinitePlayMode.value != InfinitePlayMode.None) {
-            AppLogger.i("AME_INFINITE_PLAY", ">>> Exiting InfinitePlayMode (${_infinitePlayMode.value.label})")
+            AppLogger.i("AME_INFINITE_PLAY", ">>> Exiting InfinitePlayMode (${_infinitePlayMode.value.label}), restoring fixed playback mode (repeat=$fixedRepeatMode, shuffle=$fixedShuffleEnabled)")
             _infinitePlayMode.value = InfinitePlayMode.None
+            _repeatMode.value = fixedRepeatMode
+            _shuffleEnabled.value = fixedShuffleEnabled
+            runCatching {
+                exoPlayer.repeatMode = when (fixedRepeatMode) {
+                    RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+                    RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+                    RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+                }
+                exoPlayer.shuffleModeEnabled = fixedShuffleEnabled
+            }
         }
     }
 
@@ -810,8 +837,18 @@ class AmePlayerEngine @Inject constructor(
         infinitePrefetchJob?.cancel()
         seenInfiniteTrackIds.clear()
         fallbackRecommendationPool.clear()
+        if (!_infinitePlayMode.value.isActive) {
+            fixedRepeatMode = _repeatMode.value
+            fixedShuffleEnabled = _shuffleEnabled.value
+        }
         _infinitePlayMode.value = mode
-        AppLogger.i("AME_INFINITE_PLAY", ">>> Starting InfinitePlayMode: ${mode.label}, initialTracks=${initialTracks.size}")
+        // 强制设定无限歌单为顺序播放，且不改动固定歌单的播放模式配置
+        _repeatMode.value = RepeatMode.OFF
+        _shuffleEnabled.value = false
+        ensureActive()
+        exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
+        exoPlayer.shuffleModeEnabled = false
+        AppLogger.i("AME_INFINITE_PLAY", ">>> Starting InfinitePlayMode: ${mode.label}, forced sequential mode, initialTracks=${initialTracks.size}")
 
         // 若传入了已知的起始种子歌曲（例如单曲推荐卡片直接内嵌了歌曲元数据），立即加入新队列起播，随后后台预加载后续推荐
         if (initialTracks.isNotEmpty()) {
@@ -1201,19 +1238,33 @@ class AmePlayerEngine @Inject constructor(
 
     override fun setRepeatMode(mode: RepeatMode) {
         ensureActive()
+        if (_infinitePlayMode.value.isActive) {
+            // 无限歌单强制固定为顺序播放，与固定歌单独立
+            exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
+            _repeatMode.value = RepeatMode.OFF
+            return
+        }
         exoPlayer.repeatMode = when (mode) {
             RepeatMode.OFF -> Player.REPEAT_MODE_OFF
             RepeatMode.ALL -> Player.REPEAT_MODE_ALL
             RepeatMode.ONE -> Player.REPEAT_MODE_ONE
         }
+        fixedRepeatMode = mode
         _repeatMode.value = mode
         ThemePrefs.playbackRepeatMode = mode.name
     }
 
     override fun toggleShuffle() {
         ensureActive()
+        if (_infinitePlayMode.value.isActive) {
+            // 无限歌单强制固定为顺序播放，与固定歌单独立
+            exoPlayer.shuffleModeEnabled = false
+            _shuffleEnabled.value = false
+            return
+        }
         val next = !exoPlayer.shuffleModeEnabled
         exoPlayer.shuffleModeEnabled = next
+        fixedShuffleEnabled = next
         _shuffleEnabled.value = next
         ThemePrefs.playbackShuffleEnabled = next
     }

@@ -65,6 +65,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -425,6 +427,7 @@ private fun PlayerMainContentView(
     val durationMs     by playerState.durationMs.collectAsState()
     val repeatMode     by playerState.repeatMode.collectAsState()
     val shuffleEnabled by playerState.shuffleEnabled.collectAsState()
+    val infinitePlayMode by playerState.infinitePlayMode.collectAsState()
     val smoothPositionMs by rememberSmoothPosition(positionMs, isPlaying, durationMs)
 
     // ── 歌词 ───────────────────────────────────────────────────────────────────
@@ -743,7 +746,9 @@ private fun PlayerMainContentView(
                 verticalAlignment     = Alignment.CenterVertically
             ) {
                 IconButton(onClick = {
-                    if (shuffleEnabled) {
+                    if (infinitePlayMode.isActive) {
+                        android.widget.Toast.makeText(context, "无限模式", android.widget.Toast.LENGTH_SHORT).show()
+                    } else if (shuffleEnabled) {
                         playerController.toggleShuffle()
                         playerController.setRepeatMode(RepeatMode.OFF)
                     } else when (repeatMode) {
@@ -752,17 +757,29 @@ private fun PlayerMainContentView(
                         else           -> playerController.setRepeatMode(RepeatMode.OFF)
                     }
                 }, modifier = Modifier.size(btnSize)) {
-                    val (modeIcon, modeDesc) = when {
-                        shuffleEnabled           -> Pair(Icons.Rounded.Shuffle,                   "随机播放")
-                        repeatMode == RepeatMode.ONE -> Pair(Icons.Rounded.RepeatOne,             "单曲循环")
-                        else                     -> Pair(Icons.AutoMirrored.Rounded.ArrowForward, "顺序播放")
+                    if (infinitePlayMode.isActive) {
+                        Text(
+                            text = "∞",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF60A5FA),
+                            modifier = Modifier.semantics {
+                                contentDescription = "无限模式"
+                            }
+                        )
+                    } else {
+                        val (modeIcon, modeDesc) = when {
+                            shuffleEnabled           -> Pair(Icons.Rounded.Shuffle,                   "随机播放")
+                            repeatMode == RepeatMode.ONE -> Pair(Icons.Rounded.RepeatOne,             "单曲循环")
+                            else                     -> Pair(Icons.AutoMirrored.Rounded.ArrowForward, "顺序播放")
+                        }
+                        Icon(
+                            modeIcon, modeDesc,
+                            tint     = if (repeatMode == RepeatMode.ONE || shuffleEnabled) Color(0xFF60A5FA)
+                                       else Color.White.copy(alpha = 0.75f),
+                            modifier = Modifier.size(iconSize)
+                        )
                     }
-                    Icon(
-                        modeIcon, modeDesc,
-                        tint     = if (repeatMode == RepeatMode.ONE || shuffleEnabled) Color(0xFF60A5FA)
-                                   else Color.White.copy(alpha = 0.75f),
-                        modifier = Modifier.size(iconSize)
-                    )
                 }
                 IconButton(onClick = onOpenQueueClick, modifier = Modifier.size(btnSize)) {
                     Icon(Icons.AutoMirrored.Rounded.QueueMusic, "播放队列", tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(iconSize))
@@ -1533,7 +1550,9 @@ private fun SaltPlayQueueView(
                     .padding(bottom = 16.dp),
                 contentAlignment = Alignment.Center
             ) {
+                val isInfinite = infinitePlayMode.isActive
                 val modeText = when {
+                    isInfinite -> "无限模式"
                     shuffleEnabled -> "随机播放"
                     repeatMode == RepeatMode.ONE -> "单曲循环"
                     else -> "顺序播放"
@@ -1541,16 +1560,18 @@ private fun SaltPlayQueueView(
 
                 Surface(
                     onClick = {
-                        if (shuffleEnabled) {
-                            playerController.toggleShuffle()
-                            playerController.setRepeatMode(RepeatMode.OFF)
-                        } else when (repeatMode) {
-                            RepeatMode.OFF -> playerController.setRepeatMode(RepeatMode.ONE)
-                            RepeatMode.ONE -> {
-                                playerController.setRepeatMode(RepeatMode.OFF)
+                        if (!isInfinite) {
+                            if (shuffleEnabled) {
                                 playerController.toggleShuffle()
+                                playerController.setRepeatMode(RepeatMode.OFF)
+                            } else when (repeatMode) {
+                                RepeatMode.OFF -> playerController.setRepeatMode(RepeatMode.ONE)
+                                RepeatMode.ONE -> {
+                                    playerController.setRepeatMode(RepeatMode.OFF)
+                                    playerController.toggleShuffle()
+                                }
+                                else -> playerController.setRepeatMode(RepeatMode.OFF)
                             }
-                            else -> playerController.setRepeatMode(RepeatMode.OFF)
                         }
                     },
                     shape = RoundedCornerShape(20.dp),
@@ -1561,17 +1582,29 @@ private fun SaltPlayQueueView(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val modeIcon = when {
-                            shuffleEnabled -> Icons.Rounded.Shuffle
-                            repeatMode == RepeatMode.ONE -> Icons.Rounded.RepeatOne
-                            else -> Icons.AutoMirrored.Rounded.ArrowForward
+                        if (isInfinite) {
+                            Text(
+                                text = "∞",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.semantics {
+                                    contentDescription = "无限模式"
+                                }
+                            )
+                        } else {
+                            val modeIcon = when {
+                                shuffleEnabled -> Icons.Rounded.Shuffle
+                                repeatMode == RepeatMode.ONE -> Icons.Rounded.RepeatOne
+                                else -> Icons.AutoMirrored.Rounded.ArrowForward
+                            }
+                            Icon(
+                                modeIcon,
+                                contentDescription = modeText,
+                                tint = Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(16.dp)
+                            )
                         }
-                        Icon(
-                            modeIcon,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.85f),
-                            modifier = Modifier.size(16.dp)
-                        )
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = modeText,
