@@ -138,8 +138,8 @@ class EbuR128CalculatorTest {
         // 峰值应精确接近 0.5
         assertEquals(0.5f, loudness.truePeak, 0.01f)
         assertEquals(-6.02f, loudness.peakDb, 0.1f)
-        // 1kHz 立体声正弦波经过 K-weighting 与能量积分，响度应在 -9 ~ -10 LUFS 左右
-        assertTrue(loudness.integratedLufs > -12.0f && loudness.integratedLufs < -8.0f)
+        // 1kHz 立体声正弦波（峰值 0.5）经过 K-weighting 与双重门控能量积分，综合响度约为 -6.06 LUFS
+        assertEquals(-6.06f, loudness.integratedLufs, 0.2f)
         assertEquals(LoudnessSource.BS1770_SCAN, loudness.source)
     }
 
