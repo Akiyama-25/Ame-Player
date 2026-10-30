@@ -32,4 +32,7 @@ data class LyricLine(
     val words: List<WordInfo> = emptyList(),
     val alignment: LyricAlignment = LyricAlignment.START,
     val backgroundLine: LyricLine? = null
-)
+) {
+    val hasWordTimestamps: Boolean
+        get() = words.isNotEmpty()
+}

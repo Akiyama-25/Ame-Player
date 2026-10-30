@@ -18,7 +18,13 @@ import java.io.File
 data class LyricResult(
     val lines: List<LyricLine>,
     val source: LyricSource
-)
+) {
+    /**
+     * 当前歌曲是否包含逐字播放时间轴（非仅单句时间轴）
+     */
+    val hasWordTimestamps: Boolean
+        get() = lines.any { it.words.isNotEmpty() }
+}
 
 class LyricsManager(
     private val context: Context,
@@ -37,7 +43,7 @@ class LyricsManager(
                 val parsed = TtmlLyricParser.parse(ttmlFileContent)
                 if (parsed.isNotEmpty()) {
                     AppLogger.d("LyricsManager", "Found local .ttml file for ${media.title}")
-                    return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(parsed), LyricSource.TTML)
+                    return@withContext LyricResult(parsed, LyricSource.TTML)
                 }
             }
 
@@ -47,7 +53,7 @@ class LyricsManager(
                 val parsed = LrcParser.parse(embeddedLrc)
                 if (parsed.isNotEmpty()) {
                     AppLogger.d("LyricsManager", "Found embedded lyrics for ${media.title}")
-                    return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(parsed), LyricSource.EMBEDDED)
+                    return@withContext LyricResult(parsed, LyricSource.EMBEDDED)
                 }
             }
 
@@ -57,7 +63,7 @@ class LyricsManager(
                 val parsed = LrcParser.parse(lrcFileContent)
                 if (parsed.isNotEmpty()) {
                     AppLogger.d("LyricsManager", "Found local .lrc file for ${media.title}")
-                    return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(parsed), LyricSource.LOCAL_LRC)
+                    return@withContext LyricResult(parsed, LyricSource.LOCAL_LRC)
                 }
             }
         }
@@ -105,7 +111,7 @@ class LyricsManager(
                         val parsed = TtmlLyricParser.parse(ttmlXml)
                         if (parsed.isNotEmpty()) {
                             AppLogger.d("LyricsManager", "Fetched fallback AMLL TTML lyrics from ${song.title} - ${song.artist}")
-                            return LyricResult(SoftLyricSegmenter.fillMissingWords(parsed), LyricSource.TTML)
+                            return LyricResult(parsed, LyricSource.TTML)
                         }
                     }
                 }
@@ -121,7 +127,7 @@ class LyricsManager(
                         val transParsed = LrcParser.parse(transLrc)
                         val merged = LrcParser.mergeWithTranslation(yrcParsed, transParsed)
                         AppLogger.d("LyricsManager", "Fetched fallback YRC word-by-word lyrics from ${song.title} - ${song.artist}")
-                        return LyricResult(SoftLyricSegmenter.fillMissingWords(merged), LyricSource.YRC)
+                        return LyricResult(merged, LyricSource.YRC)
                     }
                 }
 
@@ -131,7 +137,7 @@ class LyricsManager(
                     val merged = LrcParser.mergeWithTranslation(mP, tP)
                     if (merged.isNotEmpty() && merged.any { it.text.isNotBlank() && !it.text.contains("纯音乐") }) {
                         AppLogger.d("LyricsManager", "Fetched fallback online lyrics from ${song.title} - ${song.artist}")
-                        return LyricResult(SoftLyricSegmenter.fillMissingWords(merged), LyricSource.ONLINE)
+                        return LyricResult(merged, LyricSource.ONLINE)
                     }
                 }
             }
@@ -147,7 +153,7 @@ class LyricsManager(
                     val parsed = TtmlLyricParser.parse(ttmlXml)
                     if (parsed.isNotEmpty()) {
                         AppLogger.d("LyricsManager", "Fetched AMLL TTML lyrics by exact ID for ${media.title} (id=$songIdLong)")
-                        return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(parsed), LyricSource.TTML)
+                        return@withContext LyricResult(parsed, LyricSource.TTML)
                     }
                 }
             }
@@ -163,7 +169,7 @@ class LyricsManager(
                     val transParsed = LrcParser.parse(transLrc)
                     val merged = LrcParser.mergeWithTranslation(yrcParsed, transParsed)
                     AppLogger.d("LyricsManager", "Fetched online YRC lyrics by exact ID for ${media.title}")
-                    return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(merged), LyricSource.YRC)
+                    return@withContext LyricResult(merged, LyricSource.YRC)
                 }
             }
 
@@ -173,7 +179,7 @@ class LyricsManager(
                 val merged = LrcParser.mergeWithTranslation(mainParsed, transParsed)
                 if (merged.isNotEmpty()) {
                     AppLogger.d("LyricsManager", "Fetched online lyrics by exact ID for ${media.title}")
-                    return@withContext LyricResult(SoftLyricSegmenter.fillMissingWords(merged), LyricSource.ONLINE)
+                    return@withContext LyricResult(merged, LyricSource.ONLINE)
                 }
             }
         }

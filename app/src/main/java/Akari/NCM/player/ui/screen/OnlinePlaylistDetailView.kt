@@ -524,7 +524,8 @@ fun OnlinePlaylistDetailView(
                                 val playableList = searchFilteredTracks.map { m ->
                                     playlistManager.findLocalMatch(m) ?: m
                                 }
-                                playerEngine.loadPlaylist(playableList, origIndex)
+                                val targetIndex = playableList.indexOfFirst { it.id == onlineMedia.id }.coerceAtLeast(0)
+                                playerEngine.loadPlaylist(playableList, targetIndex)
                                 playerEngine.play()
                             },
                             onActionClick = {

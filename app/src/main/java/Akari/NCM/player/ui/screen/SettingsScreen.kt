@@ -118,6 +118,11 @@ fun SettingsScreen(
     var showLogLevelDialog by remember { mutableStateOf(false) }
     var showLogSizeDialog by remember { mutableStateOf(false) }
     var showExportMenu by remember { mutableStateOf(false) }
+    var showLoudnessDialog by remember { mutableStateOf(false) }
+
+    val volumeNormalizationEnabled by ThemePrefs.volumeNormalizationFlow.collectAsState()
+    val targetLoudnessLufs by ThemePrefs.targetLoudnessFlow.collectAsState()
+    val loudnessPeakLimitEnabled by ThemePrefs.loudnessPeakLimitFlow.collectAsState()
 
     val currentLogLevel by AppLogger.currentLevel.collectAsState()
     val maxFileSizeKb by AppLogger.maxFileSizeKb.collectAsState()
@@ -616,6 +621,54 @@ fun SettingsScreen(
 
             item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
 
+            // ── 音频与声音设置 ──
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("音频与声音") }
+
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showLoudnessDialog = true }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("setting_volume_normalization"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.GraphicEq,
+                        contentDescription = "音量均衡",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "音量均衡 (EBU R128 / ITU-R BS.1770)",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        val targetDesc = when (targetLoudnessLufs) {
+                            -23.0f -> "EBU R128 标准 (-23.0 LUFS)"
+                            -16.0f -> "Apple 演播室标准 (-16.0 LUFS)"
+                            else -> "流媒体推荐 (-14.0 LUFS)"
+                        }
+                        Text(
+                            text = if (volumeNormalizationEnabled) "已启用 · 基准: $targetDesc · -1.0 dBTP 防过载"
+                            else "基于综合响度与真峰值防过载算法，自动均衡不同歌曲的响度差异",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = volumeNormalizationEnabled,
+                        onCheckedChange = { ThemePrefs.volumeNormalizationEnabled = it },
+                        modifier = Modifier.testTag("switch_volume_normalization")
+                    )
+                }
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
+
             // ── 灵动岛与实时播放控制窗 ──
             item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("灵动岛与实时播放控制") }
 
@@ -875,6 +928,92 @@ item(span = { GridItemSpan(maxLineSpan) }) {
     }
 
     
+    if (showLoudnessDialog) {
+        AlertDialog(
+            onDismissRequest = { showLoudnessDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.GraphicEq,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("音量均衡设置", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "基准标准：ITU-R BS.1770-4 综合响度 (Integrated Loudness) 与 EBU R128 规范。根据每首曲目的真实响度自动匹配增益，避免切换歌曲时音量忽大忽小。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Text(
+                        text = "目标综合响度 (Target Loudness)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    val targets = listOf(
+                        Triple(-14.0f, "流媒体推荐 (-14.0 LUFS)", "适合现代耳机与移动设备，动态与响度极佳平衡"),
+                        Triple(-23.0f, "EBU R128 标准 (-23.0 LUFS)", "国际广电参考电平，保留最高动态范围，适合耳放与 Hi-Fi"),
+                        Triple(-16.0f, "Apple 演播室标准 (-16.0 LUFS)", "Apple Music Sound Check 统一电平规范")
+                    )
+
+                    targets.forEach { (lufs, title, desc) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    ThemePrefs.targetLoudnessLufs = lufs
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = targetLoudnessLufs == lufs,
+                                onClick = { ThemePrefs.targetLoudnessLufs = lufs }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column {
+                                Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                                Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { ThemePrefs.loudnessPeakLimitEnabled = !loudnessPeakLimitEnabled },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("真峰值防破音压制 (-1.0 dBTP)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("施加正增益时自动压制超出 -1.0 dBTP 的瞬态峰值，彻底防止数字削波破音", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = loudnessPeakLimitEnabled,
+                            onCheckedChange = { ThemePrefs.loudnessPeakLimitEnabled = it }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLoudnessDialog = false }) {
+                    Text("完成")
+                }
+            }
+        )
+    }
+
     if (showThemeModeDialog) {
         val currentThemeMode = ThemePrefs.themeFlow.collectAsState().value
         AlertDialog(

@@ -14,33 +14,39 @@ object NcmFileScanner {
     ): PlayableMedia? {
         val ext = displayName.substringAfterLast('.', "").lowercase()
         val isNcm = ext == "ncm"
-        var format = when (ext) {
+        val format = when (ext) {
             "flac" -> AudioFormat.FLAC
             "mp3", "wav", "ogg", "opus", "aac", "m4a", "ncm" -> AudioFormat.MP3
             else -> return null
         }
 
-        val baseName = displayName.substringBeforeLast('.')
-        // 仅清理带明确点号与空格分隔的曲目序号 (如 "01. ")，避免误删以数字开头的曲师/歌手名 (如 "7_7"、"164"、"40mP")
-        val cleanBaseName = baseName.replace(Regex("^\\d{1,3}\\.\\s+"), "").trim()
-        
-        var artist = "Unknown"
-        var title = cleanBaseName
+        val rawBaseName = displayName.substringBeforeLast('.').ifBlank { displayName }
 
-        val parts = cleanBaseName.split(" - ", limit = 2)
-        if (parts.size == 2) {
-            // 恢复原始空格，不强转为逗号，避免破坏欧美歌手(如 Taylor Swift)或带空格的名字(如 kamome sano)
-            artist = parts[0].trim()
-            title = parts[1].trim()
+        if (!isNcm) {
+            // 读取非NCM文件时不做处理，将原始文件名称显示在APP上，不区分艺术家与歌名
+            return PlayableMedia.LocalNcm(
+                id = uri.toString().hashCode().toString(),
+                title = rawBaseName,
+                artist = "",
+                album = "",
+                coverUrl = null,
+                durationMs = 0L,
+                uri = uri.toString(),
+                format = format,
+                isNcm = false
+            )
         }
 
+        // 仅在读取NCM文件时，通过内嵌数据或歌曲ID获取对应的信息
+        var artist = "Unknown"
+        var title = rawBaseName
         var musicIdStr: String? = null
         var coverUrl: String? = null
         var album = ""
         var durationMs = 0L
+        var resolvedFormat = format
 
-        // 优先提取 NCM 文件内嵌的网易云歌曲 ID 与元数据
-        if (isNcm && contentResolver != null) {
+        if (contentResolver != null) {
             try {
                 val scanResult = NcmDataSource.scanMetadata(contentResolver, uri)
                 if (scanResult != null) {
@@ -48,7 +54,7 @@ object NcmFileScanner {
                     if (meta.musicId > 0L) {
                         musicIdStr = meta.musicId.toString()
                     }
-                    format = scanResult.second
+                    resolvedFormat = scanResult.second
                     if (meta.albumPic.isNotBlank()) {
                         coverUrl = meta.albumPic
                     }
@@ -58,10 +64,10 @@ object NcmFileScanner {
                     if (meta.duration > 0L) {
                         durationMs = meta.duration
                     }
-                    if (artist == "Unknown" && meta.artists.isNotEmpty()) {
+                    if (meta.artists.isNotEmpty()) {
                         artist = meta.artists.joinToString("/")
                     }
-                    if (title.isBlank() && meta.musicName.isNotBlank() && meta.musicName != "Unknown") {
+                    if (meta.musicName.isNotBlank() && meta.musicName != "Unknown") {
                         title = meta.musicName
                     }
                 }
@@ -76,8 +82,8 @@ object NcmFileScanner {
             coverUrl = coverUrl,
             durationMs = durationMs,
             uri = uri.toString(),
-            format = format,
-            isNcm = isNcm
+            format = resolvedFormat,
+            isNcm = true
         )
     }
 }

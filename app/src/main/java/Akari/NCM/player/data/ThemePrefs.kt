@@ -25,6 +25,9 @@ object ThemePrefs {
     private const val KEY_LIVE_ISLAND_ENABLED = "live_island_enabled"
     private const val KEY_PLAYBACK_REPEAT_MODE = "playback_repeat_mode"
     private const val KEY_PLAYBACK_SHUFFLE_ENABLED = "playback_shuffle_enabled"
+    private const val KEY_VOLUME_NORMALIZATION_ENABLED = "volume_normalization_enabled"
+    private const val KEY_TARGET_LOUDNESS_LUFS = "target_loudness_lufs"
+    private const val KEY_LOUDNESS_PEAK_LIMIT_ENABLED = "loudness_peak_limit_enabled"
 
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
@@ -78,6 +81,15 @@ object ThemePrefs {
     private val _liveIslandEnabledFlow = MutableStateFlow(true)
     val liveIslandEnabledFlow: StateFlow<Boolean> = _liveIslandEnabledFlow.asStateFlow()
 
+    private val _volumeNormalizationFlow = MutableStateFlow(true)
+    val volumeNormalizationFlow: StateFlow<Boolean> = _volumeNormalizationFlow.asStateFlow()
+
+    private val _targetLoudnessFlow = MutableStateFlow(-14.0f)
+    val targetLoudnessFlow: StateFlow<Float> = _targetLoudnessFlow.asStateFlow()
+
+    private val _loudnessPeakLimitFlow = MutableStateFlow(true)
+    val loudnessPeakLimitFlow: StateFlow<Boolean> = _loudnessPeakLimitFlow.asStateFlow()
+
     fun init(context: Context) {
         prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
         _themeFlow.value = themeMode
@@ -94,6 +106,9 @@ object ThemePrefs {
         _gridColumnsFlow.value = gridColumns
         _showMatchStatusFlow.value = showMatchStatus
         _liveIslandEnabledFlow.value = liveIslandEnabled
+        _volumeNormalizationFlow.value = volumeNormalizationEnabled
+        _targetLoudnessFlow.value = targetLoudnessLufs
+        _loudnessPeakLimitFlow.value = loudnessPeakLimitEnabled
     }
 
     var themeMode: String
@@ -210,5 +225,32 @@ object ThemePrefs {
             if (::prefs.isInitialized) {
                 prefs.edit().putBoolean(KEY_PLAYBACK_SHUFFLE_ENABLED, value).apply()
             }
+        }
+
+    var volumeNormalizationEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_VOLUME_NORMALIZATION_ENABLED, true) else _volumeNormalizationFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_VOLUME_NORMALIZATION_ENABLED, value).apply()
+            }
+            _volumeNormalizationFlow.value = value
+        }
+
+    var targetLoudnessLufs: Float
+        get() = if (::prefs.isInitialized) prefs.getFloat(KEY_TARGET_LOUDNESS_LUFS, -14.0f) else _targetLoudnessFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putFloat(KEY_TARGET_LOUDNESS_LUFS, value).apply()
+            }
+            _targetLoudnessFlow.value = value
+        }
+
+    var loudnessPeakLimitEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_LOUDNESS_PEAK_LIMIT_ENABLED, true) else _loudnessPeakLimitFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_LOUDNESS_PEAK_LIMIT_ENABLED, value).apply()
+            }
+            _loudnessPeakLimitFlow.value = value
         }
 }

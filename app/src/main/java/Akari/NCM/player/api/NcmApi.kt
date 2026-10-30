@@ -26,6 +26,12 @@ import javax.inject.Singleton
 private val JsonElement?.asJsonObjectOrNull: JsonObject?
     get() = this as? JsonObject
 
+data class ResolvedSongUrl(
+    val url: String,
+    val gain: Float? = null,
+    val peak: Float? = null
+)
+
 @Singleton
 class NcmApi @Inject constructor(
     private val sessionManager: UserSessionManager? = null,
@@ -320,9 +326,9 @@ class NcmApi @Inject constructor(
     }
 
     /**
-     * 获取歌曲播放链接 (自动匹配账号最高可用音质)
+     * 获取歌曲播放链接与音频特征元数据 (自动匹配账号最高可用音质)
      */
-    suspend fun getSongUrl(song: PlayableMedia.Online, quality: QualityLevel? = null): String? {
+    suspend fun getSongUrlDetails(song: PlayableMedia.Online, quality: QualityLevel? = null): ResolvedSongUrl? {
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (isDirectMode=$isDirectMode)")
 
         // 默认按账号可获取的最高级别链依次尝试: HIRES -> LOSSLESS -> EXHIGH -> STANDARD
@@ -351,10 +357,12 @@ class NcmApi @Inject constructor(
                     val json = Json.parseToJsonElement(body).asJsonObjectOrNull
                     val data = json?.get("data")?.jsonArray?.firstOrNull()?.asJsonObjectOrNull
                     val url = data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                    val gain = data?.get("gain")?.jsonPrimitive?.doubleOrNull?.toFloat()
+                    val peak = data?.get("peak")?.jsonPrimitive?.doubleOrNull?.toFloat()
 
                     if (url != null) {
-                        AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Direct resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms): $url")
-                        return url
+                        AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Direct resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms, gain=$gain, peak=$peak): $url")
+                        return ResolvedSongUrl(url, gain, peak)
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -376,10 +384,12 @@ class NcmApi @Inject constructor(
                 val json = Json.parseToJsonElement(body).asJsonObjectOrNull
                 val data = json?.get("data")?.jsonArray?.firstOrNull()?.asJsonObjectOrNull
                 val url = data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+                val gain = data?.get("gain")?.jsonPrimitive?.doubleOrNull?.toFloat()
+                val peak = data?.get("peak")?.jsonPrimitive?.doubleOrNull?.toFloat()
 
                 if (url != null) {
-                    AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Successfully resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms): $url")
-                    return url
+                    AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Successfully resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms, gain=$gain, peak=$peak): $url")
+                    return ResolvedSongUrl(url, gain, peak)
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -391,11 +401,18 @@ class NcmApi @Inject constructor(
         AppLogger.w("[AME_ONLINE_PLAY]", "--- Trying legacy fallback for '${song.title}' (id=${song.id}) ---")
         for (br in listOf(320000, 128000)) {
             val fallbackUrl = getForcedMp3Url(song.id, br)
-            if (fallbackUrl != null) return fallbackUrl
+            if (fallbackUrl != null) return ResolvedSongUrl(fallbackUrl, null, null)
         }
 
         AppLogger.e("[AME_ONLINE_PLAY]", ">>> All song URL resolution attempts failed for '${song.title}' (id=${song.id})")
         return null
+    }
+
+    /**
+     * 获取歌曲播放链接 (自动匹配账号最高可用音质)
+     */
+    suspend fun getSongUrl(song: PlayableMedia.Online, quality: QualityLevel? = null): String? {
+        return getSongUrlDetails(song, quality)?.url
     }
 
     private suspend fun getForcedMp3Url(songId: String, bitrate: Int): String? {

@@ -148,25 +148,51 @@ class PlaylistManager(private val context: Context) {
         for (dto in localPlaylist.songs) {
             val media = dto.toPlayableMedia() as? PlayableMedia.LocalNcm ?: continue
 
-            val k1 = layer1Key(media.title, media.artist)
-            val k2 = layer2Key(media.title, media.artist)
-            val k3 = layer3Key(media.title, media.artist)
-            val k4 = layer4Key(media.title, media.artist)
-
             // 优先记录具有 NCM ID 的项
             if (media.isNcm) {
                 idMap[media.id] = media
+                val k1 = layer1Key(media.title, media.artist)
+                val k2 = layer2Key(media.title, media.artist)
+                val k3 = layer3Key(media.title, media.artist)
+                val k4 = layer4Key(media.title, media.artist)
+                allL1.putIfAbsent(k1, media)
+                allL2.putIfAbsent(k2, media)
+                allL3.putIfAbsent(k3, media)
+                allL4.putIfAbsent(k4, media)
             } else {
-                nonNcmL1.putIfAbsent(k1, media)
-                nonNcmL2.putIfAbsent(k2, media)
-                nonNcmL3.putIfAbsent(k3, media)
-                nonNcmL4.putIfAbsent(k4, media)
-            }
+                // 非 NCM 文件：title 为原始文件名（未区分艺术家与歌名）
+                val rawName = media.title
+                val candidatePairs = mutableListOf<Pair<String, String>>()
 
-            allL1.putIfAbsent(k1, media)
-            allL2.putIfAbsent(k2, media)
-            allL3.putIfAbsent(k3, media)
-            allL4.putIfAbsent(k4, media)
+                if (media.artist.isNotBlank()) {
+                    candidatePairs.add(rawName to media.artist)
+                }
+
+                val hyphenParts = rawName.split(" - ", limit = 2)
+                if (hyphenParts.size == 2) {
+                    val p0 = hyphenParts[0].trim()
+                    val p1 = hyphenParts[1].trim()
+                    candidatePairs.add(p1 to p0) // (title, artist)
+                    candidatePairs.add(p0 to p1) // (artist, title)
+                }
+                candidatePairs.add(rawName to "")
+
+                for ((t, a) in candidatePairs) {
+                    val k1 = layer1Key(t, a)
+                    val k2 = layer2Key(t, a)
+                    val k3 = layer3Key(t, a)
+                    val k4 = layer4Key(t, a)
+                    nonNcmL1.putIfAbsent(k1, media)
+                    nonNcmL2.putIfAbsent(k2, media)
+                    nonNcmL3.putIfAbsent(k3, media)
+                    nonNcmL4.putIfAbsent(k4, media)
+
+                    allL1.putIfAbsent(k1, media)
+                    allL2.putIfAbsent(k2, media)
+                    allL3.putIfAbsent(k3, media)
+                    allL4.putIfAbsent(k4, media)
+                }
+            }
         }
 
         ncmIdMatchCache = idMap
@@ -207,6 +233,14 @@ class PlaylistManager(private val context: Context) {
         allLayer2Cache[k2]?.let { return it }
         allLayer3Cache[k3]?.let { return it }
         allLayer4Cache[k4]?.let { return it }
+
+        // 4. 纯曲名匹配兜底（当本地文件为纯曲名命名时）
+        val kTitle1 = layer1Key(onlineMedia.title, "")
+        val kTitle2 = layer2Key(onlineMedia.title, "")
+        nonNcmLayer1Cache[kTitle1]?.let { return it }
+        nonNcmLayer2Cache[kTitle2]?.let { return it }
+        allLayer1Cache[kTitle1]?.let { return it }
+        allLayer2Cache[kTitle2]?.let { return it }
 
         return null
     }

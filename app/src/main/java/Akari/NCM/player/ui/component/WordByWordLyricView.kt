@@ -35,9 +35,10 @@ fun WordByWordLyricView(
     lineHeight: TextUnit = 28.sp,
     activeColor: Color = Color.White,
     inactiveColor: Color = Color.White.copy(alpha = 0.35f),
-    horizontalAlignment: Alignment.Horizontal = Alignment.CenterHorizontally
+    horizontalAlignment: Alignment.Horizontal = Alignment.CenterHorizontally,
+    hasWordTimestamps: Boolean = line.words.isNotEmpty()
 ) {
-    if (line.words.isEmpty()) {
+    if (!hasWordTimestamps || line.words.isEmpty()) {
         Text(
             text = line.text.trim(),
             fontSize = fontSize,

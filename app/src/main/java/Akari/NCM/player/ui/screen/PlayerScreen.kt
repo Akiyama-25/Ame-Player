@@ -379,15 +379,20 @@ private fun PlayerMainContentView(
     val connectedUsbDeviceName by playerState.connectedUsbDeviceName.collectAsState()
     val usbUacVersion by playerState.usbUacVersion.collectAsState()
     val usbDeviceDetails by playerState.usbDeviceDetails.collectAsState()
+    val loudnessState by playerState.loudnessState.collectAsState()
 
     if (showQuickFunctionsDialog) {
         QuickFunctionsDialog(
             isUsbExclusive = isUsbExclusiveMode,
             usbDeviceName = connectedUsbDeviceName,
             uacVersion = usbUacVersion,
+            loudnessState = loudnessState,
             onDismiss = { showQuickFunctionsDialog = false },
             onShowStatusClick = { showPlaybackStatusDialog = true },
             onShowUsbExclusiveClick = { showUsbExclusiveDialog = true },
+            onToggleLoudness = {
+                playerController.setVolumeNormalizationEnabled(!loudnessState.isEnabled)
+            },
             onAddToPlaylistClick = onAddToPlaylistClick
         )
     }
@@ -413,6 +418,7 @@ private fun PlayerMainContentView(
             isUsbExclusive = isUsbExclusiveMode,
             usbDeviceName = connectedUsbDeviceName,
             uacVersion = usbUacVersion,
+            loudnessState = loudnessState,
             onDismiss = { showPlaybackStatusDialog = false }
         )
     }
@@ -609,7 +615,8 @@ private fun PlayerMainContentView(
                             lineHeight = 28.sp,
                             activeColor = Color.White,
                             inactiveColor = Color.White.copy(alpha = 0.4f),
-                            horizontalAlignment = align
+                            horizontalAlignment = align,
+                            hasWordTimestamps = lyricResult.hasWordTimestamps
                         )
                         AnimatedVisibility(
                             visible = showTranslation && !currentLyricLine.translation.isNullOrBlank(),
@@ -1636,6 +1643,7 @@ private fun SaltFullLyricsView(
     var isInitialScroll by remember { mutableStateOf(true) }
     var lastScrolledIndex by remember { mutableIntStateOf(-1) }
     val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    val hasWordTimestamps = remember(lyricResult) { lyricResult.hasWordTimestamps }
 
     LaunchedEffect(currentIndex, showTranslation, isDragged, listState.layoutInfo.viewportSize.height) {
         if (currentIndex < 0 || lyricResult.lines.isEmpty()) return@LaunchedEffect
@@ -1758,7 +1766,8 @@ private fun SaltFullLyricsView(
                                         lineHeight = 28.sp,
                                         activeColor = Color.White,
                                         inactiveColor = Color.White.copy(alpha = 0.4f),
-                                        horizontalAlignment = Alignment.CenterHorizontally
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        hasWordTimestamps = hasWordTimestamps
                                     )
                                 } else {
                                     Text(
@@ -1821,8 +1830,8 @@ private fun SaltFullLyricsView(
             verticalAlignment = Alignment.CenterVertically
         ) {
             val badgeText = when (lyricResult.source) {
-                LyricSource.TTML -> "AMLL TTML 逐词"
-                LyricSource.YRC -> "网易云 YRC 逐字"
+                LyricSource.TTML -> if (hasWordTimestamps) "AMLL TTML 逐词" else "AMLL TTML"
+                LyricSource.YRC -> if (hasWordTimestamps) "网易云 YRC 逐字" else "网易云 YRC"
                 LyricSource.LOCAL_LRC -> "本地歌词"
                 LyricSource.EMBEDDED -> "内嵌歌词"
                 LyricSource.ONLINE -> "网易云 LRC"
@@ -1877,9 +1886,11 @@ private fun QuickFunctionsDialog(
     isUsbExclusive: Boolean,
     usbDeviceName: String?,
     uacVersion: String? = null,
+    loudnessState: Akari.NCM.player.core.loudness.LoudnessNormalizationState,
     onDismiss: () -> Unit,
     onShowStatusClick: () -> Unit,
     onShowUsbExclusiveClick: () -> Unit,
+    onToggleLoudness: () -> Unit,
     onAddToPlaylistClick: () -> Unit
 ) {
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
@@ -1965,6 +1976,42 @@ private fun QuickFunctionsDialog(
                                     else -> "基于方案三实现硬件接口排他独占与直通"
                                 }
                                 Text(subText, fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+
+                    Surface(
+                        onClick = onToggleLoudness,
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White.copy(alpha = 0.08f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("音量均衡 (EBU R128)", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                    if (loudnessState.isEnabled) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = Color(0xFF10B981).copy(alpha = 0.2f)
+                                        ) {
+                                            Text("ON", fontSize = 10.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                        }
+                                    }
+                                }
+                                Text(
+                                    loudnessState.statusSummary,
+                                    fontSize = 12.sp,
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }
@@ -2179,6 +2226,7 @@ private fun PlaybackStatusDialog(
     isUsbExclusive: Boolean = false,
     usbDeviceName: String? = null,
     uacVersion: String? = null,
+    loudnessState: Akari.NCM.player.core.loudness.LoudnessNormalizationState,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -2249,6 +2297,18 @@ private fun PlaybackStatusDialog(
                 InfoRow("采样率 / 位深", "$sampleRateText  ·  $bitDepthText")
                 if (!audioFormatInfo.mimeType.isNullOrBlank()) {
                     InfoRow("音频编码格式", audioFormatInfo.mimeType)
+                }
+                HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                val normStatus = if (loudnessState.isEnabled) {
+                    val gainStr = if (loudnessState.appliedGainDb >= 0) "+${String.format("%.1f", loudnessState.appliedGainDb)}" else String.format("%.1f", loudnessState.appliedGainDb)
+                    val peakStr = if (loudnessState.isPeakLimited) " (触发 -1.0 dBTP 防过载压制)" else ""
+                    "已生效 · 增益: $gainStr dB (基准: ${loudnessState.targetLufs} LUFS)$peakStr"
+                } else "未开启"
+                InfoRow("音量均衡状态 (EBU R128)", normStatus)
+                if (loudnessState.sourceLoudnessLufs != null) {
+                    val peakText = if (loudnessState.sourcePeakDb != null) String.format(" · 峰值: %.1f dBFS", loudnessState.sourcePeakDb) else ""
+                    val srcText = loudnessState.source.label
+                    InfoRow("曲目综合响度", String.format("%.1f LUFS%s (%s)", loudnessState.sourceLoudnessLufs, peakText, srcText))
                 }
             }
         },

@@ -800,7 +800,8 @@ fun MainScreen(
                                                                                             playlistManager.findLocalMatch(m) ?: m
                                                                                         } else m
                                                                                     }
-                                                                                    playerEngine.loadPlaylist(playableList, origIndex)
+                                                                                    val targetIndex = playableList.indexOfFirst { it.id == media.id }.coerceAtLeast(0)
+                                                                                    playerEngine.loadPlaylist(playableList, targetIndex)
                                                                                     playerEngine.play()
                                                                                 },
                                                                                 onActionClick = {

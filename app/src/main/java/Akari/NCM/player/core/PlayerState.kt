@@ -77,6 +77,8 @@ interface PlayerState {
         get() = MutableStateFlow(InfinitePlayMode.None)
     val isFetchingRecommendations: StateFlow<Boolean>
         get() = MutableStateFlow(false)
+    val loudnessState: StateFlow<Akari.NCM.player.core.loudness.LoudnessNormalizationState>
+        get() = MutableStateFlow(Akari.NCM.player.core.loudness.LoudnessNormalizationState())
 }
 
 enum class PlaybackState {
@@ -103,6 +105,8 @@ interface PlayerController {
     fun toggleShuffle()
     fun setVolume(volume: Float)
     fun setUsbExclusiveMode(enabled: Boolean)
+    fun setVolumeNormalizationEnabled(enabled: Boolean) {}
+    fun setTargetLoudness(targetLufs: Float) {}
     fun insertAsNext(media: PlayableMedia)
     fun clearUrlCache()
     fun release()

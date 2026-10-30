@@ -191,13 +191,11 @@ class PlaylistMatchingTest {
             displayName = "164 GUMI - 天ノ弱.flac"
         ) as PlayableMedia.LocalNcm
 
-        assertEquals(
-            "7_7 A2 akimalo Aquestion Chinatsu DJ Raisei fuluca maezawa Negimiso Sar7",
-            localBuzz.artist
-        )
-        assertEquals("BUZZ CUTZ", localBuzz.title)
-        assertEquals("164 GUMI", localAmanojaku.artist)
-        assertEquals("天ノ弱", localAmanojaku.title)
+        // 读取非NCM文件时不区分艺术家与歌名，保留原始文件名
+        assertEquals("", localBuzz.artist)
+        assertEquals("7_7 A2 akimalo Aquestion Chinatsu DJ Raisei fuluca maezawa Negimiso Sar7 - BUZZ CUTZ", localBuzz.title)
+        assertEquals("", localAmanojaku.artist)
+        assertEquals("164 GUMI - 天ノ弱", localAmanojaku.title)
 
         playlistManager.saveOrUpdateSyncedPlaylist(
             ncmPlaylistId = -9999L,
