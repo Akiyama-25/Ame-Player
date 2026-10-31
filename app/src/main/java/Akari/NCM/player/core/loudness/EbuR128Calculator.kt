@@ -201,6 +201,23 @@ object EbuR128Calculator {
             return LoudnessData(-70.0f, maxPeak, LoudnessSource.BS1770_SCAN)
         }
 
+        return computeIntegratedLoudnessFromBlockEnergies(blockEnergies, maxPeak)
+    }
+
+    /**
+     * 基于已收集的 BS.1770 滤波分块能量数据执行 ITU-R BS.1770 双重门限门控并计算综合响度
+     *
+     * @param blockEnergies 400ms 分块经 K-weighting 加权后的能量列表
+     * @param maxPeak 观察到的最大样本线性峰值 (0.0 ~ 1.0)
+     */
+    fun computeIntegratedLoudnessFromBlockEnergies(
+        blockEnergies: List<Double>,
+        maxPeak: Float = 1.0f
+    ): LoudnessData {
+        if (blockEnergies.isEmpty()) {
+            return LoudnessData(-70.0f, maxPeak, LoudnessSource.BS1770_SCAN)
+        }
+
         // 4. 双重门限门控（Gating）
         // 绝对门限 (Absolute Threshold): -70 LKFS
         val absThresholdEnergy = 10.0.pow((-70.0 + 0.691) / 10.0)

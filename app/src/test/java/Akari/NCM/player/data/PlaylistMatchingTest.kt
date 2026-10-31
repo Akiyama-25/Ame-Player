@@ -263,8 +263,10 @@ class PlaylistMatchingTest {
             album = "THEORY"
         )
 
-        assertEquals("legacy_buzz", playlistManager.findLocalMatch(onlineBuzz)?.id)
-        assertEquals("legacy_amanojaku", playlistManager.findLocalMatch(onlineAmanojaku)?.id)
+        assertEquals("legacy_buzz", playlistManager.findLocalMatchRaw(onlineBuzz)?.id)
+        assertEquals("legacy_amanojaku", playlistManager.findLocalMatchRaw(onlineAmanojaku)?.id)
+        assertEquals(legacyLocalBuzz.uri, playlistManager.findLocalMatch(onlineBuzz)?.uri)
+        assertEquals(legacyLocalAmanojaku.uri, playlistManager.findLocalMatch(onlineAmanojaku)?.uri)
     }
 
     @Test
@@ -316,5 +318,42 @@ class PlaylistMatchingTest {
         assertNotNull(playlistManager.findLocalMatch(onlineDna))
         assertNotNull(playlistManager.findLocalMatch(onlineSparkle))
         assertNotNull(playlistManager.findLocalMatch(onlineLazy))
+    }
+
+    @Test
+    fun testNonNcmFilePreservesOnlineMetadataWhenMatchedFromCloudPlaylist() {
+        // 本地扫描：读取非NCM文件时直接显示原始文件名（不区分艺术家与歌名）
+        val rawLocalSong = NcmFileScanner.scanUri(
+            uri = android.net.Uri.parse("file:///storage/emulated/0/Music/01. YOASOBI - 怪物.flac"),
+            displayName = "01. YOASOBI - 怪物.flac"
+        ) as PlayableMedia.LocalNcm
+
+        assertEquals("", rawLocalSong.artist)
+        assertEquals("01. YOASOBI - 怪物", rawLocalSong.title)
+
+        playlistManager.saveOrUpdateSyncedPlaylist(
+            ncmPlaylistId = -9999L,
+            name = "本地扫描文件夹",
+            coverImgUrl = null,
+            songs = listOf(rawLocalSong)
+        )
+
+        // 云端歌单与播放列表中：匹配本地非NCM文件时，必须保留云端原本的歌曲ID、标题、艺术家、专辑与封面
+        val onlineSong = PlayableMedia.Online(
+            id = "1813926555",
+            title = "怪物",
+            artist = "YOASOBI",
+            album = "怪物 / 優しい彗星",
+            coverUrl = "https://p1.music.126.net/cover.jpg"
+        )
+
+        val matchedForCloud = playlistManager.findLocalMatch(onlineSong)
+        assertNotNull(matchedForCloud)
+        assertEquals("1813926555", matchedForCloud?.id)
+        assertEquals("怪物", matchedForCloud?.title)
+        assertEquals("YOASOBI", matchedForCloud?.artist)
+        assertEquals("怪物 / 優しい彗星", matchedForCloud?.album)
+        assertEquals("https://p1.music.126.net/cover.jpg", matchedForCloud?.coverUrl)
+        assertEquals(rawLocalSong.uri, matchedForCloud?.uri)
     }
 }

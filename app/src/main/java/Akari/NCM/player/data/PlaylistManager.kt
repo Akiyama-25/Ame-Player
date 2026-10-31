@@ -206,7 +206,10 @@ class PlaylistManager(private val context: Context) {
         allLayer4Cache = allL4
     }
 
-    fun findLocalMatch(onlineMedia: PlayableMedia.Online): PlayableMedia.LocalNcm? {
+    /**
+     * 查找与云端歌曲匹配的本地音频条目原始扫描对象
+     */
+    fun findLocalMatchRaw(onlineMedia: PlayableMedia.Online): PlayableMedia.LocalNcm? {
         // 1. 优先使用 NCM 文件内的 ID 进行匹配
         ncmIdMatchCache[onlineMedia.id]?.let { return it }
 
@@ -243,6 +246,25 @@ class PlaylistManager(private val context: Context) {
         allLayer2Cache[kTitle2]?.let { return it }
 
         return null
+    }
+
+    /**
+     * 查找与云端歌曲匹配的本地音频条目。
+     *
+     * 依据规则：非NCM文件直接显示原始文件名的设定仅应用于本地扫描歌单；
+     * 在云端歌单或使用云端歌单的播放列表中匹配本地非NCM文件时，必须保留云端原本的歌曲ID、标题、艺术家、专辑与封面，
+     * 仅替换音频源 URI 和解码格式以使用本地高质量文件播放。
+     */
+    fun findLocalMatch(onlineMedia: PlayableMedia.Online): PlayableMedia.LocalNcm? {
+        val matched = findLocalMatchRaw(onlineMedia) ?: return null
+        return matched.copy(
+            id = onlineMedia.id,
+            title = onlineMedia.title,
+            artist = onlineMedia.artist,
+            album = onlineMedia.album,
+            coverUrl = onlineMedia.coverUrl ?: matched.coverUrl,
+            durationMs = if (onlineMedia.durationMs > 0L) onlineMedia.durationMs else matched.durationMs
+        )
     }
 
     companion object {

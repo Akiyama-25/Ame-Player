@@ -75,7 +75,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.media.AudioDeviceInfo
-import android.media.audiofx.LoudnessEnhancer
 import android.os.Build
 import coil.imageLoader
 import coil.request.ImageRequest
@@ -97,6 +96,7 @@ class AmePlayerEngine @Inject constructor(
     val islandManager = IslandLiveNotificationManager(context)
     private val lyricsManager = LyricsManager(context, ncmApi)
     val loudnessManager = LoudnessManager(context, ncmApi)
+    val loudnessAudioProcessor = LoudnessAudioProcessor()
 
     private val _loudnessState = MutableStateFlow(
         LoudnessNormalizationState(
@@ -107,7 +107,6 @@ class AmePlayerEngine @Inject constructor(
     override val loudnessState: StateFlow<LoudnessNormalizationState> = _loudnessState.asStateFlow()
 
     private var loudnessJob: Job? = null
-    private var loudnessEnhancer: LoudnessEnhancer? = null
 
     var isLiveIslandEnabled: Boolean
         get() = ThemePrefs.liveIslandEnabled
@@ -230,7 +229,10 @@ class AmePlayerEngine @Inject constructor(
     private fun createExoPlayer(): ExoPlayer {
         // Audio-only renderer with Hi-Res safe AudioSink and decoder fallback
         val audioSink = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
-            .setAudioProcessors(arrayOf(MaxSampleRateAudioProcessor(192000)))
+            .setAudioProcessors(arrayOf(
+                MaxSampleRateAudioProcessor(192000),
+                loudnessAudioProcessor
+            ))
             .setEnableFloatOutput(true)
             .setEnableAudioTrackPlaybackParams(false)
             .build()
@@ -379,12 +381,6 @@ class AmePlayerEngine @Inject constructor(
 
         // Player listener
         player.addListener(object : Player.Listener {
-            override fun onAudioSessionIdChanged(audioSessionId: Int) {
-                if (audioSessionId != C.AUDIO_SESSION_ID_UNSET && audioSessionId != 0) {
-                    setupLoudnessEnhancer(audioSessionId)
-                }
-            }
-
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _isPlaying.value = isPlaying
                 AppLogger.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onIsPlayingChanged: $isPlaying")
@@ -506,11 +502,6 @@ class AmePlayerEngine @Inject constructor(
             player.setPreferredAudioDevice(currentDevice)
         }
 
-        val initSessionId = player.audioSessionId
-        if (initSessionId != C.AUDIO_SESSION_ID_UNSET && initSessionId != 0) {
-            setupLoudnessEnhancer(initSessionId)
-        }
-
         return player
     }
 
@@ -568,37 +559,25 @@ class AmePlayerEngine @Inject constructor(
                 applyLoudnessNormalization()
             }
         }
-    }
 
-    private fun setupLoudnessEnhancer(sessionId: Int) {
-        if (sessionId == C.AUDIO_SESSION_ID_UNSET || sessionId == 0) return
-        val isExclusive = usbAudioManager.isExclusiveModeEnabled.value
-        val isHighSampleRate = _audioFormatInfo.value.sampleRateHz > 48000
-        if (isExclusive || isHighSampleRate) {
-            runCatching {
-                loudnessEnhancer?.release()
-                loudnessEnhancer = null
+        loudnessAudioProcessor.onLoudnessMeasured = { mediaId, data ->
+            loudnessManager.saveLoudness(mediaId, data)
+            val cur = _currentMedia.value
+            if (cur?.id == mediaId) {
+                val target = ThemePrefs.targetLoudnessLufs
+                val gain = EbuR128Calculator.computeGain(data, target, ThemePrefs.loudnessPeakLimitEnabled)
+                _loudnessState.value = LoudnessNormalizationState(
+                    isEnabled = ThemePrefs.volumeNormalizationEnabled,
+                    targetLufs = target,
+                    currentMediaTitle = cur.title,
+                    sourceLoudnessLufs = data.integratedLufs,
+                    sourcePeakDb = data.peakDb,
+                    appliedGainDb = gain.effectiveGainDb,
+                    linearMultiplier = gain.linearMultiplier,
+                    isPeakLimited = gain.isPeakLimited,
+                    source = data.source
+                )
             }
-            return
-        }
-        runCatching {
-            loudnessEnhancer?.release()
-            loudnessEnhancer = LoudnessEnhancer(sessionId).apply {
-                val state = _loudnessState.value
-                val needsBoost = state.isEnabled && state.appliedGainDb > 0f
-                if (needsBoost) {
-                    val boostMb = (state.appliedGainDb * 100).toInt().coerceIn(0, 1500)
-                    setTargetGain(boostMb)
-                    enabled = true
-                } else {
-                    setTargetGain(0)
-                    enabled = false
-                }
-            }
-            AppLogger.d("[AME_LOUDNESS]", "LoudnessEnhancer attached to audioSessionId=$sessionId")
-        }.onFailure {
-            AppLogger.w("[AME_LOUDNESS]", "Failed to attach LoudnessEnhancer: ${it.message}")
-            loudnessEnhancer = null
         }
     }
 
@@ -607,63 +586,56 @@ class AmePlayerEngine @Inject constructor(
         val targetLufs = ThemePrefs.targetLoudnessLufs
         val peakLimitEnabled = ThemePrefs.loudnessPeakLimitEnabled
 
+        loudnessAudioProcessor.updateSettings(isEnabled, targetLufs, peakLimitEnabled)
+
         if (media == null || !isEnabled) {
             _loudnessState.value = LoudnessNormalizationState(
                 isEnabled = isEnabled,
                 targetLufs = targetLufs,
                 currentMediaTitle = media?.title
             )
-            exoPlayer.volume = _volume.value
-            runCatching {
-                loudnessEnhancer?.setTargetGain(0)
-                loudnessEnhancer?.enabled = false
-            }
+            loudnessAudioProcessor.resetForTrack(null, null)
             return
         }
 
         loudnessJob?.cancel()
         loudnessJob = scope.launch {
             val loudnessData = loudnessManager.getLoudness(media)
-            val gainResult = EbuR128Calculator.computeGain(
-                loudness = loudnessData,
-                targetLufs = targetLufs,
-                peakLimitEnabled = peakLimitEnabled
-            )
+            loudnessAudioProcessor.resetForTrack(media.id, loudnessData)
 
-            _loudnessState.value = LoudnessNormalizationState(
-                isEnabled = true,
-                targetLufs = targetLufs,
-                currentMediaTitle = media.title,
-                sourceLoudnessLufs = loudnessData.integratedLufs,
-                sourcePeakDb = loudnessData.peakDb,
-                appliedGainDb = gainResult.effectiveGainDb,
-                linearMultiplier = gainResult.linearMultiplier,
-                isPeakLimited = gainResult.isPeakLimited,
-                source = loudnessData.source
-            )
+            if (loudnessData != null && loudnessData.source != LoudnessSource.DEFAULT_FALLBACK) {
+                val gainResult = EbuR128Calculator.computeGain(
+                    loudness = loudnessData,
+                    targetLufs = targetLufs,
+                    peakLimitEnabled = peakLimitEnabled
+                )
 
-            val isHighSampleRateOrExclusive = usbAudioManager.isExclusiveModeEnabled.value || _audioFormatInfo.value.sampleRateHz > 48000
-            if (gainResult.effectiveGainDb <= 0f || isHighSampleRateOrExclusive || loudnessEnhancer == null) {
-                // 衰减或超高采样率/独占直通：通过线性增益缩放实现 100% 纯净动态调整
-                val targetVol = (_volume.value * gainResult.linearMultiplier).coerceIn(0f, 1f)
-                exoPlayer.volume = targetVol
-                runCatching {
-                    loudnessEnhancer?.setTargetGain(0)
-                    loudnessEnhancer?.enabled = false
-                }
+                _loudnessState.value = LoudnessNormalizationState(
+                    isEnabled = true,
+                    targetLufs = targetLufs,
+                    currentMediaTitle = media.title,
+                    sourceLoudnessLufs = loudnessData.integratedLufs,
+                    sourcePeakDb = loudnessData.peakDb,
+                    appliedGainDb = gainResult.effectiveGainDb,
+                    linearMultiplier = gainResult.linearMultiplier,
+                    isPeakLimited = gainResult.isPeakLimited,
+                    source = loudnessData.source
+                )
+                AppLogger.i("[AME_LOUDNESS]", "Applied EBU R128: track='${media.title}', source=${loudnessData.integratedLufs} LUFS, target=$targetLufs LUFS, gain=${gainResult.effectiveGainDb} dB (peakLimited=${gainResult.isPeakLimited})")
             } else {
-                // 标准采样率正增益提升：基础音量保持原值，通过系统 LoudnessEnhancer 驱动放大并内置限幅
-                exoPlayer.volume = _volume.value
-                runCatching {
-                    val boostMb = (gainResult.effectiveGainDb * 100).toInt().coerceIn(0, 1500)
-                    loudnessEnhancer?.setTargetGain(boostMb)
-                    loudnessEnhancer?.enabled = true
-                }.onFailure {
-                    exoPlayer.volume = _volume.value
-                }
+                _loudnessState.value = LoudnessNormalizationState(
+                    isEnabled = true,
+                    targetLufs = targetLufs,
+                    currentMediaTitle = media.title,
+                    sourceLoudnessLufs = null,
+                    sourcePeakDb = null,
+                    appliedGainDb = 0f,
+                    linearMultiplier = 1f,
+                    isPeakLimited = false,
+                    source = LoudnessSource.BS1770_SCAN
+                )
+                AppLogger.i("[AME_LOUDNESS]", "Started real-time EBU R128 dynamic equalization for '${media.title}' (target: $targetLufs LUFS)")
             }
-
-            AppLogger.i("[AME_LOUDNESS]", "Applied EBU R128: track='${media.title}', source=${loudnessData.integratedLufs} LUFS, target=$targetLufs LUFS, gain=${gainResult.effectiveGainDb} dB (peakLimited=${gainResult.isPeakLimited})")
         }
     }
 
@@ -1425,7 +1397,7 @@ class AmePlayerEngine @Inject constructor(
     override fun setVolume(volume: Float) {
         ensureActive()
         _volume.value = volume.coerceIn(0f, 1f)
-        applyLoudnessNormalization()
+        exoPlayer.volume = _volume.value
     }
 
     override fun setVolumeNormalizationEnabled(enabled: Boolean) {
@@ -1476,8 +1448,6 @@ class AmePlayerEngine @Inject constructor(
         isReleased = true
         islandManager.cancelIsland()
         scope.cancel()
-        runCatching { loudnessEnhancer?.release() }
-        loudnessEnhancer = null
         runCatching { exoPlayer.release() }
         mediaMap.clear()
         resolvedUrlCache.clear()
