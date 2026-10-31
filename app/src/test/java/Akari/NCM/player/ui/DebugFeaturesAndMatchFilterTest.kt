@@ -19,6 +19,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -278,5 +279,54 @@ class DebugFeaturesAndMatchFilterTest {
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("Matched Song Title").assertIsDisplayed()
         composeTestRule.onNodeWithText("Unmatched Song Title").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "w400dp-h1000dp")
+    fun testPlaylistSearch_clickingSearchedSongLoadsEntirePlaylistAndPlaysTarget() {
+        val song1 = PlayableMedia.Online(id = "101", title = "First Track", artist = "Artist A", album = "Album A")
+        val song2 = PlayableMedia.Online(id = "102", title = "Target Search Track", artist = "Artist B", album = "Album B")
+        val song3 = PlayableMedia.Online(id = "103", title = "Third Track", artist = "Artist C", album = "Album C")
+
+        playlistManager.saveOrUpdateSyncedPlaylist(
+            ncmPlaylistId = 7777L,
+            name = "搜索播放测试歌单",
+            coverImgUrl = null,
+            songs = listOf(song1, song2, song3)
+        )
+
+        composeTestRule.setContent {
+            MainScreen(playerEngine = playerEngine)
+        }
+        composeTestRule.waitForIdle()
+
+        // 导航至歌单页面并打开测试歌单
+        composeTestRule.onNodeWithText("歌单", substring = true).performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("搜索播放测试歌单").performClick()
+        composeTestRule.waitForIdle()
+
+        // 点击搜索按钮展开歌单内搜索框
+        composeTestRule.onNodeWithContentDescription("歌单内搜索").performClick()
+        composeTestRule.waitForIdle()
+
+        // 输入搜索词 "Target"
+        composeTestRule.onNodeWithText("在《搜索播放测试歌单》中搜索歌曲/歌手/专辑...").performTextReplacement("Target")
+        composeTestRule.waitForIdle()
+
+        // 此时列表中仅展示搜索结果 Target Search Track
+        composeTestRule.onNodeWithText("Target Search Track").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("First Track").assertCountEquals(0)
+        composeTestRule.onAllNodesWithText("Third Track").assertCountEquals(0)
+
+        // 点击搜索结果歌曲播放
+        composeTestRule.onNodeWithText("Target Search Track").performClick()
+        composeTestRule.waitForIdle()
+
+        // 验证整个歌单的 3 首歌曲均被载入播放列表，且当前正在播放目标曲目
+        assertEquals(3, playerEngine.playlist.value.size)
+        assertEquals("102", playerEngine.currentMedia.value?.id)
+        assertEquals("Target Search Track", playerEngine.currentMedia.value?.title)
+        assertEquals(1, playerEngine.currentIndex.value)
     }
 }

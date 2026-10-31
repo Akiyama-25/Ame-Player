@@ -794,7 +794,12 @@ fun MainScreen(
                                                                                 isPlaying = isPlaying && currentMedia?.id == media.id,
                                                                                 isLocalMatch = isMatched,
                                                                                 onClick = {
-                                                                                    val playableList = displayedSongs.map { (_, dto, _) ->
+                                                                                    val songsSource = if (inPlaylistSearchQuery.isNotBlank() || matchFilterMode == 0) {
+                                                                                        currentPlaylist.songs
+                                                                                    } else {
+                                                                                        displayedSongs.map { it.second }
+                                                                                    }
+                                                                                    val playableList = songsSource.map { dto ->
                                                                                         val m = dto.toPlayableMedia()
                                                                                         if (m is PlayableMedia.Online) {
                                                                                             playlistManager.findLocalMatch(m) ?: m

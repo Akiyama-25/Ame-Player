@@ -420,7 +420,10 @@ fun OnlinePlaylistDetailView(
                 Icon(Icons.Rounded.PlayArrow, contentDescription = null)
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
-                    text = if (searchFilteredTracks.isNotEmpty()) "全部播放 (${searchFilteredTracks.size})" else "全部播放"
+                    text = if (searchFilteredTracks.isNotEmpty()) {
+                        if (inPlaylistSearchQuery.isNotBlank()) "播放筛选 (${searchFilteredTracks.size})"
+                        else "全部播放 (${searchFilteredTracks.size})"
+                    } else "全部播放"
                 )
             }
 
@@ -521,7 +524,12 @@ fun OnlinePlaylistDetailView(
                             isPlaying = isPlaying && currentMedia?.id == onlineMedia.id,
                             isLocalMatch = isMatched,
                             onClick = {
-                                val playableList = searchFilteredTracks.map { m ->
+                                val songsSource = if (inPlaylistSearchQuery.isNotBlank() || matchFilterMode == 0) {
+                                    currentTracks
+                                } else {
+                                    displayedSongs.map { it.second }
+                                }
+                                val playableList = songsSource.map { m ->
                                     playlistManager.findLocalMatch(m) ?: m
                                 }
                                 val targetIndex = playableList.indexOfFirst { it.id == onlineMedia.id }.coerceAtLeast(0)
