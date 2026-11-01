@@ -126,12 +126,14 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
             val gain = EbuR128Calculator.computeGain(loudness, targetLufs, peakLimitEnabled)
             this.staticGainDb = gain.effectiveGainDb
             this.targetLinearGain = gain.linearMultiplier
+            this.currentLinearGain = gain.linearMultiplier
             AppLogger.d(TAG, "Track '$mediaId' has known loudness: ${loudness.integratedLufs} LUFS, applying static gain=${gain.effectiveGainDb} dB")
         } else {
             this.staticGainDb = null
             // 现代商业音乐先预设 -10.0 LUFS 名义电平进行平滑起播
             val nominalGainDb = (targetLufs - (-10.0f)).coerceIn(-18.0f, 10.0f)
             this.targetLinearGain = 10.0.pow(nominalGainDb / 20.0).toFloat()
+            this.currentLinearGain = this.targetLinearGain
             AppLogger.d(TAG, "Track '$mediaId' loudness unknown, starting real-time EBU R128 measurement (target: $targetLufs LUFS)")
         }
     }
@@ -141,6 +143,7 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         if (static != null) {
             val linear = 10.0.pow(static / 20.0).toFloat()
             targetLinearGain = linear
+            currentLinearGain = linear
         }
     }
 
