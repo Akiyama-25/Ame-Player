@@ -136,12 +136,14 @@ object AppLogger {
     }
 
     fun log(level: LogLevel, tag: String, message: String, throwable: Throwable? = null) {
-        when (level) {
-            LogLevel.VERBOSE -> Log.v(tag, message, throwable)
-            LogLevel.DEBUG -> Log.d(tag, message, throwable)
-            LogLevel.INFO -> Log.i(tag, message, throwable)
-            LogLevel.WARN -> Log.w(tag, message, throwable)
-            LogLevel.ERROR -> Log.e(tag, message, throwable)
+        runCatching {
+            when (level) {
+                LogLevel.VERBOSE -> Log.v(tag, message, throwable)
+                LogLevel.DEBUG -> Log.d(tag, message, throwable)
+                LogLevel.INFO -> Log.i(tag, message, throwable)
+                LogLevel.WARN -> Log.w(tag, message, throwable)
+                LogLevel.ERROR -> Log.e(tag, message, throwable)
+            }
         }
 
         if (level.priority < _currentLevel.value.priority) {
@@ -149,7 +151,9 @@ object AppLogger {
         }
 
         val timestamp = synchronized(timeFormat) { timeFormat.format(Date()) }
-        val stackTrace = throwable?.let { "\n" + Log.getStackTraceString(it) } ?: ""
+        val stackTrace = throwable?.let {
+            "\n" + runCatching { Log.getStackTraceString(it) }.getOrElse { it.stackTraceToString() }
+        } ?: ""
         val line = "[$timestamp] [${level.label}] [$tag]: $message$stackTrace\n"
 
         scope.launch {

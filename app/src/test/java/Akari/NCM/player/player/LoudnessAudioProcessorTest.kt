@@ -10,10 +10,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.abs
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class LoudnessAudioProcessorTest {
 
     @Test
@@ -42,14 +47,14 @@ class LoudnessAudioProcessorTest {
         output.order(ByteOrder.LITTLE_ENDIAN)
 
         assertEquals(16, output.remaining())
-        assertEquals(100, output.short)
-        assertEquals(-200, output.short)
-        assertEquals(300, output.short)
-        assertEquals(-400, output.short)
-        assertEquals(500, output.short)
-        assertEquals(-600, output.short)
-        assertEquals(700, output.short)
-        assertEquals(-800, output.short)
+        assertEquals(100.toShort(), output.short)
+        assertEquals((-200).toShort(), output.short)
+        assertEquals(300.toShort(), output.short)
+        assertEquals((-400).toShort(), output.short)
+        assertEquals(500.toShort(), output.short)
+        assertEquals((-600).toShort(), output.short)
+        assertEquals(700.toShort(), output.short)
+        assertEquals((-800).toShort(), output.short)
     }
 
     @Test

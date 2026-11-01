@@ -83,9 +83,14 @@ class PlaylistMatchingTest {
             album = "I Am... Sasha Fierce"
         )
 
+        val matchedRaw = playlistManager.findLocalMatchRaw(online)
+        assertNotNull(matchedRaw)
+        assertEquals("local_hash_1", matchedRaw?.id)
+
         val matched = playlistManager.findLocalMatch(online)
         assertNotNull(matched)
-        assertEquals("local_hash_1", matched?.id)
+        assertEquals(online.id, matched?.id)
+        assertEquals(localMp3.uri, matched?.uri)
     }
 
     @Test
@@ -114,9 +119,14 @@ class PlaylistMatchingTest {
             album = "F*CK LOVE 3"
         )
 
+        val matchedRaw = playlistManager.findLocalMatchRaw(online)
+        assertNotNull(matchedRaw)
+        assertEquals("local_hash_2", matchedRaw?.id)
+
         val matched = playlistManager.findLocalMatch(online)
         assertNotNull(matched)
-        assertEquals("local_hash_2", matched?.id)
+        assertEquals(online.id, matched?.id)
+        assertEquals(localFlac.uri, matched?.uri)
     }
 
     @Test
@@ -145,9 +155,14 @@ class PlaylistMatchingTest {
             album = "イグニッション"
         )
 
+        val matchedRaw = playlistManager.findLocalMatchRaw(online)
+        assertNotNull(matchedRaw)
+        assertEquals("local_hash_3", matchedRaw?.id)
+
         val matched = playlistManager.findLocalMatch(online)
         assertNotNull(matched)
-        assertEquals("local_hash_3", matched?.id)
+        assertEquals(online.id, matched?.id)
+        assertEquals(localMedia.uri, matched?.uri)
     }
 
     @Test
