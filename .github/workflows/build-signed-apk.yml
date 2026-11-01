@@ -35,6 +35,8 @@ jobs:
             SDKMANAGER="$ANDROID_HOME/tools/bin/sdkmanager"
           fi
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          echo "Installing cmake 3.22.1..."
+          "$SDKMANAGER" --install "cmake;3.22.1" > /dev/null 2>&1 || true
           if "$SDKMANAGER" --install "platforms;android-37" > /tmp/sdk.log 2>&1; then
             echo "Installed platforms;android-37 directly"
           else

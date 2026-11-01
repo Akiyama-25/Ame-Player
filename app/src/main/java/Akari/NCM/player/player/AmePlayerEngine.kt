@@ -97,6 +97,7 @@ class AmePlayerEngine @Inject constructor(
     private val lyricsManager = LyricsManager(context, ncmApi)
     val loudnessManager = LoudnessManager(context, ncmApi)
     val loudnessAudioProcessor = LoudnessAudioProcessor()
+    var usbAudioSink: com.decent.usbaudio.UsbAudioSink? = null
 
     private val _loudnessState = MutableStateFlow(
         LoudnessNormalizationState(
@@ -228,14 +229,29 @@ class AmePlayerEngine @Inject constructor(
 
     private fun createExoPlayer(): ExoPlayer {
         // Audio-only renderer with Hi-Res safe AudioSink and decoder fallback
-        val audioSink = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+        // 注意：切勿开启 setEnableFloatOutput(true)。在 Media3 DefaultAudioSink 架构中，
+        // 一旦开启浮点输出且输入为高解析度 PCM 时，DefaultAudioSink 会硬编码绕过并丢弃所有自定义 AudioProcessor（包括降采样与响度均衡），
+        // 导致 >192kHz 音频无法进入 MaxSampleRateAudioProcessor 降采样，进而触发 AudioTrack.getMinBufferSize 越界抛出 IllegalStateException。
+        val defaultAudioSink = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
             .setAudioProcessors(arrayOf(
                 MaxSampleRateAudioProcessor(192000),
                 loudnessAudioProcessor
             ))
-            .setEnableFloatOutput(true)
+            .setEnableFloatOutput(false)
             .setEnableAudioTrackPlaybackParams(false)
             .build()
+
+        val isUsbExclusive = usbAudioManager.isExclusiveModeEnabled.value
+        val finalAudioSink = com.decent.usbaudio.UsbAudioSink(
+            delegate = defaultAudioSink,
+            context = context,
+            config = com.decent.usbaudio.UsbAudioSinkConfig(
+                bitPerfectEnabled = isUsbExclusive,
+                forceRouteToSpeaker = true
+            )
+        ).also {
+            usbAudioSink = it
+        }
 
         val audioOnlyFactory = RenderersFactory { handler, _, audioListener, _, _ ->
             arrayOf(
@@ -245,7 +261,7 @@ class AmePlayerEngine @Inject constructor(
                     /* enableDecoderFallback = */ true,
                     handler,
                     audioListener,
-                    audioSink
+                    finalAudioSink
                 )
             )
         }
@@ -501,6 +517,8 @@ class AmePlayerEngine @Inject constructor(
         if (isExclusive && currentDevice != null) {
             player.setPreferredAudioDevice(currentDevice)
         }
+
+        finalAudioSink.attachToPlayer(player)
 
         return player
     }
@@ -1413,11 +1431,13 @@ class AmePlayerEngine @Inject constructor(
     override fun setUsbExclusiveMode(enabled: Boolean) {
         ensureActive()
         usbAudioManager.setExclusiveModeEnabled(enabled)
+        usbAudioSink?.setBitPerfectEnabled(enabled)
         val currentDevice = usbAudioManager.connectedUsbDevice.value
         applyUsbAudioRouting(currentDevice, enabled)
     }
 
     private fun applyUsbAudioRouting(device: AudioDeviceInfo?, isExclusive: Boolean) {
+        usbAudioSink?.setBitPerfectEnabled(isExclusive && device != null)
         if (isExclusive && device != null) {
             val uac = usbAudioManager.uacVersion.value ?: "UAC"
             AppLogger.i("[AME_USB_AUDIO]", ">>> Applying USB Exclusive Routing to device: '${device.productName}' ($uac, id=${device.id}, type=${device.type})")
@@ -1448,6 +1468,9 @@ class AmePlayerEngine @Inject constructor(
         isReleased = true
         islandManager.cancelIsland()
         scope.cancel()
+        usbAudioSink?.detachFromPlayer()
+        usbAudioSink?.release()
+        usbAudioSink = null
         runCatching { exoPlayer.release() }
         mediaMap.clear()
         resolvedUrlCache.clear()

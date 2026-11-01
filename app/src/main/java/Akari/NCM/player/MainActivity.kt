@@ -33,6 +33,8 @@ class MainActivity : ComponentActivity() {
         
         Akari.NCM.player.data.ThemePrefs.init(this)
 
+        intent?.let { com.decent.usbaudio.UsbAudioPermissionHelper.handleIntent(this, it) }
+
         if (intent?.getBooleanExtra("open_player", false) == true) {
             openPlayerRequests.value++
         }
@@ -71,6 +73,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        intent.let { com.decent.usbaudio.UsbAudioPermissionHelper.handleIntent(this, it) }
         if (intent.getBooleanExtra("open_player", false)) {
             openPlayerRequests.value++
         }
