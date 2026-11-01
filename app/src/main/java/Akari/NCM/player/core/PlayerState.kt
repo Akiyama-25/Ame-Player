@@ -79,6 +79,17 @@ interface PlayerState {
         get() = MutableStateFlow(false)
     val loudnessState: StateFlow<Akari.NCM.player.core.loudness.LoudnessNormalizationState>
         get() = MutableStateFlow(Akari.NCM.player.core.loudness.LoudnessNormalizationState())
+    val playlistSourceType: StateFlow<PlaylistSourceType>
+        get() = MutableStateFlow(PlaylistSourceType.NONE)
+}
+
+/**
+ * 歌单播放来源分类（用于各歌单独立定位与状态解耦）
+ */
+enum class PlaylistSourceType {
+    NONE,
+    ONLINE, // 云端在线歌单
+    LOCAL   // 本地扫描/自定义歌单
 }
 
 enum class PlaybackState {
@@ -91,7 +102,11 @@ enum class RepeatMode {
 
 interface PlayerController {
     fun load(media: PlayableMedia)
-    fun loadPlaylist(items: List<PlayableMedia>, startIndex: Int = 0)
+    fun loadPlaylist(
+        items: List<PlayableMedia>,
+        startIndex: Int = 0,
+        sourceType: PlaylistSourceType = PlaylistSourceType.NONE
+    )
     fun startInfinitePlayback(mode: InfinitePlayMode, initialTracks: List<PlayableMedia> = emptyList()) {}
     fun disableInfinitePlayback() {}
     fun play()

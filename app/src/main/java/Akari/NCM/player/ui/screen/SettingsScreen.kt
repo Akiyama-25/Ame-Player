@@ -87,6 +87,7 @@ fun SettingsScreen(
     sessionManager: UserSessionManager,
     ncmApi: NcmApi,
     localFolderManager: Akari.NCM.player.data.LocalFolderManager,
+    onOpenLog: () -> Unit = {},
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -126,7 +127,6 @@ fun SettingsScreen(
     var showLogSizeDialog by remember { mutableStateOf(false) }
     var showLoudnessDialog by remember { mutableStateOf(false) }
 
-    var showLogScreen by remember { mutableStateOf(false) }
     val updateChannel by ThemePrefs.updateChannelFlow.collectAsState()
     var showUpdateChannelDialog by remember { mutableStateOf(false) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
@@ -150,11 +150,6 @@ fun SettingsScreen(
         if (!granted) {
             Toast.makeText(context, "需要开启通知权限以展示灵动岛与实况歌词", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    if (showLogScreen) {
-        LogScreen(onBack = { showLogScreen = false })
-        return
     }
 
     Scaffold(
@@ -498,7 +493,7 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { showLogScreen = true }
+                        .clickable { onOpenLog() }
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .testTag("setting_log_record"),
                     verticalAlignment = Alignment.CenterVertically
@@ -524,7 +519,7 @@ fun SettingsScreen(
                         )
                     }
                     FilledTonalButton(
-                        onClick = { showLogScreen = true },
+                        onClick = onOpenLog,
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                         modifier = Modifier.testTag("btn_open_log_screen")
                     ) {

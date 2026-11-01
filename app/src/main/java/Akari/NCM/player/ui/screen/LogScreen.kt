@@ -4,7 +4,6 @@ import Akari.NCM.player.core.AppLogger
 import Akari.NCM.player.core.LogLevel
 import android.content.Intent
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -58,8 +57,6 @@ fun LogScreen(
             listState.scrollToItem(lines.lastIndex)
         }
     }
-
-    BackHandler(onBack = onBack)
 
     fun exportAndShareLog(format: AppLogger.ExportFormat) {
         val file = AppLogger.exportToFormat(context, format)

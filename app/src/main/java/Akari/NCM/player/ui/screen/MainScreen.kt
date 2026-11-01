@@ -4,6 +4,7 @@ import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.core.NcmUserPlaylist
 import Akari.NCM.player.core.OnlinePlaylistTarget
 import Akari.NCM.player.core.PlayableMedia
+import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.data.CustomPlaylist
 import Akari.NCM.player.data.LyricsManager
 import Akari.NCM.player.data.LocalFolderManager
@@ -31,6 +32,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +44,7 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,7 +67,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 
 enum class TopLevelScreen {
-    PLAYER, SETTINGS, SEARCH, MAIN
+    PLAYER, LOG, SETTINGS, SEARCH, MAIN
 }
 
 @UnstableApi
@@ -87,6 +90,7 @@ fun MainScreen(
     var showPlayerScreen by remember { mutableStateOf(false) }
     var showQueueBottomSheet by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
+    var showLogScreen by remember { mutableStateOf(false) }
     var showSearchScreen by remember { mutableStateOf(false) }
     var showSyncCloudDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) } // 0: User Homepage, 1: Playlists
@@ -105,34 +109,39 @@ fun MainScreen(
     LaunchedEffect(openPlayerCount) {
         if (openPlayerCount > 0 && currentMedia != null) {
             showSettingsScreen = false
+            showLogScreen = false
             showSearchScreen = false
             showPlayerScreen = true
         }
     }
 
-    // AOSP 预见性返回手势状态：按优先级响应设置页、搜索页、播放页、在线歌单详情页与本地歌单详情页
-    val settingsBackState = rememberPredictiveBackState(enabled = showSettingsScreen) {
+    // AOSP 预见性返回手势状态：按优先级响应日志页、设置页、搜索页、播放页、在线歌单详情页与本地歌单详情页
+    val logBackState = rememberPredictiveBackState(enabled = showLogScreen) {
+        showLogScreen = false
+    }
+
+    val settingsBackState = rememberPredictiveBackState(enabled = showSettingsScreen && !showLogScreen) {
         showSettingsScreen = false
     }
 
-    val searchBackState = rememberPredictiveBackState(enabled = showSearchScreen && !showSettingsScreen) {
+    val searchBackState = rememberPredictiveBackState(enabled = showSearchScreen && !showSettingsScreen && !showLogScreen) {
         showSearchScreen = false
     }
 
     val playerBackState = rememberPredictiveBackState(
-        enabled = showPlayerScreen && !showSettingsScreen && !showSearchScreen
+        enabled = showPlayerScreen && !showSettingsScreen && !showSearchScreen && !showLogScreen
     ) {
         showPlayerScreen = false
     }
 
     val onlinePlaylistBackState = rememberPredictiveBackState(
-        enabled = selectedOnlinePlaylist != null && selectedTab == 0 && !showPlayerScreen && !showSettingsScreen && !showSearchScreen
+        enabled = selectedOnlinePlaylist != null && selectedTab == 0 && !showPlayerScreen && !showSettingsScreen && !showSearchScreen && !showLogScreen
     ) {
         selectedOnlinePlaylist = null
     }
 
     val playlistDetailBackState = rememberPredictiveBackState(
-        enabled = selectedPlaylistForDetail != null && selectedTab == 1 && !showPlayerScreen && !showSettingsScreen && !showSearchScreen
+        enabled = selectedPlaylistForDetail != null && selectedTab == 1 && !showPlayerScreen && !showSettingsScreen && !showSearchScreen && !showLogScreen
     ) {
         selectedPlaylistForDetail = null
     }
@@ -241,13 +250,14 @@ fun MainScreen(
 
     val topLevelScreen = when {
         showPlayerScreen -> TopLevelScreen.PLAYER
+        showLogScreen -> TopLevelScreen.LOG
         showSettingsScreen -> TopLevelScreen.SETTINGS
         showSearchScreen -> TopLevelScreen.SEARCH
         else -> TopLevelScreen.MAIN
     }
 
     val isTopBackActive = (showPlayerScreen && playerBackState.isVisibleInBackground) ||
-        (showSettingsScreen && settingsBackState.isVisibleInBackground) ||
+        (showSettingsScreen && !showLogScreen && settingsBackState.isVisibleInBackground) ||
         (showSearchScreen && searchBackState.isVisibleInBackground)
     val activeTopBackProgress = when {
         showSettingsScreen -> settingsBackState.progress
@@ -265,19 +275,18 @@ fun MainScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        if (topLevelScreen == TopLevelScreen.MAIN || isTopBackActive) {
-            Box(
-                modifier = if (topLevelScreen != TopLevelScreen.MAIN && isTopBackActive) {
-                    Modifier
-                        .fillMaxSize()
-                        .predictiveBackBackground(
-                            progress = activeTopBackProgress,
-                            swipeEdge = activeTopBackEdge
-                        )
-                } else {
-                    Modifier.fillMaxSize()
-                }
-            ) {
+        Box(
+            modifier = if (topLevelScreen != TopLevelScreen.MAIN && isTopBackActive) {
+                Modifier
+                    .fillMaxSize()
+                    .predictiveBackBackground(
+                        progress = activeTopBackProgress,
+                        swipeEdge = activeTopBackEdge
+                    )
+            } else {
+                Modifier.fillMaxSize()
+            }
+        ) {
                 val adaptiveInfo = androidx.compose.material3.adaptive.currentWindowAdaptiveInfo()
                 val customLayoutType = with(adaptiveInfo.windowSizeClass) {
                     when {
@@ -570,6 +579,17 @@ fun MainScreen(
                                                 if (currentDetail != null) {
                                                     // Playlist Detail View
                                                     val currentPlaylist = currentDetail
+                                                    val localPlaylistListState = rememberSaveable(currentPlaylist.id, saver = LazyListState.Saver) {
+                                                        LazyListState()
+                                                    }
+                                                    val currentPlaylistSourceType by playerEngine.playlistSourceType.collectAsState()
+                                                    val isCurrentFromLocal = currentPlaylistSourceType == PlaylistSourceType.LOCAL
+                                                    val isCurrentMediaInThisLocalPlaylist = remember(currentPlaylist.songs, currentMedia, isCurrentFromLocal) {
+                                                        isCurrentFromLocal && currentMedia != null && currentPlaylist.songs.any { songDto ->
+                                                            val m = songDto.toPlayableMedia()
+                                                            m.id == currentMedia?.id || (currentMedia is PlayableMedia.LocalNcm && songDto.uri == currentMedia?.uri)
+                                                        }
+                                                    }
                                                     var inPlaylistSearchQuery by remember(currentPlaylist.id) { mutableStateOf("") }
                                                     var isPlaylistSearchActive by remember(currentPlaylist.id) { mutableStateOf(false) }
                                                     Box(
@@ -661,13 +681,51 @@ fun MainScreen(
                                                                                         playlistManager.findLocalMatch(m) ?: m
                                                                                     } else m
                                                                                 }
-                                                                                playerEngine.loadPlaylist(playableList)
+                                                                                playerEngine.loadPlaylist(playableList, 0, PlaylistSourceType.LOCAL)
                                                                                 playerEngine.play()
                                                                             }
                                                                         ) {
                                                                             Icon(Icons.Rounded.PlayArrow, contentDescription = null)
                                                                             Spacer(modifier = Modifier.width(4.dp))
                                                                             Text(if (inPlaylistSearchQuery.isNotBlank()) "播放筛选" else "播放全部")
+                                                                        }
+                                                                    }
+                                                                    if (isCurrentMediaInThisLocalPlaylist) {
+                                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                                        FilledTonalButton(
+                                                                            onClick = {
+                                                                                scope.launch {
+                                                                                    if (inPlaylistSearchQuery.isNotBlank() && displayedSongs.none { (_, songDto, _) ->
+                                                                                        val m = songDto.toPlayableMedia()
+                                                                                        m.id == currentMedia?.id || (currentMedia is PlayableMedia.LocalNcm && songDto.uri == currentMedia?.uri)
+                                                                                    }) {
+                                                                                        inPlaylistSearchQuery = ""
+                                                                                    }
+                                                                                    if (matchFilterMode != 0 && displayedSongs.none { (_, songDto, _) ->
+                                                                                        val m = songDto.toPlayableMedia()
+                                                                                        m.id == currentMedia?.id || (currentMedia is PlayableMedia.LocalNcm && songDto.uri == currentMedia?.uri)
+                                                                                    }) {
+                                                                                        matchFilterMode = 0
+                                                                                    }
+                                                                                    val targetIdx = displayedSongs.indexOfFirst { (_, songDto, _) ->
+                                                                                        val m = songDto.toPlayableMedia()
+                                                                                        m.id == currentMedia?.id || (currentMedia is PlayableMedia.LocalNcm && songDto.uri == currentMedia?.uri)
+                                                                                    }
+                                                                                    if (targetIdx >= 0) {
+                                                                                        localPlaylistListState.animateScrollToItem(targetIdx)
+                                                                                    }
+                                                                                }
+                                                                            },
+                                                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                                            modifier = Modifier.testTag("btn_locate_local_track")
+                                                                        ) {
+                                                                            Icon(
+                                                                                imageVector = Icons.Rounded.MyLocation,
+                                                                                contentDescription = "定位当前播放",
+                                                                                modifier = Modifier.size(16.dp)
+                                                                            )
+                                                                            Spacer(modifier = Modifier.width(4.dp))
+                                                                            Text("定位", fontSize = 12.sp)
                                                                         }
                                                                     }
                                                                 }
@@ -785,7 +843,10 @@ fun MainScreen(
                                                                         )
                                                                     }
                                                                 } else {
-                                                                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                                                    LazyColumn(
+                                                                        state = localPlaylistListState,
+                                                                        modifier = Modifier.fillMaxSize()
+                                                                    ) {
                                                                         items(displayedSongs, key = { it.second.id }) { (origIndex, songDto, isMatched) ->
                                                                             val media = songDto.toPlayableMedia()
                                                                             SongItem(
@@ -806,7 +867,7 @@ fun MainScreen(
                                                                                         } else m
                                                                                     }
                                                                                     val targetIndex = playableList.indexOfFirst { it.id == media.id }.coerceAtLeast(0)
-                                                                                    playerEngine.loadPlaylist(playableList, targetIndex)
+                                                                                    playerEngine.loadPlaylist(playableList, targetIndex, PlaylistSourceType.LOCAL)
                                                                                     playerEngine.play()
                                                                                 },
                                                                                 onActionClick = {
@@ -860,10 +921,9 @@ fun MainScreen(
                     }
                 }
             }
-        }
 
         AnimatedVisibility(
-            visible = topLevelScreen == TopLevelScreen.PLAYER,
+            visible = showPlayerScreen,
             enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
             exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
             modifier = Modifier.fillMaxSize()
@@ -888,7 +948,7 @@ fun MainScreen(
         }
 
         AnimatedVisibility(
-            visible = topLevelScreen == TopLevelScreen.SEARCH,
+            visible = showSearchScreen,
             enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
             exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
             modifier = Modifier.fillMaxSize()
@@ -920,7 +980,7 @@ fun MainScreen(
         }
 
         AnimatedVisibility(
-            visible = topLevelScreen == TopLevelScreen.SETTINGS,
+            visible = showSettingsScreen,
             enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
             exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
             modifier = Modifier.fillMaxSize()
@@ -928,13 +988,40 @@ fun MainScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .predictiveBackForeground(state = settingsBackState, pullDownDp = 12f)
+                    .then(
+                        if (showLogScreen && logBackState.isVisibleInBackground) {
+                            Modifier.predictiveBackBackground(
+                                progress = logBackState.progress,
+                                swipeEdge = logBackState.swipeEdge
+                            )
+                        } else {
+                            Modifier.predictiveBackForeground(state = settingsBackState, pullDownDp = 12f)
+                        }
+                    )
             ) {
                 SettingsScreen(
                     sessionManager = sessionManager,
                     ncmApi = ncmApi,
                     localFolderManager = localFolderManager,
+                    onOpenLog = { showLogScreen = true },
                     onBack = { showSettingsScreen = false }
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showLogScreen,
+            enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
+            exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackForeground(state = logBackState, pullDownDp = 12f)
+            ) {
+                LogScreen(
+                    onBack = { showLogScreen = false }
                 )
             }
         }

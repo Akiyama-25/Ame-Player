@@ -6,6 +6,7 @@ import Akari.NCM.player.core.PlayableMedia
 import Akari.NCM.player.core.PlaybackState
 import Akari.NCM.player.core.PlayerController
 import Akari.NCM.player.core.PlayerState
+import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.core.RepeatMode
 import Akari.NCM.player.data.NcmDataSource
 import android.content.Context
@@ -177,6 +178,9 @@ class AmePlayerEngine @Inject constructor(
 
     private val _infinitePlayMode = MutableStateFlow<InfinitePlayMode>(InfinitePlayMode.None)
     override val infinitePlayMode: StateFlow<InfinitePlayMode> = _infinitePlayMode.asStateFlow()
+
+    private val _playlistSourceType = MutableStateFlow(PlaylistSourceType.NONE)
+    override val playlistSourceType: StateFlow<PlaylistSourceType> = _playlistSourceType.asStateFlow()
 
     private val _isFetchingRecommendations = MutableStateFlow(false)
     override val isFetchingRecommendations: StateFlow<Boolean> = _isFetchingRecommendations.asStateFlow()
@@ -902,6 +906,10 @@ class AmePlayerEngine @Inject constructor(
     override fun load(media: PlayableMedia) {
         disableInfinitePlayback()
         ensureActive()
+        _playlistSourceType.value = when (media) {
+            is PlayableMedia.Online -> PlaylistSourceType.ONLINE
+            is PlayableMedia.LocalNcm -> PlaylistSourceType.LOCAL
+        }
         val mediaItem = buildMediaItem(media)
         mediaMap[media.id] = media
         _playlist.value = listOf(media)
@@ -913,7 +921,12 @@ class AmePlayerEngine @Inject constructor(
         onTrackChanged(media)
     }
 
-    override fun loadPlaylist(items: List<PlayableMedia>, startIndex: Int) {
+    override fun loadPlaylist(
+        items: List<PlayableMedia>,
+        startIndex: Int,
+        sourceType: PlaylistSourceType
+    ) {
+        _playlistSourceType.value = sourceType
         loadPlaylistInternal(items, startIndex, keepInfiniteMode = false)
     }
 

@@ -3,6 +3,7 @@ package Akari.NCM.player.ui.screen
 import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.core.OnlinePlaylistTarget
 import Akari.NCM.player.core.PlayableMedia
+import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.data.CustomPlaylist
 import Akari.NCM.player.data.PlaylistManager
 import Akari.NCM.player.player.AmePlayerEngine
@@ -13,25 +14,31 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 
 @Composable
 fun OnlinePlaylistDetailView(
@@ -46,6 +53,10 @@ fun OnlinePlaylistDetailView(
     onSongAction: (media: PlayableMedia, playlistContext: CustomPlaylist?) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val listState = rememberSaveable(target.id, target.isDailyRecommend, saver = LazyListState.Saver) {
+        LazyListState()
+    }
     var tracks by remember(target.id, target.isDailyRecommend) { mutableStateOf<List<PlayableMedia.Online>?>(null) }
     var playlistMeta by remember(target.id, target.isDailyRecommend) { mutableStateOf(target) }
     var isLoading by remember(target.id, target.isDailyRecommend) { mutableStateOf(true) }
@@ -397,10 +408,11 @@ fun OnlinePlaylistDetailView(
             )
         }
 
-        // Action Row: Play All + Filter Chips
+        // Action Row: Play All + Locate + Filter Chips
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -410,7 +422,7 @@ fun OnlinePlaylistDetailView(
                         val playableList = searchFilteredTracks.map { onlineMedia ->
                             playlistManager.findLocalMatch(onlineMedia) ?: onlineMedia
                         }
-                        playerEngine.loadPlaylist(playableList, 0)
+                        playerEngine.loadPlaylist(playableList, 0, PlaylistSourceType.ONLINE)
                         playerEngine.play()
                     }
                 },
@@ -425,6 +437,42 @@ fun OnlinePlaylistDetailView(
                         else "全部播放 (${searchFilteredTracks.size})"
                     } else "全部播放"
                 )
+            }
+
+            val currentPlaylistSourceType by playerEngine.playlistSourceType.collectAsState()
+            val isCurrentFromOnline = currentPlaylistSourceType == PlaylistSourceType.ONLINE
+            val isCurrentMediaInThisOnlinePlaylist = remember(currentTracks, currentMedia, isCurrentFromOnline) {
+                isCurrentFromOnline && currentMedia != null && currentTracks.any { it.id == currentMedia.id }
+            }
+
+            if (isCurrentMediaInThisOnlinePlaylist) {
+                Spacer(modifier = Modifier.width(8.dp))
+                FilledTonalButton(
+                    onClick = {
+                        scope.launch {
+                            if (inPlaylistSearchQuery.isNotBlank() && displayedSongs.none { it.second.id == currentMedia?.id }) {
+                                inPlaylistSearchQuery = ""
+                            }
+                            if (matchFilterMode != 0 && displayedSongs.none { it.second.id == currentMedia?.id }) {
+                                matchFilterMode = 0
+                            }
+                            val targetIdx = displayedSongs.indexOfFirst { it.second.id == currentMedia?.id }
+                            if (targetIdx >= 0) {
+                                listState.animateScrollToItem(targetIdx)
+                            }
+                        }
+                    },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("btn_locate_online_track")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MyLocation,
+                        contentDescription = "定位正在播放的音乐",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("定位", fontSize = 12.sp)
+                }
             }
 
             if (showMatchStatusPreference && currentTracks.isNotEmpty()) {
@@ -514,6 +562,7 @@ fun OnlinePlaylistDetailView(
                 }
             } else {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 32.dp)
                 ) {
@@ -533,7 +582,7 @@ fun OnlinePlaylistDetailView(
                                     playlistManager.findLocalMatch(m) ?: m
                                 }
                                 val targetIndex = playableList.indexOfFirst { it.id == onlineMedia.id }.coerceAtLeast(0)
-                                playerEngine.loadPlaylist(playableList, targetIndex)
+                                playerEngine.loadPlaylist(playableList, targetIndex, PlaylistSourceType.ONLINE)
                                 playerEngine.play()
                             },
                             onActionClick = {

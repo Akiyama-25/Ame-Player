@@ -11,6 +11,7 @@ import Akari.NCM.player.data.ThemePrefs
 import Akari.NCM.player.data.UsbAudioManager
 import Akari.NCM.player.data.UserSessionManager
 import Akari.NCM.player.player.AmePlayerEngine
+import Akari.NCM.player.ui.screen.LogScreen
 import Akari.NCM.player.ui.screen.MainScreen
 import Akari.NCM.player.ui.screen.SettingsScreen
 import android.content.Context
@@ -95,20 +96,32 @@ class DebugFeaturesAndMatchFilterTest {
 
     @Test
     @Config(qualifiers = "w400dp-h1200dp")
-    fun testSettingsScreen_logLevelDialog_selectLevel() {
+    fun testSettingsScreen_openLog_triggersCallback() {
+        var logOpened = false
         composeTestRule.setContent {
             SettingsScreen(
                 sessionManager = sessionManager,
                 ncmApi = ncmApi,
                 localFolderManager = localFolderManager,
+                onOpenLog = { logOpened = true },
                 onBack = {}
             )
         }
         composeTestRule.waitForIdle()
 
-        // 点击进入独立日志页面
         composeTestRule.onNodeWithTag("setting_log_record").performClick()
         composeTestRule.waitForIdle()
+        assertTrue(logOpened)
+    }
+
+    @Test
+    @Config(qualifiers = "w400dp-h1200dp")
+    fun testLogScreen_logLevelDialog_selectLevel() {
+        composeTestRule.setContent {
+            LogScreen(onBack = {})
+        }
+        composeTestRule.waitForIdle()
+
         composeTestRule.onNodeWithText("运行日志").assertIsDisplayed()
 
         // 点击设置打开等级调节弹窗
@@ -124,19 +137,10 @@ class DebugFeaturesAndMatchFilterTest {
 
     @Test
     @Config(qualifiers = "w400dp-h1200dp")
-    fun testSettingsScreen_exportMenu_displaysOptions() {
+    fun testLogScreen_exportMenu_displaysOptions() {
         composeTestRule.setContent {
-            SettingsScreen(
-                sessionManager = sessionManager,
-                ncmApi = ncmApi,
-                localFolderManager = localFolderManager,
-                onBack = {}
-            )
+            LogScreen(onBack = {})
         }
-        composeTestRule.waitForIdle()
-
-        // 点击进入独立日志页面
-        composeTestRule.onNodeWithTag("setting_log_record").performClick()
         composeTestRule.waitForIdle()
 
         // 展开导出菜单
@@ -177,19 +181,10 @@ class DebugFeaturesAndMatchFilterTest {
 
     @Test
     @Config(qualifiers = "w400dp-h1200dp")
-    fun testSettingsScreen_logSizeDialog_saveMaxFileSize() {
+    fun testLogScreen_logSizeDialog_saveMaxFileSize() {
         composeTestRule.setContent {
-            SettingsScreen(
-                sessionManager = sessionManager,
-                ncmApi = ncmApi,
-                localFolderManager = localFolderManager,
-                onBack = {}
-            )
+            LogScreen(onBack = {})
         }
-        composeTestRule.waitForIdle()
-
-        // 点击进入独立日志页面
-        composeTestRule.onNodeWithTag("setting_log_record").performClick()
         composeTestRule.waitForIdle()
 
         // 打开设置
