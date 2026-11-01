@@ -28,6 +28,7 @@ object ThemePrefs {
     private const val KEY_VOLUME_NORMALIZATION_ENABLED = "volume_normalization_enabled"
     private const val KEY_TARGET_LOUDNESS_LUFS = "target_loudness_lufs"
     private const val KEY_LOUDNESS_PEAK_LIMIT_ENABLED = "loudness_peak_limit_enabled"
+    private const val KEY_UPDATE_CHANNEL = "update_channel"
 
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
@@ -90,6 +91,9 @@ object ThemePrefs {
     private val _loudnessPeakLimitFlow = MutableStateFlow(true)
     val loudnessPeakLimitFlow: StateFlow<Boolean> = _loudnessPeakLimitFlow.asStateFlow()
 
+    private val _updateChannelFlow = MutableStateFlow(UpdateChannel.RELEASE)
+    val updateChannelFlow: StateFlow<UpdateChannel> = _updateChannelFlow.asStateFlow()
+
     fun init(context: Context) {
         prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
         _themeFlow.value = themeMode
@@ -109,6 +113,7 @@ object ThemePrefs {
         _volumeNormalizationFlow.value = volumeNormalizationEnabled
         _targetLoudnessFlow.value = targetLoudnessLufs
         _loudnessPeakLimitFlow.value = loudnessPeakLimitEnabled
+        _updateChannelFlow.value = updateChannel
     }
 
     var themeMode: String
@@ -253,4 +258,25 @@ object ThemePrefs {
             }
             _loudnessPeakLimitFlow.value = value
         }
+
+    var updateChannel: UpdateChannel
+        get() = if (::prefs.isInitialized) {
+            UpdateChannel.fromKey(prefs.getString(KEY_UPDATE_CHANNEL, UpdateChannel.RELEASE.key) ?: UpdateChannel.RELEASE.key)
+        } else _updateChannelFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putString(KEY_UPDATE_CHANNEL, value.key).apply()
+            }
+            _updateChannelFlow.value = value
+        }
+}
+
+enum class UpdateChannel(val key: String, val label: String) {
+    RELEASE("release", "Release (正式发布)"),
+    ACTION("action", "Action (测试构建)");
+
+    companion object {
+        fun fromKey(key: String): UpdateChannel =
+            entries.find { it.key.equals(key, ignoreCase = true) } ?: RELEASE
+    }
 }

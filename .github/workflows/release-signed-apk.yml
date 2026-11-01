@@ -216,11 +216,43 @@ jobs:
             (cd dist && sha256sum "$SIGNED_NAME" | tee -a SHA256SUMS.txt)
           done
 
-      - name: Upload signed APK workflow artifact
+      - name: Upload signed APK - Standard (Akari.NCM.player)
         uses: actions/upload-artifact@v4
         with:
-          name: ame-player-${{ steps.ref.outputs.safe_tag }}-signed
-          path: dist/*
+          name: Ame-Player-${{ steps.ref.outputs.safe_tag }}-Standard-signed
+          path: dist/Ame-Player-${{ steps.ref.outputs.safe_tag }}-signed.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload signed APK - Apple Music Disguise (com.apple.android.music)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ame-Player-${{ steps.ref.outputs.safe_tag }}-Apple_Music-signed
+          path: dist/Ame-Player-${{ steps.ref.outputs.safe_tag }}-Apple_Music-signed.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload signed APK - Spotify Disguise (com.spotify.music)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ame-Player-${{ steps.ref.outputs.safe_tag }}-Spotify-signed
+          path: dist/Ame-Player-${{ steps.ref.outputs.safe_tag }}-Spotify-signed.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload signed APK - NetEase Music Disguise (com.netease.cloudmusic)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ame-Player-${{ steps.ref.outputs.safe_tag }}-Netease_Music-signed
+          path: dist/Ame-Player-${{ steps.ref.outputs.safe_tag }}-Netease_Music-signed.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload SHA256SUMS
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ame-Player-${{ steps.ref.outputs.safe_tag }}-SHA256SUMS
+          path: dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 90
 
@@ -238,7 +270,8 @@ jobs:
       - name: Download signed APK artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ame-player-${{ needs.build-sign.outputs.safe_tag }}-signed
+          pattern: Ame-Player-${{ needs.build-sign.outputs.safe_tag }}-*
+          merge-multiple: true
           path: dist
 
       - name: Publish release and signed APK

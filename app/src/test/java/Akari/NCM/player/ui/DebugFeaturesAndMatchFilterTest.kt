@@ -90,7 +90,7 @@ class DebugFeaturesAndMatchFilterTest {
         composeTestRule.onNodeWithTag("setting_log_record").assertIsDisplayed()
         composeTestRule.onNodeWithTag("setting_show_match_status").assertIsDisplayed()
         composeTestRule.onNodeWithText("开启后在歌单详情页快速过滤已匹配/未匹配本地源的歌曲").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("btn_export_log").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_open_log_screen").assertIsDisplayed()
     }
 
     @Test
@@ -106,11 +106,17 @@ class DebugFeaturesAndMatchFilterTest {
         }
         composeTestRule.waitForIdle()
 
+        // 点击进入独立日志页面
         composeTestRule.onNodeWithTag("setting_log_record").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("运行日志").assertIsDisplayed()
+
+        // 点击设置打开等级调节弹窗
+        composeTestRule.onNodeWithTag("btn_log_settings").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("日志记录等级").assertIsDisplayed()
         composeTestRule.onNodeWithText("DEBUG (默认)").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("log_level_option_INFO").performClick()
+        composeTestRule.onNodeWithText("INFO").performClick()
         composeTestRule.waitForIdle()
 
         assertEquals(LogLevel.INFO, AppLogger.currentLevel.value)
@@ -129,7 +135,12 @@ class DebugFeaturesAndMatchFilterTest {
         }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag("btn_export_log").performClick()
+        // 点击进入独立日志页面
+        composeTestRule.onNodeWithTag("setting_log_record").performClick()
+        composeTestRule.waitForIdle()
+
+        // 展开导出菜单
+        composeTestRule.onNodeWithTag("btn_export_log_menu").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithTag("export_format_log").assertIsDisplayed()
         composeTestRule.onNodeWithTag("export_format_md").assertIsDisplayed()
@@ -177,12 +188,21 @@ class DebugFeaturesAndMatchFilterTest {
         }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag("setting_log_record").performSemanticsAction(SemanticsActions.OnLongClick)
+        // 点击进入独立日志页面
+        composeTestRule.onNodeWithTag("setting_log_record").performClick()
+        composeTestRule.waitForIdle()
+
+        // 打开设置
+        composeTestRule.onNodeWithTag("btn_log_settings").performClick()
+        composeTestRule.waitForIdle()
+
+        // 跳转到调整大小上限
+        composeTestRule.onNodeWithText("调整大小上限").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("自定义日志大小上限").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("log_size_option_256").performClick()
+        composeTestRule.onNodeWithText("256 KB").performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("btn_save_log_size").performClick()
+        composeTestRule.onNodeWithText("保存").performClick()
         composeTestRule.waitForIdle()
 
         assertEquals(256L, AppLogger.maxFileSizeKb.value)

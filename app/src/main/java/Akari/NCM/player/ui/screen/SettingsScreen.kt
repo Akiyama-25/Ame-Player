@@ -37,6 +37,13 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
 import Akari.NCM.player.data.ThemePrefs
+import Akari.NCM.player.BuildConfig
+import Akari.NCM.player.data.AppPackageVariant
+import Akari.NCM.player.data.AppUpdateManager
+import Akari.NCM.player.data.UpdateChannel
+import Akari.NCM.player.data.UpdateCheckResult
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 
 
 import androidx.compose.foundation.shape.CircleShape
@@ -117,8 +124,14 @@ fun SettingsScreen(
     var showFoldersDialog by remember { mutableStateOf(false) }
     var showLogLevelDialog by remember { mutableStateOf(false) }
     var showLogSizeDialog by remember { mutableStateOf(false) }
-    var showExportMenu by remember { mutableStateOf(false) }
     var showLoudnessDialog by remember { mutableStateOf(false) }
+
+    var showLogScreen by remember { mutableStateOf(false) }
+    val updateChannel by ThemePrefs.updateChannelFlow.collectAsState()
+    var showUpdateChannelDialog by remember { mutableStateOf(false) }
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
+    var showUpdateResultDialog by remember { mutableStateOf(false) }
 
     val volumeNormalizationEnabled by ThemePrefs.volumeNormalizationFlow.collectAsState()
     val targetLoudnessLufs by ThemePrefs.targetLoudnessFlow.collectAsState()
@@ -139,31 +152,9 @@ fun SettingsScreen(
         }
     }
 
-    fun exportAndShareLog(format: AppLogger.ExportFormat) {
-        val file = AppLogger.exportToFormat(context, format)
-        if (file != null && file.exists()) {
-            try {
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    file
-                )
-                val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = format.mimeType
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    putExtra(Intent.EXTRA_SUBJECT, "Ame Player 运行日志 (${file.name})")
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                val chooserIntent = Intent.createChooser(sendIntent, "导出日志 (.${format.extension})").apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(chooserIntent)
-            } catch (e: Exception) {
-                Toast.makeText(context, "导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        } else {
-            Toast.makeText(context, "日志导出失败", Toast.LENGTH_SHORT).show()
-        }
+    if (showLogScreen) {
+        LogScreen(onBack = { showLogScreen = false })
+        return
     }
 
     Scaffold(
@@ -507,10 +498,7 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .combinedClickable(
-                            onClick = { showLogLevelDialog = true },
-                            onLongClick = { showLogSizeDialog = true }
-                        )
+                        .clickable { showLogScreen = true }
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .testTag("setting_log_record"),
                     verticalAlignment = Alignment.CenterVertically
@@ -524,60 +512,23 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "日志记录",
+                            text = "运行日志",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "等级: $levelLabel · 上限: ${maxFileSizeKb} KB（单击调节等级，长按设置大小上限）",
+                            text = "等级: $levelLabel · 上限: ${maxFileSizeKb} KB（点击进入独立页面查看与导出）",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Box {
-                        FilledTonalButton(
-                            onClick = { showExportMenu = true },
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("btn_export_log")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Share,
-                                contentDescription = "导出日志",
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("导出", fontSize = 12.sp)
-                        }
-                        DropdownMenu(
-                            expanded = showExportMenu,
-                            onDismissRequest = { showExportMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("导出为 .log") },
-                                onClick = {
-                                    showExportMenu = false
-                                    exportAndShareLog(AppLogger.ExportFormat.LOG)
-                                },
-                                modifier = Modifier.testTag("export_format_log")
-                            )
-                            DropdownMenuItem(
-                                text = { Text("导出为 .md") },
-                                onClick = {
-                                    showExportMenu = false
-                                    exportAndShareLog(AppLogger.ExportFormat.MD)
-                                },
-                                modifier = Modifier.testTag("export_format_md")
-                            )
-                            DropdownMenuItem(
-                                text = { Text("导出为 .zip") },
-                                onClick = {
-                                    showExportMenu = false
-                                    exportAndShareLog(AppLogger.ExportFormat.ZIP)
-                                },
-                                modifier = Modifier.testTag("export_format_zip")
-                            )
-                        }
+                    FilledTonalButton(
+                        onClick = { showLogScreen = true },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.testTag("btn_open_log_screen")
+                    ) {
+                        Text("查看", fontSize = 12.sp)
                     }
                 }
             }
@@ -778,7 +729,123 @@ fun SettingsScreen(
             }
 
             item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
-item(span = { GridItemSpan(maxLineSpan) }) {
+
+            // ── 软件更新 ──
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("软件更新") }
+
+            // 1. 更新通道切换
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showUpdateChannelDialog = true }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("setting_update_channel"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.CloudSync,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "更新通道",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "当前通道: ${updateChannel.label}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = { showUpdateChannelDialog = true },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.testTag("btn_switch_update_channel")
+                    ) {
+                        Text("切换", fontSize = 12.sp)
+                    }
+                }
+            }
+
+            // 2. 检查更新
+            item {
+                val currentPkgVariant = remember { AppPackageVariant.fromContext(context) }
+                val currentVersion = remember {
+                    runCatching {
+                        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+                    }.getOrNull() ?: BuildConfig.VERSION_NAME
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            if (!isCheckingUpdate) {
+                                isCheckingUpdate = true
+                                scope.launch {
+                                    val res = AppUpdateManager.checkUpdate(context, updateChannel)
+                                    isCheckingUpdate = false
+                                    updateResult = res
+                                    showUpdateResultDialog = true
+                                }
+                            }
+                        }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("setting_check_update"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SystemUpdate,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "检查更新",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "$currentVersion · ${currentPkgVariant.displayName} (${context.packageName})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (isCheckingUpdate) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        FilledTonalButton(
+                            onClick = {
+                                isCheckingUpdate = true
+                                scope.launch {
+                                    val res = AppUpdateManager.checkUpdate(context, updateChannel)
+                                    isCheckingUpdate = false
+                                    updateResult = res
+                                    showUpdateResultDialog = true
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("btn_check_update")
+                        ) {
+                            Text("检查", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                 Column(
                     modifier = Modifier
@@ -1238,6 +1305,203 @@ if (showFoldersDialog) {
                 Toast.makeText(context, "网易云账号登录成功！", Toast.LENGTH_SHORT).show()
             }
         )
+    }
+
+    if (showUpdateChannelDialog) {
+        AlertDialog(
+            onDismissRequest = { showUpdateChannelDialog = false },
+            title = { Text("选择更新通道", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        text = "选择您偏好的更新接收通道。更新将始终绑定当前包名 (${AppPackageVariant.fromContext(context).packageName})。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    UpdateChannel.entries.forEach { ch ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    ThemePrefs.updateChannel = ch
+                                    showUpdateChannelDialog = false
+                                    Toast.makeText(context, "已切换至 ${ch.label}", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = updateChannel == ch,
+                                onClick = {
+                                    ThemePrefs.updateChannel = ch
+                                    showUpdateChannelDialog = false
+                                    Toast.makeText(context, "已切换至 ${ch.label}", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(text = ch.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                Text(
+                                    text = if (ch == UpdateChannel.RELEASE) "稳定正式版本，直接下载官方发布的完整安装包" else "自动化构建产物，包含最新提交的开发测试特性",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showUpdateChannelDialog = false }) {
+                    Text("完成")
+                }
+            }
+        )
+    }
+
+    if (showUpdateResultDialog && updateResult != null) {
+        when (val res = updateResult!!) {
+            is UpdateCheckResult.UpdateAvailable -> {
+                AlertDialog(
+                    onDismissRequest = { showUpdateResultDialog = false },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.NewReleases, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(if (res.channel == UpdateChannel.RELEASE) "发现新版本" else "发现新测试构建", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    text = {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = "绑定包名: ${res.variant.packageName} (${res.variant.displayName})",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "当前版本: ${res.currentVersion}  →  最新版本: ${res.newVersion}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            if (res.publishDate.isNotBlank()) {
+                                val sizeText = if (res.fileSize > 0) " · 大小: ${"%.1f".format(res.fileSize / 1024f / 1024f)} MB" else ""
+                                Text(
+                                    text = "发布时间: ${res.publishDate}$sizeText",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "更新说明:",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 160.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                    .padding(8.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                Text(
+                                    text = res.releaseNotes,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        FilledTonalButton(
+                            onClick = {
+                                showUpdateResultDialog = false
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.downloadUrl)).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "无法打开浏览器下载: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        ) {
+                            Text("下载更新")
+                        }
+                    },
+                    dismissButton = {
+                        Row {
+                            TextButton(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.webUrl)).apply {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {}
+                                }
+                            ) {
+                                Text("查看网页")
+                            }
+                            TextButton(onClick = { showUpdateResultDialog = false }) {
+                                Text("稍后")
+                            }
+                        }
+                    }
+                )
+            }
+            is UpdateCheckResult.UpToDate -> {
+                AlertDialog(
+                    onDismissRequest = { showUpdateResultDialog = false },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("已是最新版本", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    text = {
+                        Text(
+                            text = "当前应用 (${res.currentVersion} · ${res.variant.displayName})\n包名 [${res.variant.packageName}] 在「${res.channel.label}」通道已是最新，无需更新。",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showUpdateResultDialog = false }) {
+                            Text("好的")
+                        }
+                    }
+                )
+            }
+            is UpdateCheckResult.Error -> {
+                AlertDialog(
+                    onDismissRequest = { showUpdateResultDialog = false },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("检查更新失败", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    text = {
+                        Text(text = res.message, style = MaterialTheme.typography.bodyMedium)
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showUpdateResultDialog = false }) {
+                            Text("确定")
+                        }
+                    }
+                )
+            }
+        }
     }
 }
 

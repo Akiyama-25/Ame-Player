@@ -22,6 +22,15 @@ android {
         versionCode = 2
         versionName = "release-0.2"
 
+        val gitCommitSha = runCatching {
+            val proc = ProcessBuilder("git", "rev-parse", "--short", "HEAD").start()
+            proc.inputStream.bufferedReader().readText().trim()
+        }.getOrDefault("")
+        val buildRunNumber = System.getenv("GITHUB_RUN_NUMBER") ?: ""
+
+        buildConfigField("String", "GIT_COMMIT_SHA", "\"$gitCommitSha\"")
+        buildConfigField("String", "GITHUB_RUN_NUMBER", "\"$buildRunNumber\"")
+
         externalNativeBuild {
             cmake {
                 cppFlags("-std=c++17")
@@ -64,6 +73,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     testOptions {
