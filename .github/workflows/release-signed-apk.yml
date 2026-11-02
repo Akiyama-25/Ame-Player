@@ -20,7 +20,7 @@ jobs:
     outputs:
       tag: ${{ steps.ref.outputs.tag }}
       safe_tag: ${{ steps.ref.outputs.safe_tag }}
-    runs-on: instabox-medium
+    runs-on: [self-hosted, instabox]
     steps:
       - name: Select release ref
         id: ref
@@ -263,7 +263,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: build-sign
-    runs-on: instabox-medium
+    runs-on: [self-hosted, instabox]
     permissions:
       contents: write
     steps:
