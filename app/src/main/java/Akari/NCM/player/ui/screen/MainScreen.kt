@@ -584,14 +584,46 @@ fun MainScreen(
                                                     }
                                                     val currentPlaylistSourceType by playerEngine.playlistSourceType.collectAsState()
                                                     val isCurrentFromLocal = currentPlaylistSourceType == PlaylistSourceType.LOCAL
-                                                    val isCurrentMediaInThisLocalPlaylist = remember(currentPlaylist.songs, currentMedia, isCurrentFromLocal) {
-                                                        isCurrentFromLocal && currentMedia != null && currentPlaylist.songs.any { songDto ->
-                                                            val m = songDto.toPlayableMedia()
-                                                            m.id == currentMedia?.id || (currentMedia is PlayableMedia.LocalNcm && songDto.uri == currentMedia?.uri)
-                                                        }
-                                                    }
                                                     var inPlaylistSearchQuery by remember(currentPlaylist.id) { mutableStateOf("") }
                                                     var isPlaylistSearchActive by remember(currentPlaylist.id) { mutableStateOf(false) }
+
+                                                    val songMatchTriples = remember(currentPlaylist.songs, inPlaylistSearchQuery, customPlaylists) {
+                                                        val allTriples = currentPlaylist.songs.mapIndexed { index, songDto ->
+                                                            val media = songDto.toPlayableMedia()
+                                                            val localMatch = if (media is PlayableMedia.Online) playlistManager.findLocalMatch(media) else null
+                                                            Triple(index, songDto, localMatch != null)
+                                                        }
+                                                        if (inPlaylistSearchQuery.isBlank()) {
+                                                            allTriples
+                                                        } else {
+                                                            val q = inPlaylistSearchQuery.trim().lowercase()
+                                                            allTriples.filter { (_, songDto, _) ->
+                                                                songDto.title.lowercase().contains(q) ||
+                                                                songDto.artist.lowercase().contains(q) ||
+                                                                songDto.album.lowercase().contains(q)
+                                                            }
+                                                        }
+                                                    }
+                                                    val matchedCount = remember(songMatchTriples) { songMatchTriples.count { it.third } }
+                                                    val unmatchedCount = remember(songMatchTriples) { songMatchTriples.size - matchedCount }
+
+                                                    val displayedSongs = remember(songMatchTriples, matchFilterMode, showMatchStatusPreference) {
+                                                        if (!showMatchStatusPreference || matchFilterMode == 0) {
+                                                            songMatchTriples
+                                                        } else if (matchFilterMode == 1) {
+                                                            songMatchTriples.filter { it.third }
+                                                        } else {
+                                                            songMatchTriples.filter { !it.third }
+                                                        }
+                                                    }
+
+                                                    val curMedia = currentMedia
+                                                    val isCurrentMediaInThisLocalPlaylist = remember(currentPlaylist.songs, curMedia, isCurrentFromLocal) {
+                                                        isCurrentFromLocal && curMedia != null && currentPlaylist.songs.any { songDto ->
+                                                            val m = songDto.toPlayableMedia()
+                                                            m.id == curMedia.id || (curMedia is PlayableMedia.LocalNcm && songDto.uri != null && songDto.uri == curMedia.uri)
+                                                        }
+                                                    }
                                                     Box(
                                                         modifier = Modifier
                                                             .fillMaxSize()
@@ -695,22 +727,18 @@ fun MainScreen(
                                                                         FilledTonalButton(
                                                                             onClick = {
                                                                                 scope.launch {
-                                                                                    if (inPlaylistSearchQuery.isNotBlank() && displayedSongs.none { (_, songDto, _) ->
+                                                                                    val cur = currentMedia
+                                                                                    val isTarget = { songDto: Akari.NCM.player.data.PlayableMediaDTO ->
                                                                                         val m = songDto.toPlayableMedia()
-                                                                                        m.id == currentMedia?.id || (currentMedia is PlayableMedia.LocalNcm && songDto.uri == currentMedia?.uri)
-                                                                                    }) {
+                                                                                        m.id == cur?.id || (cur is PlayableMedia.LocalNcm && songDto.uri != null && songDto.uri == cur.uri)
+                                                                                    }
+                                                                                    if (inPlaylistSearchQuery.isNotBlank() && displayedSongs.none { (_, songDto, _) -> isTarget(songDto) }) {
                                                                                         inPlaylistSearchQuery = ""
                                                                                     }
-                                                                                    if (matchFilterMode != 0 && displayedSongs.none { (_, songDto, _) ->
-                                                                                        val m = songDto.toPlayableMedia()
-                                                                                        m.id == currentMedia?.id || (currentMedia is PlayableMedia.LocalNcm && songDto.uri == currentMedia?.uri)
-                                                                                    }) {
+                                                                                    if (matchFilterMode != 0 && displayedSongs.none { (_, songDto, _) -> isTarget(songDto) }) {
                                                                                         matchFilterMode = 0
                                                                                     }
-                                                                                    val targetIdx = displayedSongs.indexOfFirst { (_, songDto, _) ->
-                                                                                        val m = songDto.toPlayableMedia()
-                                                                                        m.id == currentMedia?.id || (currentMedia is PlayableMedia.LocalNcm && songDto.uri == currentMedia?.uri)
-                                                                                    }
+                                                                                    val targetIdx = displayedSongs.indexOfFirst { (_, songDto, _) -> isTarget(songDto) }
                                                                                     if (targetIdx >= 0) {
                                                                                         localPlaylistListState.animateScrollToItem(targetIdx)
                                                                                     }
@@ -774,26 +802,6 @@ fun MainScreen(
                                                                     )
                                                                 }
                                                             } else {
-                                                                val songMatchTriples = remember(currentPlaylist.songs, inPlaylistSearchQuery, customPlaylists) {
-                                                                    val allTriples = currentPlaylist.songs.mapIndexed { index, songDto ->
-                                                                        val media = songDto.toPlayableMedia()
-                                                                        val localMatch = if (media is PlayableMedia.Online) playlistManager.findLocalMatch(media) else null
-                                                                        Triple(index, songDto, localMatch != null)
-                                                                    }
-                                                                    if (inPlaylistSearchQuery.isBlank()) {
-                                                                        allTriples
-                                                                    } else {
-                                                                        val q = inPlaylistSearchQuery.trim().lowercase()
-                                                                        allTriples.filter { (_, songDto, _) ->
-                                                                            songDto.title.lowercase().contains(q) ||
-                                                                            songDto.artist.lowercase().contains(q) ||
-                                                                            songDto.album.lowercase().contains(q)
-                                                                        }
-                                                                    }
-                                                                }
-                                                                val matchedCount = remember(songMatchTriples) { songMatchTriples.count { it.third } }
-                                                                val unmatchedCount = remember(songMatchTriples) { songMatchTriples.size - matchedCount }
-
                                                                 if (showMatchStatusPreference) {
                                                                     Row(
                                                                         modifier = Modifier
@@ -817,16 +825,6 @@ fun MainScreen(
                                                                             onClick = { matchFilterMode = 2 },
                                                                             label = { Text("未匹配 ($unmatchedCount)") }
                                                                         )
-                                                                    }
-                                                                }
-
-                                                                val displayedSongs = remember(songMatchTriples, matchFilterMode, showMatchStatusPreference) {
-                                                                    if (!showMatchStatusPreference || matchFilterMode == 0) {
-                                                                        songMatchTriples
-                                                                    } else if (matchFilterMode == 1) {
-                                                                        songMatchTriples.filter { it.third }
-                                                                    } else {
-                                                                        songMatchTriples.filter { !it.third }
                                                                     }
                                                                 }
 
