@@ -6,6 +6,7 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +44,12 @@ class PredictiveBackState {
     var isActive by mutableStateOf(false)
         internal set
 
+    var isCommitting by mutableStateOf(false)
+        internal set
+
+    var commitProgress by mutableFloatStateOf(0f)
+        internal set
+
     var swipeEdge by mutableIntStateOf(BackEventCompat.EDGE_LEFT)
         internal set
 
@@ -53,10 +60,12 @@ class PredictiveBackState {
         internal set
 
     val isVisibleInBackground: Boolean
-        get() = isActive || progress > 0.001f
+        get() = isActive || isCommitting || progress > 0.001f
 
     fun onGestureStarted() {
         isActive = true
+        isCommitting = false
+        commitProgress = 0f
         progress = 0f
     }
 
@@ -67,10 +76,35 @@ class PredictiveBackState {
         y: Float
     ) {
         isActive = true
+        isCommitting = false
         swipeEdge = edge
         touchX = x
         touchY = y
         progress = rawProgress.coerceIn(0f, 1f)
+    }
+
+    suspend fun animateCommit() {
+        withContext(NonCancellable) {
+            isCommitting = true
+            val startProgress = progress
+            if (coroutineContext[MonotonicFrameClock] != null) {
+                runCatching {
+                    animate(
+                        initialValue = 0f,
+                        targetValue = 1f,
+                        animationSpec = tween(
+                            durationMillis = 240,
+                            easing = PredictiveBackEasing
+                        )
+                    ) { value, _ ->
+                        commitProgress = value
+                        progress = startProgress + (1f - startProgress) * value
+                    }
+                }
+            }
+            commitProgress = 1f
+            progress = 1f
+        }
     }
 
     suspend fun animateCancelSpringBack() {
@@ -97,6 +131,8 @@ class PredictiveBackState {
     fun reset() {
         progress = 0f
         isActive = false
+        isCommitting = false
+        commitProgress = 0f
         touchX = 0f
         touchY = 0f
     }
@@ -106,8 +142,8 @@ class PredictiveBackState {
  * 注册并记忆一个 AOSP 预见性返回状态处理器。
  *
  * - 手势滑动中：实时同步更新 [PredictiveBackState.progress] (0f..1f)、[PredictiveBackState.swipeEdge] 与触点坐标
+ * - 手势松手确认：平滑执行提交退场过渡，随后调用 [onBack] 回调并重置手势状态
  * - 手势中途取消：通过物理弹簧动画平滑回弹至初始状态
- * - 手势松手确认：触发 [onBack] 回调并重置手势状态
  */
 @Composable
 fun rememberPredictiveBackState(
@@ -118,7 +154,7 @@ fun rememberPredictiveBackState(
     val currentOnBack by rememberUpdatedState(onBack)
 
     LaunchedEffect(enabled) {
-        if (!enabled) {
+        if (!enabled && !state.isCommitting) {
             state.reset()
         }
     }
@@ -134,6 +170,7 @@ fun rememberPredictiveBackState(
                     y = event.touchY
                 )
             }
+            state.animateCommit()
             currentOnBack()
             state.reset()
         } catch (e: CancellationException) {
@@ -146,17 +183,17 @@ fun rememberPredictiveBackState(
 }
 
 /**
- * 为前景视图应用 AOSP 预见性返回的跟手缩放、动态圆角、阴影与边缘位移。
+ * 为前景视图应用 AOSP 预见性返回的跟手缩放、动态圆角、阴影与边缘位移，并在提交退场时保持连续平滑出场。
  *
  * @param state 预见性返回状态
- * @param pullDownDp 纵向附加下移距离（如全屏播放页返回底部迷你播放条时可设较大值）
+ * @param pullDownDp 纵向附加下移距离（如全屏播放页返回底部迷你播放条时设较大值，>=32dp 时走纵向下沉退场）
  */
 fun Modifier.predictiveBackForeground(
     state: PredictiveBackState,
     pullDownDp: Float = 12f
 ): Modifier = this.graphicsLayer {
     val rawP = state.progress.coerceIn(0f, 1f)
-    if (rawP <= 0.0005f && !state.isActive) {
+    if (rawP <= 0.0005f && !state.isActive && !state.isCommitting) {
         scaleX = 1f
         scaleY = 1f
         translationX = 0f
@@ -168,22 +205,7 @@ fun Modifier.predictiveBackForeground(
     }
 
     val eased = PredictiveBackEasing.transform(rawP)
-    val scale = 1f - (0.14f * eased)
-    scaleX = scale
-    scaleY = scale
-
-    // 根据左右滑动边缘向屏幕内侧偏移
-    val horizontalDirection = if (state.swipeEdge == BackEventCompat.EDGE_RIGHT) -1f else 1f
-    val maxHorizontalShiftPx = (size.width * 0.06f).coerceAtMost(28.dp.toPx())
-    translationX = horizontalDirection * maxHorizontalShiftPx * eased
-
-    // 纵向偏移：结合触点相对屏幕中心的偏移与预设下移量
-    val verticalTouchBias = if (size.height > 0f && state.touchY > 0f) {
-        ((state.touchY / size.height) - 0.5f).coerceIn(-0.5f, 0.5f) * 24.dp.toPx()
-    } else {
-        0f
-    }
-    translationY = (pullDownDp.dp.toPx() * eased) + (verticalTouchBias * eased)
+    val gestureScale = 1f - (0.14f * eased)
 
     // 动态圆角：手势前 30% 快速形成 28.dp 圆角以贴合设备屏幕边缘
     val cornerFraction = (eased / 0.30f).coerceIn(0f, 1f)
@@ -191,7 +213,47 @@ fun Modifier.predictiveBackForeground(
     shape = RoundedCornerShape(cornerRadius)
     clip = cornerFraction > 0.01f
     shadowElevation = (20f * eased).dp.toPx()
-    alpha = 1f - (0.08f * eased)
+
+    val horizontalDirection = if (state.swipeEdge == BackEventCompat.EDGE_RIGHT) -1f else 1f
+    val maxHorizontalShiftPx = (size.width * 0.06f).coerceAtMost(28.dp.toPx())
+    val baseTranslationX = horizontalDirection * maxHorizontalShiftPx * eased
+
+    val verticalTouchBias = if (size.height > 0f && state.touchY > 0f) {
+        ((state.touchY / size.height) - 0.5f).coerceIn(-0.5f, 0.5f) * 24.dp.toPx()
+    } else {
+        0f
+    }
+    val baseTranslationY = (pullDownDp.dp.toPx() * eased) + (verticalTouchBias * eased)
+
+    if (!state.isCommitting) {
+        // --- 拖拽跟手阶段 ---
+        scaleX = gestureScale
+        scaleY = gestureScale
+        translationX = baseTranslationX
+        translationY = baseTranslationY
+        alpha = 1f - (0.08f * eased)
+    } else {
+        // --- 松手确认提交退场阶段（无缝接续拖拽当前缩放、圆角与位移，平滑滑离屏幕） ---
+        val cEased = state.commitProgress.coerceIn(0f, 1f)
+
+        if (pullDownDp >= 32f) {
+            // 纵向沉底退场（播放页、播放队列）
+            val exitDistanceY = if (size.height > 0f) size.height else 800.dp.toPx()
+            translationY = baseTranslationY + (exitDistanceY * cEased)
+            translationX = baseTranslationX * (1f - cEased)
+            scaleX = gestureScale * (1f - (0.06f * cEased))
+            scaleY = gestureScale * (1f - (0.06f * cEased))
+            alpha = ((1f - (0.08f * eased)) * (1f - cEased)).coerceIn(0f, 1f)
+        } else {
+            // 横向侧滑退场（搜索、设置、日志、歌单详情）
+            val exitDistanceX = if (size.width > 0f) size.width else 400.dp.toPx()
+            translationX = baseTranslationX + (horizontalDirection * exitDistanceX * cEased)
+            translationY = baseTranslationY * (1f - cEased)
+            scaleX = gestureScale * (1f - (0.06f * cEased))
+            scaleY = gestureScale * (1f - (0.06f * cEased))
+            alpha = ((1f - (0.08f * eased)) * (1f - cEased)).coerceIn(0f, 1f)
+        }
+    }
 }
 
 /**
