@@ -29,7 +29,12 @@ private val JsonElement?.asJsonObjectOrNull: JsonObject?
 data class ResolvedSongUrl(
     val url: String,
     val gain: Float? = null,
-    val peak: Float? = null
+    val peak: Float? = null,
+    val bitrate: Int? = null,
+    val sampleRate: Int? = null,
+    val formatType: String? = null,
+    val level: String? = null,
+    val size: Long? = null
 )
 
 @Singleton
@@ -326,26 +331,33 @@ class NcmApi @Inject constructor(
     }
 
     /**
-     * 获取歌曲播放链接与音频特征元数据 (自动匹配账号最高可用音质)
+     * 获取歌曲播放链接与音频特征元数据 (精准根据偏好音质，单向向下降级，杜绝盲目提权)
      */
     suspend fun getSongUrlDetails(song: PlayableMedia.Online, quality: QualityLevel? = null): ResolvedSongUrl? {
-        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (isDirectMode=$isDirectMode)")
+        val targetQuality = quality ?: sessionManager?.getQualityLevel() ?: QualityLevel.EXHIGH
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (preferredQuality=${targetQuality.value}, isDirectMode=$isDirectMode)")
 
-        // 默认按账号可获取的最高级别链依次尝试: HIRES -> LOSSLESS -> EXHIGH -> STANDARD
-        val qualitiesToTry = if (quality != null) {
-            listOf(quality)
-        } else {
-            listOf(QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+        // 单向向下降级链：绝不向上超范围提权
+        val qualitiesToTry = when (targetQuality) {
+            QualityLevel.JYMASTER -> listOf(QualityLevel.JYMASTER, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+            QualityLevel.HIRES -> listOf(QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+            QualityLevel.LOSSLESS -> listOf(QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+            QualityLevel.EXHIGH -> listOf(QualityLevel.EXHIGH, QualityLevel.STANDARD)
+            QualityLevel.STANDARD -> listOf(QualityLevel.STANDARD)
         }
+
+        var trialFallbackUrl: ResolvedSongUrl? = null
 
         if (isDirectMode) {
             for (q in qualitiesToTry) {
                 try {
                     val startTime = System.currentTimeMillis()
+                    // 仅无损或母带规格传递 flac，有损规格强制声明 mp3，阻断服务端针对 VIP 用户的强行升轨
+                    val encodeType = if (q == QualityLevel.LOSSLESS || q == QualityLevel.HIRES || q == QualityLevel.JYMASTER) "flac" else "mp3"
                     val payload = buildJsonObject {
                         put("ids", "[${song.id}]")
                         put("level", q.value)
-                        put("encodeType", "flac")
+                        put("encodeType", encodeType)
                     }.toString()
                     val body = directClient.postEapi(
                         client,
@@ -359,10 +371,33 @@ class NcmApi @Inject constructor(
                     val url = data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                     val gain = data?.get("gain")?.jsonPrimitive?.doubleOrNull?.toFloat()
                     val peak = data?.get("peak")?.jsonPrimitive?.doubleOrNull?.toFloat()
+                    val br = data?.get("br")?.jsonPrimitive?.intOrNull
+                    val bitrateKbps = if (br != null && br > 0) br / 1000 else null
+                    val sr = data?.get("sr")?.jsonPrimitive?.intOrNull
+                    val type = data?.get("type")?.jsonPrimitive?.contentOrNull
+                    val level = data?.get("level")?.jsonPrimitive?.contentOrNull ?: q.value
+                    val size = data?.get("size")?.jsonPrimitive?.longOrNull
+                    val freeTrialInfo = data?.get("freeTrialInfo")
+                    val isTrial = freeTrialInfo != null && freeTrialInfo !is JsonNull
 
                     if (url != null) {
-                        AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Direct resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms, gain=$gain, peak=$peak): $url")
-                        return ResolvedSongUrl(url, gain, peak)
+                        val resolved = ResolvedSongUrl(
+                            url = url,
+                            gain = gain,
+                            peak = peak,
+                            bitrate = bitrateKbps,
+                            sampleRate = sr,
+                            formatType = type,
+                            level = level,
+                            size = size
+                        )
+                        if (isTrial) {
+                            AppLogger.w("[AME_ONLINE_PLAY]", "--- Direct level ${q.value} returned trial audio snippet, trying lower level for full track...")
+                            if (trialFallbackUrl == null) trialFallbackUrl = resolved
+                        } else {
+                            AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Direct resolved URL for '${song.title}' with level=$level (cost=${cost}ms, br=$br, sr=$sr, type=$type, size=$size, gain=$gain, peak=$peak): $url")
+                            return resolved
+                        }
                     }
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -386,10 +421,33 @@ class NcmApi @Inject constructor(
                 val url = data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val gain = data?.get("gain")?.jsonPrimitive?.doubleOrNull?.toFloat()
                 val peak = data?.get("peak")?.jsonPrimitive?.doubleOrNull?.toFloat()
+                val br = data?.get("br")?.jsonPrimitive?.intOrNull
+                val bitrateKbps = if (br != null && br > 0) br / 1000 else null
+                val sr = data?.get("sr")?.jsonPrimitive?.intOrNull
+                val type = data?.get("type")?.jsonPrimitive?.contentOrNull
+                val level = data?.get("level")?.jsonPrimitive?.contentOrNull ?: q.value
+                val size = data?.get("size")?.jsonPrimitive?.longOrNull
+                val freeTrialInfo = data?.get("freeTrialInfo")
+                val isTrial = freeTrialInfo != null && freeTrialInfo !is JsonNull
 
                 if (url != null) {
-                    AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Successfully resolved URL for '${song.title}' with level=${q.value} (cost=${cost}ms, gain=$gain, peak=$peak): $url")
-                    return ResolvedSongUrl(url, gain, peak)
+                    val resolved = ResolvedSongUrl(
+                        url = url,
+                        gain = gain,
+                        peak = peak,
+                        bitrate = bitrateKbps,
+                        sampleRate = sr,
+                        formatType = type,
+                        level = level,
+                        size = size
+                    )
+                    if (isTrial) {
+                        AppLogger.w("[AME_ONLINE_PLAY]", "--- API level ${q.value} returned trial audio snippet, trying lower level for full track...")
+                        if (trialFallbackUrl == null) trialFallbackUrl = resolved
+                    } else {
+                        AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Successfully resolved URL for '${song.title}' with level=$level (cost=${cost}ms, br=$br, sr=$sr, type=$type, size=$size, gain=$gain, peak=$peak): $url")
+                        return resolved
+                    }
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -397,11 +455,18 @@ class NcmApi @Inject constructor(
             }
         }
 
+        // 若只获取到了试听片段且别无选择，使用试听片段作为兜底
+        if (trialFallbackUrl != null) {
+            AppLogger.w("[AME_ONLINE_PLAY]", ">>> Only trial audio snippet available for '${song.title}', returning snippet.")
+            return trialFallbackUrl
+        }
+
         // 兜底退回旧接口 /song/url
         AppLogger.w("[AME_ONLINE_PLAY]", "--- Trying legacy fallback for '${song.title}' (id=${song.id}) ---")
-        for (br in listOf(320000, 128000)) {
-            val fallbackUrl = getForcedMp3Url(song.id, br)
-            if (fallbackUrl != null) return ResolvedSongUrl(fallbackUrl, null, null)
+        val fallbackBitrates = if (targetQuality == QualityLevel.STANDARD) listOf(128000) else listOf(320000, 128000)
+        for (br in fallbackBitrates) {
+            val fallbackDetails = getForcedMp3Details(song.id, br)
+            if (fallbackDetails != null) return fallbackDetails
         }
 
         AppLogger.e("[AME_ONLINE_PLAY]", ">>> All song URL resolution attempts failed for '${song.title}' (id=${song.id})")
@@ -409,13 +474,13 @@ class NcmApi @Inject constructor(
     }
 
     /**
-     * 获取歌曲播放链接 (自动匹配账号最高可用音质)
+     * 获取歌曲播放链接 (根据指定音质或默认音质)
      */
     suspend fun getSongUrl(song: PlayableMedia.Online, quality: QualityLevel? = null): String? {
         return getSongUrlDetails(song, quality)?.url
     }
 
-    private suspend fun getForcedMp3Url(songId: String, bitrate: Int): String? {
+    private suspend fun getForcedMp3Details(songId: String, bitrate: Int): ResolvedSongUrl? {
         return try {
             val response = client.get("$baseUrl/song/url") {
                 parameter("id", songId)
@@ -424,7 +489,22 @@ class NcmApi @Inject constructor(
             val body = response.bodyAsText()
             val json = Json.parseToJsonElement(body).asJsonObjectOrNull
             val data = json?.get("data")?.jsonArray?.firstOrNull()?.asJsonObjectOrNull
-            data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+            val url = data?.get("url")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: return null
+            val br = data.get("br")?.jsonPrimitive?.intOrNull ?: bitrate
+            val size = data.get("size")?.jsonPrimitive?.longOrNull
+            val type = data.get("type")?.jsonPrimitive?.contentOrNull ?: "mp3"
+            val gain = data.get("gain")?.jsonPrimitive?.doubleOrNull?.toFloat()
+            val peak = data.get("peak")?.jsonPrimitive?.doubleOrNull?.toFloat()
+            ResolvedSongUrl(
+                url = url,
+                gain = gain,
+                peak = peak,
+                bitrate = br / 1000,
+                sampleRate = 44100,
+                formatType = type,
+                level = if (br >= 320000) "exhigh" else "standard",
+                size = size
+            )
         } catch (_: Exception) {
             null
         }

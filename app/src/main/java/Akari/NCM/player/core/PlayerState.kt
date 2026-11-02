@@ -10,7 +10,9 @@ data class AudioFormatInfo(
     val sampleRateHz: Int = 0,
     val bitDepthBits: Int = 16,
     val mimeType: String? = null,
-    val channels: Int = 2
+    val channels: Int = 2,
+    val fileSizeBytes: Long = 0L,
+    val qualityLevel: String? = null
 )
 
 @Stable

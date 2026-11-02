@@ -2237,11 +2237,16 @@ private fun PlaybackStatusDialog(
     if (media == null) return
 
     val isLocal = media.isLocal
-    val sourceText = if (isLocal) "本地存储 (Local)" else "云端在线 (Cloud)"
+    val sourceText = if (isLocal) {
+        "本地存储 (Local)"
+    } else {
+        val qLabel = audioFormatInfo.qualityLevel?.let { Akari.NCM.player.core.QualityLevel.fromValue(it).label }
+        if (!qLabel.isNullOrBlank()) "云端在线 (Cloud) · $qLabel" else "云端在线 (Cloud)"
+    }
 
-    val fileSizeText = remember(media) {
-        if (media is PlayableMedia.LocalNcm) {
-            val bytes = runCatching {
+    val fileSizeText = remember(media, audioFormatInfo.fileSizeBytes) {
+        val bytes = if (media is PlayableMedia.LocalNcm) {
+            val fileBytes = runCatching {
                 val uri = android.net.Uri.parse(media.uri)
                 if (uri.scheme == "content") {
                     context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
@@ -2249,12 +2254,15 @@ private fun PlaybackStatusDialog(
                     java.io.File(uri.path ?: "").length()
                 }
             }.getOrDefault(0L)
-            if (bytes > 0) {
-                val mb = bytes / (1024f * 1024f)
-                if (mb >= 1.0f) String.format("%.2f MB (%d 字节)", mb, bytes)
-                else String.format("%.1f KB (%d 字节)", bytes / 1024f, bytes)
-            } else "未知"
-        } else null
+            fileBytes
+        } else {
+            audioFormatInfo.fileSizeBytes
+        }
+        if (bytes > 0) {
+            val mb = bytes / (1024f * 1024f)
+            if (mb >= 1.0f) String.format("%.2f MB (%d 字节)", mb, bytes)
+            else String.format("%.1f KB (%d 字节)", bytes / 1024f, bytes)
+        } else if (media is PlayableMedia.LocalNcm) "未知" else null
     }
 
     val sampleRateText = if (audioFormatInfo.sampleRateHz > 0) {
@@ -2290,7 +2298,8 @@ private fun PlaybackStatusDialog(
                 HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
                 InfoRow("音频来源", sourceText)
                 if (fileSizeText != null) {
-                    InfoRow("本地文件大小", fileSizeText)
+                    val sizeLabel = if (isLocal) "本地文件大小" else "音频文件大小"
+                    InfoRow(sizeLabel, fileSizeText)
                 }
                 if (isUsbExclusive && !usbDeviceName.isNullOrBlank()) {
                     val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""

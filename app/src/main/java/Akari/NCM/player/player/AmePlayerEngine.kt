@@ -196,6 +196,7 @@ class AmePlayerEngine @Inject constructor(
     // Map mediaId to PlayableMedia for quick resolution
     private val mediaMap = ConcurrentHashMap<String, PlayableMedia>()
     private val resolvedUrlCache = ConcurrentHashMap<String, String>()
+    private val resolvedDetailsCache = ConcurrentHashMap<String, Akari.NCM.player.api.ResolvedSongUrl>()
 
     // Disk Cache for online audio streaming (500MB max)
     private val audioCache: SimpleCache by lazy {
@@ -292,12 +293,15 @@ class AmePlayerEngine @Inject constructor(
                     cachedUrl
                 } else {
                     AppLogger.i("[AME_ONLINE_PLAY]", ">>> Matched Online Track: id='${media.id}', title='${media.title}'")
-                    val fetchedDetails = runBlocking { ncmApi.getSongUrlDetails(media) }
+                    val targetQuality = sessionManager.getQualityLevel()
+                    val fetchedDetails = runBlocking { ncmApi.getSongUrlDetails(media, targetQuality) }
                     if (fetchedDetails != null) {
                         resolvedUrlCache[media.id] = fetchedDetails.url
+                        resolvedDetailsCache[media.id] = fetchedDetails
                         loudnessManager.registerOnlineLoudness(media.id, fetchedDetails.gain, fetchedDetails.peak)
                         if (_currentMedia.value?.id == media.id) {
                             applyLoudnessNormalization(media)
+                            applyAudioFormatFromResolvedDetails(fetchedDetails)
                         }
                     }
                     fetchedDetails?.url
@@ -461,6 +465,17 @@ class AmePlayerEngine @Inject constructor(
                 _currentIndex.value = player.currentMediaItemIndex
                 _durationMs.value = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L
 
+                if (currentMedia is PlayableMedia.Online) {
+                    val details = resolvedDetailsCache[currentMedia.id]
+                    if (details != null) {
+                        applyAudioFormatFromResolvedDetails(details)
+                    } else {
+                        updateAudioFormatFromExo(player.audioFormat)
+                    }
+                } else {
+                    updateAudioFormatFromExo(player.audioFormat)
+                }
+
                 onTrackChanged(currentMedia)
                 applyLoudnessNormalization(currentMedia)
                 syncIslandState()
@@ -476,7 +491,10 @@ class AmePlayerEngine @Inject constructor(
                 _isPlaying.value = false
                 _playbackState.value = PlaybackState.IDLE
                 islandManager.cancelIsland()
-                player.currentMediaItem?.mediaId?.let { resolvedUrlCache.remove(it) }
+                player.currentMediaItem?.mediaId?.let {
+                    resolvedUrlCache.remove(it)
+                    resolvedDetailsCache.remove(it)
+                }
             }
 
             override fun onRepeatModeChanged(repeatMode: Int) {
@@ -512,7 +530,17 @@ class AmePlayerEngine @Inject constructor(
             }
 
             override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-                updateAudioFormatFromExo(player.audioFormat)
+                val currentMedia = _currentMedia.value
+                if (currentMedia is PlayableMedia.Online) {
+                    val details = resolvedDetailsCache[currentMedia.id]
+                    if (details != null) {
+                        applyAudioFormatFromResolvedDetails(details)
+                    } else {
+                        updateAudioFormatFromExo(player.audioFormat)
+                    }
+                } else {
+                    updateAudioFormatFromExo(player.audioFormat)
+                }
             }
         })
 
@@ -535,7 +563,15 @@ class AmePlayerEngine @Inject constructor(
                     val pos = exoPlayer.currentPosition
                     _currentPositionMs.value = pos
                     _durationMs.value = exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L
-                    updateAudioFormatFromExo(exoPlayer.audioFormat)
+                    val currentMedia = _currentMedia.value
+                    if (currentMedia is PlayableMedia.Online) {
+                        val details = resolvedDetailsCache[currentMedia.id]
+                        if (details == null) {
+                            updateAudioFormatFromExo(exoPlayer.audioFormat)
+                        }
+                    } else {
+                        updateAudioFormatFromExo(exoPlayer.audioFormat)
+                    }
                     updateCurrentLyricForPosition(pos)
                 }
                 delay(50.milliseconds)
@@ -566,6 +602,7 @@ class AmePlayerEngine @Inject constructor(
             sessionManager.qualityState.collect { quality ->
                 AppLogger.i("[AME_ONLINE_PLAY]", ">>> Audio quality preference changed to '${quality.label}' (${quality.value}), clearing resolved URL cache.")
                 resolvedUrlCache.clear()
+                resolvedDetailsCache.clear()
             }
         }
 
@@ -859,21 +896,81 @@ class AmePlayerEngine @Inject constructor(
         )
     }
 
+    private fun applyAudioFormatFromResolvedDetails(details: Akari.NCM.player.api.ResolvedSongUrl) {
+        val sampleRate = details.sampleRate.takeIf { it != null && it > 0 } ?: 44100
+        val isFlac = details.formatType?.equals("flac", ignoreCase = true) == true
+        val isMp3 = details.formatType?.equals("mp3", ignoreCase = true) == true || (!isFlac && details.url.contains(".mp3", ignoreCase = true))
+        val isAac = details.formatType?.equals("aac", ignoreCase = true) == true || details.formatType?.equals("m4a", ignoreCase = true) == true
+
+        // 精确判定真实位深：有损压缩（MP3/AAC）源文件均为 16-bit 精度；只有 FLAC 无损根据采样率与档位区分 16-bit 与 Hi-Res 24-bit
+        val bitDepth = when {
+            isFlac && (details.level.equals("hires", ignoreCase = true) || details.level.equals("jymaster", ignoreCase = true) || sampleRate > 48000) -> 24
+            isFlac -> 16
+            else -> 16
+        }
+
+        val mimeType = when {
+            isFlac -> "audio/flac"
+            isMp3 -> "audio/mpeg"
+            isAac -> "audio/mp4a-latm"
+            else -> details.formatType?.let { "audio/$it" } ?: "audio/mpeg"
+        }
+
+        var bitrate = details.bitrate.takeIf { it != null && it > 0 } ?: 0
+        if (bitrate <= 0 && (details.size ?: 0L) > 0L) {
+            val durationSec = (_durationMs.value / 1000f).coerceAtLeast(1f)
+            bitrate = (((details.size ?: 0L) * 8) / durationSec / 1000).toInt()
+        }
+        if (bitrate <= 0) {
+            bitrate = when (details.level?.lowercase()) {
+                "standard" -> 128
+                "higher" -> 192
+                "exhigh" -> 320
+                "lossless" -> 960
+                "hires", "jymaster" -> 1920
+                else -> 320
+            }
+        }
+
+        _audioFormatInfo.value = Akari.NCM.player.core.AudioFormatInfo(
+            bitrateKbps = bitrate,
+            sampleRateHz = sampleRate,
+            bitDepthBits = bitDepth,
+            mimeType = mimeType,
+            channels = 2,
+            fileSizeBytes = details.size ?: 0L,
+            qualityLevel = details.level
+        )
+    }
+
     private fun updateAudioFormatFromExo(format: androidx.media3.common.Format?) {
         if (format == null) return
+        val currentMedia = _currentMedia.value
+        // 如果当前是在线曲目且已经有解析好的真实元数据，不再使用 ExoPlayer AudioTrack/AudioSink 渲染参数覆盖
+        if (currentMedia is PlayableMedia.Online) {
+            val details = resolvedDetailsCache[currentMedia.id]
+            if (details != null) {
+                applyAudioFormatFromResolvedDetails(details)
+                return
+            }
+        }
+
         val sampleRate = format.sampleRate.takeIf { it > 0 } ?: 44100
         val channels = format.channelCount.takeIf { it > 0 } ?: 2
+        val mime = format.sampleMimeType ?: format.containerMimeType
+        val isLossy = mime?.contains("mpeg", ignoreCase = true) == true || mime?.contains("mp4a", ignoreCase = true) == true || mime?.contains("aac", ignoreCase = true) == true
         val pcmEnc = format.pcmEncoding
-        val bitDepth = when (pcmEnc) {
-            C.ENCODING_PCM_24BIT, C.ENCODING_PCM_32BIT, C.ENCODING_PCM_FLOAT -> 24
-            C.ENCODING_PCM_16BIT -> 16
+        val bitDepth = when {
+            isLossy -> 16
+            pcmEnc == C.ENCODING_PCM_24BIT || pcmEnc == C.ENCODING_PCM_32BIT -> 24
+            pcmEnc == C.ENCODING_PCM_16BIT -> 16
             else -> if ((format.bitrate > 500_000) || sampleRate > 48000) 24 else 16
         }
         var bitrate = if (format.bitrate > 0) format.bitrate / 1000 else 0
+        var fileSize = 0L
         if (bitrate <= 0) {
             val durationSec = (_durationMs.value / 1000f).coerceAtLeast(1f)
-            val currentMedia = _currentMedia.value
-            val fileSize = currentMedia?.let { media ->
+            fileSize = currentMedia?.let { media ->
                 if (media is PlayableMedia.LocalNcm) {
                     runCatching {
                         val uri = Uri.parse(media.uri)
@@ -893,8 +990,10 @@ class AmePlayerEngine @Inject constructor(
             bitrateKbps = bitrate,
             sampleRateHz = sampleRate,
             bitDepthBits = bitDepth,
-            mimeType = format.sampleMimeType ?: format.containerMimeType,
-            channels = channels
+            mimeType = mime,
+            channels = channels,
+            fileSizeBytes = fileSize,
+            qualityLevel = null
         )
     }
 
@@ -942,6 +1041,7 @@ class AmePlayerEngine @Inject constructor(
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> loadPlaylist size=${items.size}, startIndex=$startIndex, keepInfiniteMode=$keepInfiniteMode")
         mediaMap.clear()
         resolvedUrlCache.clear()
+        resolvedDetailsCache.clear()
         val mediaItems = items.map { media ->
             mediaMap[media.id] = media
             buildMediaItem(media)
@@ -1474,6 +1574,7 @@ class AmePlayerEngine @Inject constructor(
 
     override fun clearUrlCache() {
         resolvedUrlCache.clear()
+        resolvedDetailsCache.clear()
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> Manually cleared resolved URL cache")
     }
 
@@ -1487,6 +1588,7 @@ class AmePlayerEngine @Inject constructor(
         runCatching { exoPlayer.release() }
         mediaMap.clear()
         resolvedUrlCache.clear()
+        resolvedDetailsCache.clear()
     }
 
     // --- Helpers ---
