@@ -334,10 +334,14 @@ fun PlayerScreen(
                 initialOffsetY = { fullHeight -> fullHeight },
                 animationSpec = tween(450, easing = EaseInOut)
             ) + fadeIn(tween(300)),
-            exit = slideOutVertically(
-                targetOffsetY = { fullHeight -> fullHeight },
-                animationSpec = tween(450, easing = EaseInOut)
-            ) + fadeOut(tween(300))
+            exit = if (queueBackState.isDismissedByGesture) {
+                ExitTransition.None
+            } else {
+                slideOutVertically(
+                    targetOffsetY = { fullHeight -> fullHeight },
+                    animationSpec = tween(450, easing = EaseInOut)
+                ) + fadeOut(tween(300))
+            }
         ) {
             Box(
                 modifier = Modifier

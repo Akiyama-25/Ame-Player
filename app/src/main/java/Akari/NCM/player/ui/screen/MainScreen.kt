@@ -477,7 +477,11 @@ fun MainScreen(
                                                     if (targetState != null && initialState == null) {
                                                         slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
                                                     } else if (targetState == null && initialState != null) {
-                                                        fadeIn(animationSpec = tween(300)) togetherWith slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
+                                                        if (onlinePlaylistBackState.isDismissedByGesture) {
+                                                            EnterTransition.None togetherWith ExitTransition.None
+                                                        } else {
+                                                            fadeIn(animationSpec = tween(300)) togetherWith slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
+                                                        }
                                                     } else {
                                                         fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
                                                     }
@@ -571,7 +575,11 @@ fun MainScreen(
                                                     if (targetState != null && initialState == null) {
                                                         slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
                                                     } else if (targetState == null && initialState != null) {
-                                                        fadeIn(animationSpec = tween(300)) togetherWith slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
+                                                        if (playlistDetailBackState.isDismissedByGesture) {
+                                                            EnterTransition.None togetherWith ExitTransition.None
+                                                        } else {
+                                                            fadeIn(animationSpec = tween(300)) togetherWith slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
+                                                        }
                                                     } else {
                                                         fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
                                                     }
@@ -939,7 +947,11 @@ fun MainScreen(
         AnimatedVisibility(
             visible = showPlayerScreen,
             enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
-            exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
+            exit = if (playerBackState.isDismissedByGesture) {
+                ExitTransition.None
+            } else {
+                slideOutVertically(targetOffsetY = { it }, animationSpec = tween(320)) + fadeOut(tween(250))
+            },
             modifier = Modifier.fillMaxSize()
         ) {
             Box(
@@ -964,7 +976,11 @@ fun MainScreen(
         AnimatedVisibility(
             visible = showSearchScreen,
             enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
-            exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
+            exit = if (searchBackState.isDismissedByGesture) {
+                ExitTransition.None
+            } else {
+                slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250))
+            },
             modifier = Modifier.fillMaxSize()
         ) {
             Box(
@@ -996,7 +1012,11 @@ fun MainScreen(
         AnimatedVisibility(
             visible = showSettingsScreen,
             enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
-            exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
+            exit = if (settingsBackState.isDismissedByGesture) {
+                ExitTransition.None
+            } else {
+                slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250))
+            },
             modifier = Modifier.fillMaxSize()
         ) {
             Box(
@@ -1026,7 +1046,11 @@ fun MainScreen(
         AnimatedVisibility(
             visible = showLogScreen,
             enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
-            exit = slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250)),
+            exit = if (logBackState.isDismissedByGesture) {
+                ExitTransition.None
+            } else {
+                slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250))
+            },
             modifier = Modifier.fillMaxSize()
         ) {
             Box(

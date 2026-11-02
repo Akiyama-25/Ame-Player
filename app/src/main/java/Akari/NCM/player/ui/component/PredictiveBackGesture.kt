@@ -47,6 +47,9 @@ class PredictiveBackState {
     var isCommitting by mutableStateOf(false)
         internal set
 
+    var isDismissedByGesture by mutableStateOf(false)
+        internal set
+
     var commitProgress by mutableFloatStateOf(0f)
         internal set
 
@@ -60,11 +63,12 @@ class PredictiveBackState {
         internal set
 
     val isVisibleInBackground: Boolean
-        get() = isActive || isCommitting || progress > 0.001f
+        get() = isActive || isCommitting || isDismissedByGesture || progress > 0.001f
 
     fun onGestureStarted() {
         isActive = true
         isCommitting = false
+        isDismissedByGesture = false
         commitProgress = 0f
         progress = 0f
     }
@@ -77,6 +81,7 @@ class PredictiveBackState {
     ) {
         isActive = true
         isCommitting = false
+        isDismissedByGesture = false
         swipeEdge = edge
         touchX = x
         touchY = y
@@ -86,6 +91,7 @@ class PredictiveBackState {
     suspend fun animateCommit() {
         withContext(NonCancellable) {
             isCommitting = true
+            isDismissedByGesture = true
             val startProgress = progress
             if (coroutineContext[MonotonicFrameClock] != null) {
                 runCatching {
@@ -104,6 +110,7 @@ class PredictiveBackState {
             }
             commitProgress = 1f
             progress = 1f
+            isCommitting = false
         }
     }
 
@@ -132,6 +139,7 @@ class PredictiveBackState {
         progress = 0f
         isActive = false
         isCommitting = false
+        isDismissedByGesture = false
         commitProgress = 0f
         touchX = 0f
         touchY = 0f
@@ -172,7 +180,6 @@ fun rememberPredictiveBackState(
             }
             state.animateCommit()
             currentOnBack()
-            state.reset()
         } catch (e: CancellationException) {
             state.animateCancelSpringBack()
             throw e
@@ -192,6 +199,13 @@ fun Modifier.predictiveBackForeground(
     state: PredictiveBackState,
     pullDownDp: Float = 12f
 ): Modifier = this.graphicsLayer {
+    if (state.isDismissedByGesture && !state.isCommitting) {
+        alpha = 0f
+        translationY = if (pullDownDp >= 32f) 10000f else 0f
+        translationX = if (pullDownDp < 32f) 10000f else 0f
+        return@graphicsLayer
+    }
+
     val rawP = state.progress.coerceIn(0f, 1f)
     if (rawP <= 0.0005f && !state.isActive && !state.isCommitting) {
         scaleX = 1f
