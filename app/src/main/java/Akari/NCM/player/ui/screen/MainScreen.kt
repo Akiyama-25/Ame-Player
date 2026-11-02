@@ -640,13 +640,17 @@ fun MainScreen(
                                                             Row(
                                                                 modifier = Modifier
                                                                     .fillMaxWidth()
-                                                                    .padding(16.dp),
+                                                                    .padding(horizontal = 16.dp, vertical = 8.dp),
                                                                 verticalAlignment = Alignment.CenterVertically
                                                             ) {
                                                                 IconButton(onClick = { selectedPlaylistForDetail = null }) {
                                                                     Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
                                                                 }
-                                                                Column(modifier = Modifier.weight(1f)) {
+                                                                Column(
+                                                                    modifier = Modifier
+                                                                        .weight(1f)
+                                                                        .padding(horizontal = 8.dp)
+                                                                ) {
                                                                     Text(
                                                                         currentPlaylist.name,
                                                                         style = MaterialTheme.typography.titleLarge,
@@ -693,69 +697,6 @@ fun MainScreen(
                                                                                 tint = if (isPlaylistSearchActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                                                                             )
                                                                         }
-                                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                                    }
-                                                                    if (currentPlaylist.songs.isNotEmpty()) {
-                                                                        FilledTonalButton(
-                                                                            onClick = {
-                                                                                val filteredSongs = if (inPlaylistSearchQuery.isBlank()) {
-                                                                                    currentPlaylist.songs
-                                                                                } else {
-                                                                                    val q = inPlaylistSearchQuery.trim().lowercase()
-                                                                                    currentPlaylist.songs.filter {
-                                                                                        it.title.lowercase().contains(q) ||
-                                                                                        it.artist.lowercase().contains(q) ||
-                                                                                        it.album.lowercase().contains(q)
-                                                                                    }
-                                                                                }
-                                                                                val playableList = filteredSongs.map { dto ->
-                                                                                    val m = dto.toPlayableMedia()
-                                                                                    if (m is PlayableMedia.Online) {
-                                                                                        playlistManager.findLocalMatch(m) ?: m
-                                                                                    } else m
-                                                                                }
-                                                                                playerEngine.loadPlaylist(playableList, 0, PlaylistSourceType.LOCAL)
-                                                                                playerEngine.play()
-                                                                            }
-                                                                        ) {
-                                                                            Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                                                                            Spacer(modifier = Modifier.width(4.dp))
-                                                                            Text(if (inPlaylistSearchQuery.isNotBlank()) "播放筛选" else "播放全部")
-                                                                        }
-                                                                    }
-                                                                    if (isCurrentMediaInThisLocalPlaylist) {
-                                                                        Spacer(modifier = Modifier.width(4.dp))
-                                                                        FilledTonalButton(
-                                                                            onClick = {
-                                                                                scope.launch {
-                                                                                    val cur = currentMedia
-                                                                                    val isTarget = { songDto: Akari.NCM.player.data.PlayableMediaDTO ->
-                                                                                        val m = songDto.toPlayableMedia()
-                                                                                        m.id == cur?.id || (cur is PlayableMedia.LocalNcm && songDto.uri != null && songDto.uri == cur.uri)
-                                                                                    }
-                                                                                    if (inPlaylistSearchQuery.isNotBlank() && displayedSongs.none { (_, songDto, _) -> isTarget(songDto) }) {
-                                                                                        inPlaylistSearchQuery = ""
-                                                                                    }
-                                                                                    if (matchFilterMode != 0 && displayedSongs.none { (_, songDto, _) -> isTarget(songDto) }) {
-                                                                                        matchFilterMode = 0
-                                                                                    }
-                                                                                    val targetIdx = displayedSongs.indexOfFirst { (_, songDto, _) -> isTarget(songDto) }
-                                                                                    if (targetIdx >= 0) {
-                                                                                        localPlaylistListState.animateScrollToItem(targetIdx)
-                                                                                    }
-                                                                                }
-                                                                            },
-                                                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                                                                            modifier = Modifier.testTag("btn_locate_local_track")
-                                                                        ) {
-                                                                            Icon(
-                                                                                imageVector = Icons.Rounded.MyLocation,
-                                                                                contentDescription = "定位当前播放",
-                                                                                modifier = Modifier.size(16.dp)
-                                                                            )
-                                                                            Spacer(modifier = Modifier.width(4.dp))
-                                                                            Text("定位", fontSize = 12.sp)
-                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -792,6 +733,104 @@ fun MainScreen(
                                                                 )
                                                             }
 
+                                                            // Action Row: Play All + Locate + Filter Chips (Scrollable horizontally)
+                                                            if (currentPlaylist.songs.isNotEmpty()) {
+                                                                Row(
+                                                                    modifier = Modifier
+                                                                        .fillMaxWidth()
+                                                                        .horizontalScroll(rememberScrollState())
+                                                                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                                                                    verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                    FilledTonalButton(
+                                                                        onClick = {
+                                                                            val filteredSongs = if (inPlaylistSearchQuery.isBlank()) {
+                                                                                currentPlaylist.songs
+                                                                            } else {
+                                                                                val q = inPlaylistSearchQuery.trim().lowercase()
+                                                                                currentPlaylist.songs.filter {
+                                                                                    it.title.lowercase().contains(q) ||
+                                                                                    it.artist.lowercase().contains(q) ||
+                                                                                    it.album.lowercase().contains(q)
+                                                                                }
+                                                                            }
+                                                                            val playableList = filteredSongs.map { dto ->
+                                                                                val m = dto.toPlayableMedia()
+                                                                                if (m is PlayableMedia.Online) {
+                                                                                    playlistManager.findLocalMatch(m) ?: m
+                                                                                } else m
+                                                                            }
+                                                                            playerEngine.loadPlaylist(playableList, 0, PlaylistSourceType.LOCAL)
+                                                                            playerEngine.play()
+                                                                        },
+                                                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                                                                    ) {
+                                                                        Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+                                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                                        Text(if (inPlaylistSearchQuery.isNotBlank()) "播放筛选 (${displayedSongs.size})" else "全部播放 (${currentPlaylist.songs.size})")
+                                                                    }
+
+                                                                    if (isCurrentMediaInThisLocalPlaylist) {
+                                                                        Spacer(modifier = Modifier.width(8.dp))
+                                                                        FilledTonalButton(
+                                                                            onClick = {
+                                                                                scope.launch {
+                                                                                    val cur = currentMedia
+                                                                                    val isTarget = { songDto: Akari.NCM.player.data.PlayableMediaDTO ->
+                                                                                        val m = songDto.toPlayableMedia()
+                                                                                        m.id == cur?.id || (cur is PlayableMedia.LocalNcm && songDto.uri != null && songDto.uri == cur.uri)
+                                                                                    }
+                                                                                    if (inPlaylistSearchQuery.isNotBlank() && displayedSongs.none { (_, songDto, _) -> isTarget(songDto) }) {
+                                                                                        inPlaylistSearchQuery = ""
+                                                                                    }
+                                                                                    if (matchFilterMode != 0 && displayedSongs.none { (_, songDto, _) -> isTarget(songDto) }) {
+                                                                                        matchFilterMode = 0
+                                                                                    }
+                                                                                    val targetIdx = displayedSongs.indexOfFirst { (_, songDto, _) -> isTarget(songDto) }
+                                                                                    if (targetIdx >= 0) {
+                                                                                        localPlaylistListState.animateScrollToItem(targetIdx)
+                                                                                    }
+                                                                                }
+                                                                            },
+                                                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                                            modifier = Modifier.testTag("btn_locate_local_track")
+                                                                        ) {
+                                                                            Icon(
+                                                                                imageVector = Icons.Rounded.MyLocation,
+                                                                                contentDescription = "定位当前播放",
+                                                                                modifier = Modifier.size(16.dp)
+                                                                            )
+                                                                            Spacer(modifier = Modifier.width(4.dp))
+                                                                            Text("定位", fontSize = 12.sp)
+                                                                        }
+                                                                    }
+
+                                                                    if (showMatchStatusPreference) {
+                                                                        Spacer(modifier = Modifier.width(12.dp))
+                                                                        Row(
+                                                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                            verticalAlignment = Alignment.CenterVertically
+                                                                        ) {
+                                                                            FilterChip(
+                                                                                selected = matchFilterMode == 0,
+                                                                                onClick = { matchFilterMode = 0 },
+                                                                                label = { Text("全部 (${songMatchTriples.size})", fontSize = 12.sp) }
+                                                                            )
+                                                                            FilterChip(
+                                                                                selected = matchFilterMode == 1,
+                                                                                onClick = { matchFilterMode = 1 },
+                                                                                label = { Text("已匹配 ($matchedCount)", fontSize = 12.sp) }
+                                                                            )
+                                                                            FilterChip(
+                                                                                selected = matchFilterMode == 2,
+                                                                                onClick = { matchFilterMode = 2 },
+                                                                                label = { Text("未匹配 ($unmatchedCount)", fontSize = 12.sp) }
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+
                                                             if (currentPlaylist.songs.isEmpty()) {
                                                                 Box(
                                                                     modifier = Modifier.fillMaxSize(),
@@ -803,32 +842,6 @@ fun MainScreen(
                                                                     )
                                                                 }
                                                             } else {
-                                                                if (showMatchStatusPreference) {
-                                                                    Row(
-                                                                        modifier = Modifier
-                                                                            .fillMaxWidth()
-                                                                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                                        verticalAlignment = Alignment.CenterVertically
-                                                                    ) {
-                                                                        FilterChip(
-                                                                            selected = matchFilterMode == 0,
-                                                                            onClick = { matchFilterMode = 0 },
-                                                                            label = { Text("全部 (${songMatchTriples.size})") }
-                                                                        )
-                                                                        FilterChip(
-                                                                            selected = matchFilterMode == 1,
-                                                                            onClick = { matchFilterMode = 1 },
-                                                                            label = { Text("已匹配 ($matchedCount)") }
-                                                                        )
-                                                                        FilterChip(
-                                                                            selected = matchFilterMode == 2,
-                                                                            onClick = { matchFilterMode = 2 },
-                                                                            label = { Text("未匹配 ($unmatchedCount)") }
-                                                                        )
-                                                                    }
-                                                                }
-
                                                                 if (displayedSongs.isEmpty()) {
                                                                     Box(
                                                                         modifier = Modifier.fillMaxSize(),
