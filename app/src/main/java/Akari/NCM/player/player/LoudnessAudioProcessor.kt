@@ -126,10 +126,7 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
             val gain = EbuR128Calculator.computeGain(loudness, targetLufs, peakLimitEnabled)
             this.staticGainDb = gain.effectiveGainDb
             this.targetLinearGain = gain.linearMultiplier
-            // 若为切换至全新曲目则直接对齐当前增益；若为同一曲目（如云端特征延迟抵达）则由插值平滑过渡，避免瞬间跳变
-            if (this.currentMediaId != mediaId || this.currentLinearGain <= 0.01f) {
-                this.currentLinearGain = gain.linearMultiplier
-            }
+            this.currentLinearGain = gain.linearMultiplier
             AppLogger.d(TAG, "Track '$mediaId' has known loudness: ${loudness.integratedLufs} LUFS, applying static gain=${gain.effectiveGainDb} dB")
         } else {
             this.staticGainDb = null
@@ -260,8 +257,8 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
                     currentBlockSum = 0.0
                     frameCountInBlock = 0
 
-                    // 收集满 75 个块（约 30 秒连续有效音频）时，完成综合响度计算与缓存回写
-                    if (blockEnergies.size >= 75) {
+                    // 收集满 25 个块（约 10 秒有效音频）时，完成综合响度计算与缓存回写
+                    if (blockEnergies.size >= 25) {
                         val calculated = EbuR128Calculator.computeIntegratedLoudnessFromBlockEnergies(
                             blockEnergies,
                             maxObservedPeak
@@ -335,6 +332,9 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         shortTermEnergy = 0.0
         frameCountInBlock = 0
         currentBlockSum = 0.0
+        if (!isMeasuredSaved) {
+            blockEnergies.clear()
+        }
         kL1_x1 = 0.0; kL1_x2 = 0.0; kL1_y1 = 0.0; kL1_y2 = 0.0
         kL2_x1 = 0.0; kL2_x2 = 0.0; kL2_y1 = 0.0; kL2_y2 = 0.0
         kR1_x1 = 0.0; kR1_x2 = 0.0; kR1_y1 = 0.0; kR1_y2 = 0.0
