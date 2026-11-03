@@ -72,11 +72,18 @@ import Akari.NCM.player.data.UserSessionManager
 import Akari.NCM.player.data.UsbAudioManager
 import Akari.NCM.player.player.island.IslandLiveNotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
+import android.database.ContentObserver
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.size.Size
@@ -145,6 +152,38 @@ class AmePlayerEngine @Inject constructor(
 
     private val _volume = MutableStateFlow(1f)
     override val volume: StateFlow<Float> = _volume.asStateFlow()
+
+    private val volumeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(ctx: Context?, intent: Intent?) {
+            if (intent?.action == "android.media.VOLUME_CHANGED_ACTION") {
+                val streamType = intent.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1)
+                if (streamType == AudioManager.STREAM_MUSIC) {
+                    syncVolumeFromSystem()
+                }
+            }
+        }
+    }
+
+    private val volumeObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            super.onChange(selfChange)
+            syncVolumeFromSystem()
+        }
+    }
+
+    fun syncVolumeFromSystem() {
+        try {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+            val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            if (max > 0) {
+                val ratio = (current.toFloat() / max.toFloat()).coerceIn(0f, 1f)
+                _volume.value = ratio
+                exoPlayer.volume = ratio
+                usbAudioSink?.setVolume(ratio)
+            }
+        } catch (_: Exception) {}
+    }
 
     private var fixedRepeatMode: RepeatMode = when (ThemePrefs.playbackRepeatMode) {
         "ONE" -> RepeatMode.ONE
@@ -637,6 +676,28 @@ class AmePlayerEngine @Inject constructor(
                 )
             }
         }
+
+        // Register system volume listener to keep player volume and USB DAC volume in sync
+        try {
+            val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(volumeReceiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                context.registerReceiver(volumeReceiver, filter)
+            }
+        } catch (e: Exception) {
+            AppLogger.d("[AME_VOLUME]", "Volume broadcast registration skipped: ${e.message}")
+        }
+        try {
+            context.contentResolver.registerContentObserver(
+                Settings.System.CONTENT_URI,
+                true,
+                volumeObserver
+            )
+        } catch (e: Exception) {
+            AppLogger.d("[AME_VOLUME]", "Volume content observer registration skipped: ${e.message}")
+        }
+        syncVolumeFromSystem()
     }
 
     private fun applyLoudnessNormalization(media: PlayableMedia? = _currentMedia.value) {
@@ -1528,6 +1589,7 @@ class AmePlayerEngine @Inject constructor(
         ensureActive()
         _volume.value = volume.coerceIn(0f, 1f)
         exoPlayer.volume = _volume.value
+        usbAudioSink?.setVolume(_volume.value)
     }
 
     override fun setVolumeNormalizationEnabled(enabled: Boolean) {
@@ -1546,6 +1608,16 @@ class AmePlayerEngine @Inject constructor(
         usbAudioSink?.setBitPerfectEnabled(enabled)
         val currentDevice = usbAudioManager.connectedUsbDevice.value
         applyUsbAudioRouting(currentDevice, enabled)
+
+        if (enabled) {
+            syncVolumeFromSystem()
+        } else {
+            if (_isPlaying.value) {
+                // Switching OFF exclusive: re-sync ExoPlayer to flush and resume system AudioTrack cleanly
+                val currentPos = exoPlayer.currentPosition
+                exoPlayer.seekTo(currentPos)
+            }
+        }
     }
 
     private fun applyUsbAudioRouting(device: AudioDeviceInfo?, isExclusive: Boolean) {
@@ -1581,6 +1653,12 @@ class AmePlayerEngine @Inject constructor(
         isReleased = true
         islandManager.cancelIsland()
         scope.cancel()
+        try {
+            context.unregisterReceiver(volumeReceiver)
+        } catch (_: Exception) {}
+        try {
+            context.contentResolver.unregisterContentObserver(volumeObserver)
+        } catch (_: Exception) {}
         usbAudioSink?.detachFromPlayer()
         usbAudioSink?.release()
         usbAudioSink = null

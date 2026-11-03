@@ -126,12 +126,15 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
             val gain = EbuR128Calculator.computeGain(loudness, targetLufs, peakLimitEnabled)
             this.staticGainDb = gain.effectiveGainDb
             this.targetLinearGain = gain.linearMultiplier
-            this.currentLinearGain = gain.linearMultiplier
+            // 若为切换至全新曲目则直接对齐当前增益；若为同一曲目（如云端特征延迟抵达）则由插值平滑过渡，避免瞬间跳变
+            if (this.currentMediaId != mediaId || this.currentLinearGain <= 0.01f) {
+                this.currentLinearGain = gain.linearMultiplier
+            }
             AppLogger.d(TAG, "Track '$mediaId' has known loudness: ${loudness.integratedLufs} LUFS, applying static gain=${gain.effectiveGainDb} dB")
         } else {
             this.staticGainDb = null
-            // 现代商业音乐先预设 -10.0 LUFS 名义电平进行平滑起播
-            val nominalGainDb = (targetLufs - (-10.0f)).coerceIn(-18.0f, 10.0f)
+            // 现代商业音乐先预设 -10.0 LUFS 名义电平进行平滑起播（安全保守，绝不进行盲目正向放大）
+            val nominalGainDb = (targetLufs - (-10.0f)).coerceIn(-18.0f, 0.0f)
             this.targetLinearGain = 10.0.pow(nominalGainDb / 20.0).toFloat()
             this.currentLinearGain = this.targetLinearGain
             AppLogger.d(TAG, "Track '$mediaId' loudness unknown, starting real-time EBU R128 measurement (target: $targetLufs LUFS)")
@@ -207,11 +210,12 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
             val meanEnergy = sumSquare / channels
             shortTermEnergy += (meanEnergy - shortTermEnergy) * shortTermAlpha
 
-            // 若尚未固定静态增益，根据当前短期能量自适应调整平准目标
+            // 若尚未固定静态增益，根据当前短期能量自适应调整平准目标（仅允许安全衰减，严禁盲目正向放大）
             if (staticGainDb == null) {
                 if (shortTermEnergy > 1e-6) { // 门控门限约 -60 dBFS
                     val measuredLufs = (-0.691 + 10.0 * log10(shortTermEnergy)).toFloat().coerceIn(-60f, 0f)
-                    val desiredGainDb = (targetLufs - measuredLufs).coerceIn(-20.0f, 12.0f)
+                    // 防炸耳核心保护：对未测算曲目只做向下衰减（压制大动态），上限锁定为 0.0f（绝不放大弱音前奏）
+                    val desiredGainDb = (targetLufs - measuredLufs).coerceIn(-24.0f, 0.0f)
                     targetLinearGain = 10.0.pow(desiredGainDb / 20.0).toFloat()
                 }
             }
@@ -256,19 +260,22 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
                     currentBlockSum = 0.0
                     frameCountInBlock = 0
 
-                    // 收集满 25 个块（约 10 秒有效音频）时，完成综合响度计算与缓存回写
-                    if (blockEnergies.size >= 25) {
+                    // 收集满 75 个块（约 30 秒连续有效音频）时，完成综合响度计算与缓存回写
+                    if (blockEnergies.size >= 75) {
                         val calculated = EbuR128Calculator.computeIntegratedLoudnessFromBlockEnergies(
                             blockEnergies,
                             maxObservedPeak
                         )
-                        if (calculated.integratedLufs > -65.0f) {
+                        if (calculated.integratedLufs in -65.0f..-3.0f) {
                             isMeasuredSaved = true
-                            staticGainDb = EbuR128Calculator.computeGain(calculated, targetLufs, peakLimitEnabled).effectiveGainDb
+                            val gainResult = EbuR128Calculator.computeGain(calculated, targetLufs, peakLimitEnabled)
+                            staticGainDb = gainResult.effectiveGainDb
+                            // 关键修复：立即将算出的增益应用到 targetLinearGain，平滑过渡，无需用户手动进设置开关！
+                            targetLinearGain = gainResult.linearMultiplier
                             currentMediaId?.let { id ->
                                 onLoudnessMeasured?.invoke(id, calculated)
                             }
-                            AppLogger.i(TAG, "Completed online BS.1770 scan for '$currentMediaId': ${calculated.integratedLufs} LUFS, peak=${calculated.peakDb} dBFS")
+                            AppLogger.i(TAG, "Completed online BS.1770 scan for '$currentMediaId': ${calculated.integratedLufs} LUFS, effectiveGain=${gainResult.effectiveGainDb} dB")
                         }
                     }
                 }
@@ -276,6 +283,18 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         }
 
         out.flip()
+    }
+
+    override fun onFlush() {
+        super.onFlush()
+        // 发生快进/后退跳转时，重置短期能量与双二阶滤波状态，防止跨时间点能量跳变引入爆音或污染测量
+        shortTermEnergy = 0.0
+        currentBlockSum = 0.0
+        frameCountInBlock = 0
+        kL1_x1 = 0.0; kL1_x2 = 0.0; kL1_y1 = 0.0; kL1_y2 = 0.0
+        kL2_x1 = 0.0; kL2_x2 = 0.0; kL2_y1 = 0.0; kL2_y2 = 0.0
+        kR1_x1 = 0.0; kR1_x2 = 0.0; kR1_y1 = 0.0; kR1_y2 = 0.0
+        kR2_x1 = 0.0; kR2_x2 = 0.0; kR2_y1 = 0.0; kR2_y2 = 0.0
     }
 
     private fun filterLeft(

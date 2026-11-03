@@ -49,7 +49,8 @@ class LoudnessManager @Inject constructor(
                         val peak = parts[1].toFloatOrNull()
                         val srcName = parts[2]
                         val src = runCatching { LoudnessSource.valueOf(srcName) }.getOrDefault(LoudnessSource.BS1770_SCAN)
-                        if (lufs != null && peak != null) {
+                        // 忽略旧版本 10 秒短切片产生的漂移错误缓存，仅载入可靠的云端与标签数据
+                        if (lufs != null && peak != null && src != LoudnessSource.BS1770_SCAN) {
                             memoryCache[key] = LoudnessData(lufs, peak, src)
                         }
                     }
@@ -79,7 +80,7 @@ class LoudnessManager @Inject constructor(
      * 注册随在线音频链接解析一并返回的云端综合响度与峰值特征
      */
     fun registerOnlineLoudness(songId: String, gainDb: Float?, peak: Float?) {
-        if (gainDb != null && gainDb != 0.0f) {
+        if (gainDb != null) {
             // 网易云音乐云端 gain 设定基准为 -14.0 LUFS
             val integrated = -14.0f - gainDb
             val data = LoudnessData(

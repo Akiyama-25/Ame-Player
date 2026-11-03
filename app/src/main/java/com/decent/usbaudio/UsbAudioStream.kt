@@ -175,6 +175,15 @@ class UsbAudioStream(
     }
 
     /**
+     * Set the playback volume for the USB audio stream (0.0f .. 1.0f).
+     */
+    fun setVolume(volume: Float) {
+        if (nativeHandle != 0L) {
+            nativeUsbAudioSetVolume(nativeHandle, volume.coerceIn(0f, 1f))
+        }
+    }
+
+    /**
      * Release all native resources. The instance must not be used after this.
      */
     fun release() {
@@ -193,6 +202,7 @@ class UsbAudioStream(
 
     private external fun nativeUsbAudioSetAltSetting(handle: Long, altSetting: Int): Boolean
     private external fun nativeUsbAudioSetSampleRate(handle: Long, sampleRateHz: Int, clockSourceId: Int): Boolean
+    private external fun nativeUsbAudioSetVolume(handle: Long, volume: Float)
     private external fun nativeUsbAudioStart(handle: Long): Boolean
     private external fun nativeUsbAudioWrite(handle: Long, pcmBuffer: FloatArray)
     private external fun nativeUsbAudioWriteRaw(handle: Long, pcmBuffer: ByteArray, inputBitDepth: Int)

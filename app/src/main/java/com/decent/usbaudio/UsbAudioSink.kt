@@ -43,7 +43,12 @@ class UsbAudioSink(
     private var currentEncoding: Int = C.ENCODING_PCM_16BIT
     private var currentSampleRate: Int = 0
     private var currentChannelCount: Int = 0
-    private var pendingVolume: Float = 1f
+    private var pendingVolume: Float = runCatching {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        val current = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
+        val max = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 0
+        if (max > 0) (current.toFloat() / max.toFloat()).coerceIn(0.05f, 0.8f) else 0.5f
+    }.getOrDefault(0.5f)
     private var delegateMuted: Boolean = false
     private var handleBufferCallCount: Long = 0
 
@@ -59,7 +64,18 @@ class UsbAudioSink(
         if (config.bitPerfectEnabled != enabled) {
             config.bitPerfectEnabled = enabled
             Log.i(TAG, "setBitPerfectEnabled: $enabled")
-            if (!enabled) {
+            if (enabled) {
+                // 若在播放进行中开启独占，立即初始化并启动 USB 独占输出管道
+                if (usbAudioStream == null && currentSampleRate > 0 && currentChannelCount > 0) {
+                    val device = usbAudioDevice.findUsbAudioDevice()
+                    if (device != null && usbAudioDevice.hasPermission(device)) {
+                        configureUsbBitPerfect(currentSampleRate, currentChannelCount, currentEncoding)
+                        if (isPlaying) {
+                            usbStreamingThread?.resumeStreaming()
+                        }
+                    }
+                }
+            } else {
                 releaseUsbStream()
                 unmuteDelegateIfNeeded()
             }
@@ -72,6 +88,8 @@ class UsbAudioSink(
         handleBufferCallCount = 0
         val sr = inputFormat.sampleRate.takeIf { it > 0 }
         val ch = inputFormat.channelCount.takeIf { it > 0 }
+        if (sr != null) currentSampleRate = sr
+        if (ch != null) currentChannelCount = ch
 
         Log.i(TAG, "configure: pcmEncoding=$enc rate=${inputFormat.sampleRate} ch=${inputFormat.channelCount} bitPerfect=${config.bitPerfectEnabled}")
 
@@ -207,7 +225,9 @@ class UsbAudioSink(
     }
 
     override fun setVolume(volume: Float) {
-        pendingVolume = volume
+        pendingVolume = volume.coerceIn(0f, 1f)
+        usbAudioStream?.setVolume(pendingVolume)
+        usbAudioDevice.setHardwareVolume(pendingVolume)
         if (config.bitPerfectEnabled && usbAudioStream?.isAlive == true) {
             muteDelegateIfNeeded()
         } else {
@@ -329,10 +349,14 @@ class UsbAudioSink(
         currentChannelCount = channelCount
         muteDelegateIfNeeded()
 
+        // 立即同步当前设定音量，杜绝起播以 100% 满电平爆音输出
+        stream.setVolume(pendingVolume)
+        usbAudioDevice.setHardwareVolume(pendingVolume)
+
         usbStreamingThread?.stop()
         usbStreamingThread = UsbStreamingThread(stream).also { it.start() }
 
-        Log.i(TAG, "USB bit-perfect stream ACTIVE: rate=$sampleRate ch=$channelCount bits=$bitDepth device=${deviceInfo.deviceName}")
+        Log.i(TAG, "USB bit-perfect stream ACTIVE: rate=$sampleRate ch=$channelCount bits=$bitDepth vol=$pendingVolume device=${deviceInfo.deviceName}")
     }
 
     private fun releaseUsbStream() {
@@ -347,6 +371,7 @@ class UsbAudioSink(
         Log.i(TAG, "USB stream drained $drained URBs")
 
         stream.release()
+        usbAudioDevice.closeDeviceAndReset()
         clearForcedRouting()
     }
 

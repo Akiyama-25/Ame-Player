@@ -34,6 +34,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
     private var connection: UsbDeviceConnection? = null
     private var currentDevice: UsbDevice? = null
     private var claimedInterface: UsbInterface? = null
+    private var featureUnitId: Int = -1
 
     companion object {
         private const val TAG = "UsbAudioDevice"
@@ -259,11 +260,13 @@ class UsbAudioDevice private constructor(private val context: Context) {
         connection = conn
         currentDevice = device
 
-        // Auto-detect Clock Source ID and best alt setting from USB descriptors
+        // Auto-detect Clock Source ID, Feature Unit ID and best alt setting from USB descriptors
         val clockSourceId = parseClockSourceId(conn)
+        val detectedFuId = parseFeatureUnitId(conn)
+        featureUnitId = detectedFuId
         val (bestAlt, bestBits) = parseBestAltSetting(conn)
         Log.i(TAG, "Auto-detected: clockSourceId=0x${clockSourceId.toString(16)}, " +
-                "bestAlt=$bestAlt, bestBits=$bestBits")
+                "featureUnitId=0x${detectedFuId.toString(16)}, bestAlt=$bestAlt, bestBits=$bestBits")
 
         val info = UsbAudioDeviceInfo(
                 connection = conn,
@@ -351,6 +354,37 @@ class UsbAudioDevice private constructor(private val context: Context) {
         }
 
         Log.w(TAG, "parseClockSourceId: no CLOCK_SOURCE descriptor found")
+        return -1
+    }
+
+    /**
+     * Parse raw USB descriptors to find the UAC Feature Unit ID (subtype 0x06).
+     * This unit provides hardware volume control.
+     */
+    private fun parseFeatureUnitId(conn: UsbDeviceConnection): Int {
+        val raw = conn.rawDescriptors ?: return -1
+        var i = 0
+        var inAudioControl = false
+        while (i + 1 < raw.size) {
+            val bLength = raw[i].toInt() and 0xFF
+            if (bLength < 2) break
+            if (i + bLength > raw.size) break
+            val bDescriptorType = raw[i + 1].toInt() and 0xFF
+            if (bDescriptorType == 0x04 && bLength >= 9) {
+                val bInterfaceClass = raw[i + 5].toInt() and 0xFF
+                val bInterfaceSubClass = raw[i + 6].toInt() and 0xFF
+                inAudioControl = (bInterfaceClass == 1 && bInterfaceSubClass == 1)
+            }
+            if (inAudioControl && bDescriptorType == 0x24 && bLength >= 4) {
+                val bDescriptorSubtype = raw[i + 2].toInt() and 0xFF
+                if (bDescriptorSubtype == 0x06) { // FEATURE_UNIT
+                    val bUnitID = raw[i + 3].toInt() and 0xFF
+                    Log.i(TAG, "parseFeatureUnitId: found FEATURE_UNIT bUnitID=0x${bUnitID.toString(16)}")
+                    return bUnitID
+                }
+            }
+            i += bLength
+        }
         return -1
     }
 
@@ -458,6 +492,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
      */
     fun closeDevice() {
         cachedDeviceInfo = null
+        featureUnitId = -1
         claimedInterface?.let { iface ->
             connection?.releaseInterface(iface)
             claimedInterface = null
@@ -466,6 +501,59 @@ class UsbAudioDevice private constructor(private val context: Context) {
         connection = null
         currentDevice = null
         Log.i(TAG, "USB device closed")
+    }
+
+    /**
+     * Close the USB device and issue USBDEVFS_RESET to prompt the Linux kernel
+     * to re-attach the snd-usb-audio ALSA driver for standard system audio.
+     */
+    fun closeDeviceAndReset() {
+        val conn = connection
+        if (conn != null) {
+            val fd = conn.fileDescriptor
+            try {
+                Log.i(TAG, "Issuing USBDEVFS_RESET before closing device to re-bind kernel ALSA driver...")
+                UsbAudioStream.nativeUsbReset(fd)
+            } catch (e: Exception) {
+                Log.w(TAG, "nativeUsbReset failed: ${e.message}")
+            }
+        }
+        closeDevice()
+    }
+
+    /**
+     * Attempt to set hardware volume via UAC Feature Unit SET_CUR control transfer.
+     * @param volume 0.0f .. 1.0f
+     * @return true if hardware accepted the volume request
+     */
+    fun setHardwareVolume(volume: Float): Boolean {
+        val conn = connection ?: return false
+        val fuId = featureUnitId.takeIf { it > 0 } ?: return false
+        val clamped = volume.coerceIn(0.0001f, 1.0f)
+        // 0 dB for 1.0f, down to -80 dB for 0.0001f
+        val db = (20.0 * kotlin.math.log10(clamped.toDouble())).toFloat().coerceIn(-80.0f, 0.0f)
+        val rawVal = (db * 256.0f).toInt().toShort()
+
+        val data = ByteArray(2)
+        data[0] = (rawVal.toInt() and 0xFF).toByte()
+        data[1] = ((rawVal.toInt() shr 8) and 0xFF).toByte()
+
+        return try {
+            // UAC 1.0 & UAC 2.0 SET_CUR to Feature Unit (wValue = (FU_VOLUME_CONTROL << 8) | channel 0)
+            val ret = conn.controlTransfer(
+                0x21, // Host-to-Device, Class, Interface
+                0x01, // SET_CUR
+                (0x02 shl 8) or 0x00, // FU_VOLUME_CONTROL, Master channel 0
+                (fuId shl 8) or 0x00, // Feature Unit ID, Control Interface 0
+                data,
+                2,
+                200
+            )
+            ret >= 0
+        } catch (e: Exception) {
+            Log.d(TAG, "Hardware volume control transfer failed: ${e.message}")
+            false
+        }
     }
 
     /**
