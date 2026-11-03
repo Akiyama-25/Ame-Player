@@ -15,8 +15,28 @@ permissions:
   contents: read
 
 jobs:
+  wake-runner:
+    name: Wake InstaBox Runner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake runami machine via InstaBox API
+        continue-on-error: true
+        env:
+          INSTABOX_API_KEY: ${{ secrets.INSTABOX_API_KEY }}
+        run: |
+          if [ -n "$INSTABOX_API_KEY" ]; then
+            echo ">>> Sending wake request to InstaBox for runami (m_agqzg6p6up64vdycn4j2n4kpyu)..."
+            curl -s -X POST "https://api.instabox.sh/v1/machines/m_agqzg6p6up64vdycn4j2n4kpyu/wake" \
+              -H "Authorization: Bearer $INSTABOX_API_KEY" || true
+            echo ">>> Waiting 12s for runner daemon to connect..."
+            sleep 12
+          else
+            echo "INSTABOX_API_KEY is not set, skipping wake."
+          fi
+
   build-sign:
     name: Build and sign release APK
+    needs: wake-runner
     outputs:
       tag: ${{ steps.ref.outputs.tag }}
       safe_tag: ${{ steps.ref.outputs.safe_tag }}
