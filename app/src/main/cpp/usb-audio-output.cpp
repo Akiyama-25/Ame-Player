@@ -500,12 +500,14 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(
 
     if (ctx->endpointFeedback > 0) {
         double fb = readFeedback(ctx->fd, ctx->endpointFeedback);
-        if (fb > 0) {
+        if (fb >= nominalFpmf * 0.98 && fb <= nominalFpmf * 1.02) {
             ctx->calibratedFpmf = fb;
             LOGI("Start: initial feedback=%.4f fpmf (%.1f Hz), nominal=%.4f (%.1f Hz)",
                  fb, fb * 8000.0, nominalFpmf, nominalFpmf * 8000.0);
         } else {
-            LOGW("Start: feedback not responding, using nominal %.4f fpmf", nominalFpmf);
+            LOGW("Start: initial feedback %.4f deviated from nominal %.4f (>2%%), staying on nominal!",
+                 fb, nominalFpmf);
+            ctx->calibratedFpmf = nominalFpmf;
         }
 
         // Start continuous feedback: submit a feedback URB that will be

@@ -35,7 +35,7 @@ class UsbAudioManager @Inject constructor(
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
 
-    private val _isExclusiveModeEnabled = MutableStateFlow(false)
+    private val _isExclusiveModeEnabled = MutableStateFlow(ThemePrefs.usbExclusiveMode)
     val isExclusiveModeEnabled: StateFlow<Boolean> = _isExclusiveModeEnabled.asStateFlow()
 
     private val _connectedUsbDevice = MutableStateFlow<AudioDeviceInfo?>(null)
@@ -263,6 +263,7 @@ class UsbAudioManager @Inject constructor(
     }
 
     fun setExclusiveModeEnabled(enabled: Boolean) {
+        ThemePrefs.usbExclusiveMode = enabled
         _isExclusiveModeEnabled.value = enabled
         AppLogger.i(TAG, "Exclusive USB Audio mode toggled: enabled=$enabled")
         val currentDetails = _usbDeviceDetails.value

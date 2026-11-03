@@ -292,7 +292,8 @@ class AmePlayerEngine @Inject constructor(
             config = com.decent.usbaudio.UsbAudioSinkConfig(
                 bitPerfectEnabled = isUsbExclusive,
                 forceRouteToSpeaker = true
-            )
+            ),
+            loudnessAudioProcessor = loudnessAudioProcessor
         ).also {
             usbAudioSink = it
         }
@@ -674,6 +675,12 @@ class AmePlayerEngine @Inject constructor(
                     isPeakLimited = gain.isPeakLimited,
                     source = data.source
                 )
+                // 在 USB 独占模式且启用了音量均衡时，将测算出的均衡增益同步缩放至 USB 输出
+                if (usbAudioManager.isExclusiveModeEnabled.value && ThemePrefs.volumeNormalizationEnabled) {
+                    val baseVol = _volume.value
+                    val finalVol = (baseVol * gain.linearMultiplier).coerceIn(0f, 1f)
+                    usbAudioSink?.setVolume(finalVol)
+                }
             }
         }
 
@@ -740,6 +747,12 @@ class AmePlayerEngine @Inject constructor(
                     isPeakLimited = gainResult.isPeakLimited,
                     source = loudnessData.source
                 )
+                // 在 USB 独占模式且启用了音量均衡时，将已知响度增益同步应用至 USB 输出
+                if (usbAudioManager.isExclusiveModeEnabled.value && isEnabled) {
+                    val baseVol = _volume.value
+                    val finalVol = (baseVol * gainResult.linearMultiplier).coerceIn(0f, 1f)
+                    usbAudioSink?.setVolume(finalVol)
+                }
                 AppLogger.i("[AME_LOUDNESS]", "Applied EBU R128: track='${media.title}', source=${loudnessData.integratedLufs} LUFS, target=$targetLufs LUFS, gain=${gainResult.effectiveGainDb} dB (peakLimited=${gainResult.isPeakLimited})")
             } else {
                 _loudnessState.value = LoudnessNormalizationState(

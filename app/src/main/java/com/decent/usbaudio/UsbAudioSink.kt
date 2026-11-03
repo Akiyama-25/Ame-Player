@@ -28,7 +28,8 @@ import java.nio.ByteBuffer
 class UsbAudioSink(
     private val delegate: DefaultAudioSink,
     private val context: Context,
-    private val config: UsbAudioSinkConfig = UsbAudioSinkConfig()
+    private val config: UsbAudioSinkConfig = UsbAudioSinkConfig(),
+    private val loudnessAudioProcessor: Akari.NCM.player.player.LoudnessAudioProcessor? = null
 ) : ForwardingAudioSink(delegate) {
 
     companion object {
@@ -96,6 +97,13 @@ class UsbAudioSink(
         if (config.bitPerfectEnabled && sr != null && ch != null) {
             val device = usbAudioDevice.findUsbAudioDevice()
             if (device != null && usbAudioDevice.hasPermission(device)) {
+                loudnessAudioProcessor?.let { proc ->
+                    runCatching {
+                        val fmt = androidx.media3.common.audio.AudioProcessor.AudioFormat(sr, ch, enc)
+                        proc.configure(fmt)
+                        proc.flush()
+                    }
+                }
                 configureUsbBitPerfect(sr, ch, enc)
                 usbStartMediaTimeNeedsInit = true
                 if (config.forceRouteToSpeaker) forceMediaToSpeaker()
@@ -138,6 +146,12 @@ class UsbAudioSink(
                 usbStartMediaTimeUs = maxOf(0L, presentationTimeUs)
                 usbStartMediaTimeNeedsInit = false
                 Log.i(TAG, "Captured usbStartMediaTimeUs=$usbStartMediaTimeUs")
+            }
+
+            // 核心支持：即使在 USB 独占模式下，也向 LoudnessAudioProcessor 喂入音频副本进行实时 BS.1770 综合响度测算
+            loudnessAudioProcessor?.let { proc ->
+                val analysisSnapshot = buffer.slice().order(buffer.order())
+                proc.queueInput(analysisSnapshot)
             }
 
             val thread = usbStreamingThread ?: return true
@@ -319,25 +333,20 @@ class UsbAudioSink(
         }
         Log.i(TAG, "Step 1: setAlt(0) — old ISO ring freed")
 
-        // 2. SET_CUR → write new sample rate to Clock Source entity
-        usbAudioDevice.setSampleRate(sampleRate)
-
-        // 3. GET_CUR(CLOCK_VALID_CONTROL) → verify clock locked
-        val clockValid = usbAudioDevice.readClockValid()
-        Log.i(TAG, "Step 2-3: SET_CUR=$sampleRate, CLOCK_VALID=$clockValid")
-
-        // 4. setAlt(0) AGAIN → defensive reset after clock change
-        usbAudioDevice.setAltSetting(0)
-        Log.i(TAG, "Step 4: setAlt(0) again — defensive reset")
-
-        // 5. setAlt(N) → ALLOC new ISO rings with target format
+        // 2. setAlt(N) → ALLOC new ISO rings with target format FIRST
         val altResult = usbAudioDevice.setAltSetting(altSetting)
-        Log.i(TAG, "Step 5: setAlt($altSetting): $altResult — new ISO ring allocated")
+        Log.i(TAG, "Step 2: setAlt($altSetting): $altResult — new ISO ring allocated")
 
-        // 6. wait 50ms → DAC hardware PLL lock time
+        // 3. SET_CUR → write new sample rate on the active interface
+        val rateOk = usbAudioDevice.setSampleRate(sampleRate)
+        val verifiedRate = usbAudioDevice.readSampleRate()
+        val clockValid = usbAudioDevice.readClockValid()
+        Log.i(TAG, "Step 3: setSampleRate($sampleRate Hz): success=$rateOk, verifiedRate=$verifiedRate Hz, CLOCK_VALID=$clockValid")
+
+        // 4. wait 50ms → DAC hardware PLL lock time
         Thread.sleep(50)
 
-        // 7. start stream
+        // 5. start stream
         if (!stream.start()) {
             Log.e(TAG, "USB stream start failed")
             stream.release()

@@ -29,6 +29,7 @@ object ThemePrefs {
     private const val KEY_VOLUME_NORMALIZATION_ENABLED = "volume_normalization_enabled"
     private const val KEY_TARGET_LOUDNESS_LUFS = "target_loudness_lufs"
     private const val KEY_LOUDNESS_PEAK_LIMIT_ENABLED = "loudness_peak_limit_enabled"
+    private const val KEY_USB_EXCLUSIVE_MODE = "usb_exclusive_mode"
     private const val KEY_UPDATE_CHANNEL = "update_channel"
 
     const val THEME_SYSTEM = "system"
@@ -95,6 +96,9 @@ object ThemePrefs {
     private val _loudnessPeakLimitFlow = MutableStateFlow(true)
     val loudnessPeakLimitFlow: StateFlow<Boolean> = _loudnessPeakLimitFlow.asStateFlow()
 
+    private val _usbExclusiveModeFlow = MutableStateFlow(false)
+    val usbExclusiveModeFlow: StateFlow<Boolean> = _usbExclusiveModeFlow.asStateFlow()
+
     private val _updateChannelFlow = MutableStateFlow(UpdateChannel.RELEASE)
     val updateChannelFlow: StateFlow<UpdateChannel> = _updateChannelFlow.asStateFlow()
 
@@ -118,6 +122,7 @@ object ThemePrefs {
         _volumeNormalizationFlow.value = volumeNormalizationEnabled
         _targetLoudnessFlow.value = targetLoudnessLufs
         _loudnessPeakLimitFlow.value = loudnessPeakLimitEnabled
+        _usbExclusiveModeFlow.value = usbExclusiveMode
         _updateChannelFlow.value = updateChannel
     }
 
@@ -271,6 +276,15 @@ object ThemePrefs {
                 prefs.edit().putBoolean(KEY_LOUDNESS_PEAK_LIMIT_ENABLED, value).apply()
             }
             _loudnessPeakLimitFlow.value = value
+        }
+
+    var usbExclusiveMode: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_USB_EXCLUSIVE_MODE, false) else _usbExclusiveModeFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_USB_EXCLUSIVE_MODE, value).apply()
+            }
+            _usbExclusiveModeFlow.value = value
         }
 
     var updateChannel: UpdateChannel

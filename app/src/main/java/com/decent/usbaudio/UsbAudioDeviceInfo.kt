@@ -10,6 +10,7 @@ data class UsbAudioDeviceInfo(
     val fd: Int,
     val deviceName: String,
     val interfaceId: Int,
+    val controlInterfaceId: Int = 0,
     val endpointOutAddress: Int,
     val endpointFeedbackAddress: Int,
     val maxPacketSize: Int,

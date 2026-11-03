@@ -332,9 +332,6 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         shortTermEnergy = 0.0
         frameCountInBlock = 0
         currentBlockSum = 0.0
-        if (!isMeasuredSaved) {
-            blockEnergies.clear()
-        }
         kL1_x1 = 0.0; kL1_x2 = 0.0; kL1_y1 = 0.0; kL1_y2 = 0.0
         kL2_x1 = 0.0; kL2_x2 = 0.0; kL2_y1 = 0.0; kL2_y2 = 0.0
         kR1_x1 = 0.0; kR1_x2 = 0.0; kR1_y1 = 0.0; kR1_y2 = 0.0

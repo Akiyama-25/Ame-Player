@@ -273,6 +273,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                 fd = fd,
                 deviceName = device.productName ?: "USB Audio Device",
                 interfaceId = interfaceId,
+                controlInterfaceId = controlInterface?.id ?: 0,
                 endpointOutAddress = endpointOut,
                 endpointFeedbackAddress = endpointFeedback,
                 maxPacketSize = maxPacketSize,
@@ -578,20 +579,25 @@ class UsbAudioDevice private constructor(private val context: Context) {
         data[2] = ((sampleRateHz shr 16) and 0xFF).toByte()
         data[3] = ((sampleRateHz shr 24) and 0xFF).toByte()
 
-        // Use auto-detected clock source ID from USB descriptors.
-        // If not available, fall back to brute-force trying common IDs.
         val detectedId = cachedDeviceInfo?.clockSourceId ?: -1
-        val clockSourceIds = if (detectedId > 0) {
-            intArrayOf(detectedId)  // use the one we parsed from descriptors
-        } else {
-            intArrayOf(0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
-                    0x28, 0x29, 0x2A, 0x06, 0x07, 0x08,
-                    0x10, 0x11, 0x12, 0x20, 0x21, 0x22)
+        val ctrlIntfId = cachedDeviceInfo?.controlInterfaceId ?: 0
+
+        val candidateIds = mutableListOf<Int>()
+        if (detectedId > 0) candidateIds.add(detectedId)
+        val commonIds = listOf(
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x10, 0x11, 0x12, 0x20, 0x21, 0x22, 0x28, 0x29, 0x2A, 0x30, 0x40
+        )
+        for (id in commonIds) {
+            if (!candidateIds.contains(id)) candidateIds.add(id)
         }
 
-        for (csId in clockSourceIds) {
-            val wIndex = (csId shl 8) or 0  // entityId << 8 | audioControlInterface(0)
-            val ret = conn.controlTransfer(
+        // 1. Try UAC2 Clock Source SET_CUR on AudioControl interface
+        for (csId in candidateIds) {
+            val indices = if (ctrlIntfId != 0) intArrayOf((csId shl 8) or ctrlIntfId, (csId shl 8) or 0)
+                          else intArrayOf((csId shl 8) or 0)
+            for (wIndex in indices) {
+                val ret = conn.controlTransfer(
                     0x21,    // bmRequestType: Host-to-Device, Class, Interface
                     0x01,    // bRequest: SET_CUR
                     0x0100,  // wValue: CS_SAM_FREQ_CONTROL
@@ -599,9 +605,32 @@ class UsbAudioDevice private constructor(private val context: Context) {
                     data,
                     data.size,
                     1000     // timeout ms
+                )
+                if (ret >= 0) {
+                    Log.i(TAG, "setSampleRate($sampleRateHz Hz): SUCCESS with clockSourceId=0x${csId.toString(16)} (wIndex=0x${wIndex.toString(16)}, ret=$ret)")
+                    return true
+                }
+            }
+        }
+
+        // 2. Try UAC 1.0 endpoint frequency control (Class, Endpoint, Out)
+        val epOut = cachedDeviceInfo?.endpointOutAddress ?: -1
+        if (epOut > 0) {
+            val epData = ByteArray(3)
+            epData[0] = (sampleRateHz and 0xFF).toByte()
+            epData[1] = ((sampleRateHz shr 8) and 0xFF).toByte()
+            epData[2] = ((sampleRateHz shr 16) and 0xFF).toByte()
+            val retEp = conn.controlTransfer(
+                0x22,   // bmRequestType: Host-to-Device, Class, Endpoint
+                0x01,   // bRequest: SET_CUR
+                0x0100, // wValue: SAMPLING_FREQ_CONTROL
+                epOut,  // wIndex: endpoint address
+                epData,
+                3,
+                1000
             )
-            if (ret >= 0) {
-                Log.i(TAG, "setSampleRate($sampleRateHz Hz): SUCCESS with clockSourceId=0x${csId.toString(16)} (wIndex=0x${wIndex.toString(16)}, ret=$ret)")
+            if (retEp >= 0) {
+                Log.i(TAG, "setSampleRate($sampleRateHz Hz): SUCCESS via UAC1 endpoint 0x${epOut.toString(16)}")
                 return true
             }
         }
@@ -619,11 +648,21 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val data = ByteArray(4)
 
         val detectedId = cachedDeviceInfo?.clockSourceId ?: -1
-        val clockSourceIds = if (detectedId > 0) intArrayOf(detectedId)
-                else intArrayOf(0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x28, 0x29)
-        for (csId in clockSourceIds) {
-            val wIndex = (csId shl 8) or 0
-            val ret = conn.controlTransfer(
+        val ctrlIntfId = cachedDeviceInfo?.controlInterfaceId ?: 0
+        val candidateIds = mutableListOf<Int>()
+        if (detectedId > 0) candidateIds.add(detectedId)
+        val commonIds = listOf(
+            0x01, 0x02, 0x03, 0x04, 0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
+            0x10, 0x11, 0x12, 0x20, 0x21, 0x22, 0x28, 0x29, 0x2A, 0x30, 0x40
+        )
+        for (id in commonIds) {
+            if (!candidateIds.contains(id)) candidateIds.add(id)
+        }
+        for (csId in candidateIds) {
+            val indices = if (ctrlIntfId != 0) intArrayOf((csId shl 8) or ctrlIntfId, (csId shl 8) or 0)
+                          else intArrayOf((csId shl 8) or 0)
+            for (wIndex in indices) {
+                val ret = conn.controlTransfer(
                     0xA1,    // bmRequestType: Device-to-Host, Class, Interface
                     0x01,    // bRequest: GET_CUR (actually CUR is 0x01 for both)
                     0x0100,  // wValue: CS_SAM_FREQ_CONTROL
@@ -631,15 +670,15 @@ class UsbAudioDevice private constructor(private val context: Context) {
                     data,
                     data.size,
                     1000
-            )
-            if (ret >= 4) {
-                val rate = (data[0].toInt() and 0xFF) or
-                        ((data[1].toInt() and 0xFF) shl 8) or
-                        ((data[2].toInt() and 0xFF) shl 16) or
-                        ((data[3].toInt() and 0xFF) shl 24)
-                Log.i(TAG, "readSampleRate: GET_CUR clockSourceId=0x${csId.toString(16)} " +
-                        "returned $rate Hz (raw=${data.joinToString(",") { "0x${(it.toInt() and 0xFF).toString(16)}" }})")
-                return rate
+                )
+                if (ret >= 4) {
+                    val rate = (data[0].toInt() and 0xFF) or
+                            ((data[1].toInt() and 0xFF) shl 8) or
+                            ((data[2].toInt() and 0xFF) shl 16) or
+                            ((data[3].toInt() and 0xFF) shl 24)
+                    Log.i(TAG, "readSampleRate: GET_CUR clockSourceId=0x${csId.toString(16)} returned $rate Hz")
+                    return rate
+                }
             }
         }
         Log.w(TAG, "readSampleRate: all GET_CUR attempts failed")
@@ -659,27 +698,34 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val data = ByteArray(1)
 
         val detectedId = cachedDeviceInfo?.clockSourceId ?: -1
-        val clockSourceIds = if (detectedId > 0) intArrayOf(detectedId)
-                else intArrayOf(0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x28, 0x29)
-        for (csId in clockSourceIds) {
-            val wIndex = (csId shl 8) or 0
-            val ret = conn.controlTransfer(
+        val ctrlIntfId = cachedDeviceInfo?.controlInterfaceId ?: 0
+        val candidateIds = mutableListOf<Int>()
+        if (detectedId > 0) candidateIds.add(detectedId)
+        val commonIds = listOf(0x01, 0x02, 0x03, 0x04, 0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x28, 0x29)
+        for (id in commonIds) {
+            if (!candidateIds.contains(id)) candidateIds.add(id)
+        }
+        for (csId in candidateIds) {
+            val indices = if (ctrlIntfId != 0) intArrayOf((csId shl 8) or ctrlIntfId, (csId shl 8) or 0)
+                          else intArrayOf((csId shl 8) or 0)
+            for (wIndex in indices) {
+                val ret = conn.controlTransfer(
                     0xA1,    // bmRequestType: Device-to-Host, Class, Interface
                     0x01,    // bRequest: GET_CUR
                     0x0200,  // wValue: CS=0x02 (CLOCK_VALID_CONTROL), CN=0x00
                     wIndex,
                     data,
-                    data.size,
-                    1000
-            )
-            if (ret >= 1) {
-                val valid = data[0].toInt() and 0x01
-                Log.i(TAG, "readClockValid: clockSourceId=0x${csId.toString(16)} valid=$valid")
-                return valid == 1
+                    1,
+                    500
+                )
+                if (ret >= 1) {
+                    val valid = (data[0].toInt() and 0x01) == 1
+                    Log.i(TAG, "readClockValid: clockSourceId=0x${csId.toString(16)} valid=$valid")
+                    return valid
+                }
             }
         }
-        Log.w(TAG, "readClockValid: all GET_CUR attempts failed")
-        return false
+        return true
     }
 
     /**
