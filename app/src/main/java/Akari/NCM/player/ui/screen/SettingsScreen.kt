@@ -92,7 +92,6 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val apiBaseUrl by sessionManager.apiBaseUrlState.collectAsState()
-    val qualityLevel by sessionManager.qualityState.collectAsState()
     val userProfile by sessionManager.userProfileState.collectAsState()
     val cookie by sessionManager.cookieState.collectAsState()
     val isLoggedIn = remember(cookie) { sessionManager.isLoggedIn() }
@@ -569,37 +568,6 @@ fun SettingsScreen(
 
             // ── 音频与声音设置 ──
             item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("音频与声音") }
-
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .testTag("setting_playback_quality_info"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.HighQuality,
-                        contentDescription = "在线播放音质",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "在线播放音质 (音质不可控)",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "采用逐级递减策略自动匹配账号最高可用音质；网易云服务端会对 VIP 账号强制路由高规格音轨，音质无法锁定低码率",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
 
             item {
                 val enableJyEffect by ThemePrefs.enableJyEffectFlow.collectAsState()

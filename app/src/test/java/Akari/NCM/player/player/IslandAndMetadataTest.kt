@@ -198,15 +198,15 @@ class IslandAndMetadataTest {
 
         composeTestRule.onNodeWithText("灵动岛与实时播放控制").assertIsDisplayed()
         composeTestRule.onNodeWithTag("setting_live_island").assertIsDisplayed()
-        assertTrue(ThemePrefs.liveIslandEnabled)
+        assertFalse(ThemePrefs.liveIslandEnabled)
 
         composeTestRule.onNodeWithTag("switch_live_island").performClick()
         composeTestRule.waitForIdle()
-        assertFalse(ThemePrefs.liveIslandEnabled)
+        assertTrue(ThemePrefs.liveIslandEnabled)
 
         ThemePrefs.init(context)
-        assertFalse(ThemePrefs.liveIslandEnabled)
-        assertFalse(ThemePrefs.liveIslandEnabledFlow.value)
+        assertTrue(ThemePrefs.liveIslandEnabled)
+        assertTrue(ThemePrefs.liveIslandEnabledFlow.value)
     }
 
     @Test

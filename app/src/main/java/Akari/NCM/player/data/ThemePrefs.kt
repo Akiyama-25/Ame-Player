@@ -80,7 +80,7 @@ object ThemePrefs {
     private val _showMatchStatusFlow = MutableStateFlow(false)
     val showMatchStatusFlow: StateFlow<Boolean> = _showMatchStatusFlow.asStateFlow()
 
-    private val _liveIslandEnabledFlow = MutableStateFlow(true)
+    private val _liveIslandEnabledFlow = MutableStateFlow(false)
     val liveIslandEnabledFlow: StateFlow<Boolean> = _liveIslandEnabledFlow.asStateFlow()
 
     private val _enableJyEffectFlow = MutableStateFlow(true)
@@ -213,7 +213,7 @@ object ThemePrefs {
         }
 
     var liveIslandEnabled: Boolean
-        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_LIVE_ISLAND_ENABLED, true) else _liveIslandEnabledFlow.value
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_LIVE_ISLAND_ENABLED, false) else _liveIslandEnabledFlow.value
         set(value) {
             if (::prefs.isInitialized) {
                 prefs.edit().putBoolean(KEY_LIVE_ISLAND_ENABLED, value).apply()

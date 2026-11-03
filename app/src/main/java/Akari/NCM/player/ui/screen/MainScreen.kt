@@ -342,24 +342,7 @@ fun MainScreen(
                     Scaffold(
                         topBar = {
                             TopAppBar(
-                                title = {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Icon(
-                                            painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
-                                            contentDescription = "Ame Player",
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(28.dp)
-                                        )
-                                        Text(
-                                            text = "Ame Player",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                },
+                                title = {},
                                 actions = {
                                     if (selectedTab == 0 && selectedOnlinePlaylist == null) {
                                         IconButton(onClick = { homepageRefreshTrigger++ }) {
@@ -677,11 +660,18 @@ fun MainScreen(
                                                                         )
                                                                         if (currentPlaylist.ncmPlaylistId != null && currentPlaylist.ncmPlaylistId != -9999L) {
                                                                             Spacer(modifier = Modifier.width(8.dp))
-                                                                            SuggestionChip(
-                                                                                onClick = {},
-                                                                                label = { Text("云端", fontSize = 10.sp) },
-                                                                                modifier = Modifier.height(22.dp)
-                                                                            )
+                                                                            Surface(
+                                                                                shape = RoundedCornerShape(4.dp),
+                                                                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                                                                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                                                            ) {
+                                                                                Text(
+                                                                                    text = "云端",
+                                                                                    fontSize = 10.sp,
+                                                                                    fontWeight = FontWeight.Medium,
+                                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                                )
+                                                                            }
                                                                         }
                                                                     }
                                                                 }
@@ -1343,11 +1333,18 @@ private fun PlaylistsView(
                                     )
                                     if (playlist.ncmPlaylistId != null && playlist.ncmPlaylistId != -9999L) {
                                         Spacer(modifier = Modifier.width(8.dp))
-                                        SuggestionChip(
-                                            onClick = {},
-                                            label = { Text("云端", fontSize = 10.sp) },
-                                            modifier = Modifier.height(20.dp)
-                                        )
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                        ) {
+                                            Text(
+                                                text = "云端",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1518,11 +1515,17 @@ private fun SyncCloudPlaylistsDialog(
                                 }
                                 if (isAlreadyImported) {
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    SuggestionChip(
-                                        onClick = {},
-                                        label = { Text("已在本地", fontSize = 10.sp) },
-                                        modifier = Modifier.height(20.dp)
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    ) {
+                                        Text(
+                                            text = "已在本地",
+                                            fontSize = 10.sp,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
