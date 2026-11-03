@@ -16,7 +16,7 @@ permissions:
 jobs:
   build:
     name: Build and test release variant
-    runs-on: [self-hosted, instabox]
+    runs-on: [self-hosted, android-builder]
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -157,7 +157,7 @@ jobs:
     name: Sign and verify APK
     needs: build
     if: github.event_name != 'pull_request'
-    runs-on: [self-hosted, instabox]
+    runs-on: [self-hosted, android-builder]
     steps:
       - name: Download unsigned APK
         uses: actions/download-artifact@v4
