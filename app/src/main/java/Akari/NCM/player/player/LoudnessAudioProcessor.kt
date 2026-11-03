@@ -285,18 +285,6 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         out.flip()
     }
 
-    override fun onFlush() {
-        super.onFlush()
-        // 发生快进/后退跳转时，重置短期能量与双二阶滤波状态，防止跨时间点能量跳变引入爆音或污染测量
-        shortTermEnergy = 0.0
-        currentBlockSum = 0.0
-        frameCountInBlock = 0
-        kL1_x1 = 0.0; kL1_x2 = 0.0; kL1_y1 = 0.0; kL1_y2 = 0.0
-        kL2_x1 = 0.0; kL2_x2 = 0.0; kL2_y1 = 0.0; kL2_y2 = 0.0
-        kR1_x1 = 0.0; kR1_x2 = 0.0; kR1_y1 = 0.0; kR1_y2 = 0.0
-        kR2_x1 = 0.0; kR2_x2 = 0.0; kR2_y1 = 0.0; kR2_y2 = 0.0
-    }
-
     private fun filterLeft(
         sample: Double,
         s1: EbuR128Calculator.BiquadCoeffs,
@@ -343,8 +331,14 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
 
     override fun onFlush() {
         super.onFlush()
+        // 发生快进/后退跳转时，重置短期能量与双二阶滤波状态，防止跨时间点能量跳变引入爆音或污染测量
+        shortTermEnergy = 0.0
         frameCountInBlock = 0
         currentBlockSum = 0.0
+        kL1_x1 = 0.0; kL1_x2 = 0.0; kL1_y1 = 0.0; kL1_y2 = 0.0
+        kL2_x1 = 0.0; kL2_x2 = 0.0; kL2_y1 = 0.0; kL2_y2 = 0.0
+        kR1_x1 = 0.0; kR1_x2 = 0.0; kR1_y1 = 0.0; kR1_y2 = 0.0
+        kR2_x1 = 0.0; kR2_x2 = 0.0; kR2_y1 = 0.0; kR2_y2 = 0.0
     }
 
     override fun onReset() {
