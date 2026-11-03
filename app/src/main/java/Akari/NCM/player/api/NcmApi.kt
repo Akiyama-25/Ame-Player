@@ -1,6 +1,7 @@
 package Akari.NCM.player.api
 
 import Akari.NCM.player.core.*
+import Akari.NCM.player.data.ThemePrefs
 import Akari.NCM.player.data.UserSessionManager
 import io.ktor.client.*
 import io.ktor.client.engine.okhttp.*
@@ -331,19 +332,20 @@ class NcmApi @Inject constructor(
     }
 
     /**
-     * 获取歌曲播放链接与音频特征元数据 (精准根据偏好音质，单向向下降级，杜绝盲目提权)
+     * 获取歌曲播放链接与音频特征元数据 (按账号可用权益由高至低逐级递减尝试，音质由服务端控制)
+     * @param enableJyEffect 是否优先尝试高清臻音 / 超清母带音质 (由用户偏好开关控制)
      */
-    suspend fun getSongUrlDetails(song: PlayableMedia.Online, quality: QualityLevel? = null): ResolvedSongUrl? {
-        val targetQuality = quality ?: sessionManager?.getQualityLevel() ?: QualityLevel.EXHIGH
-        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (preferredQuality=${targetQuality.value}, isDirectMode=$isDirectMode)")
+    suspend fun getSongUrlDetails(
+        song: PlayableMedia.Online,
+        enableJyEffect: Boolean = ThemePrefs.enableJyEffect
+    ): ResolvedSongUrl? {
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (enableJyEffect=$enableJyEffect, isDirectMode=$isDirectMode)")
 
-        // 单向向下降级链：绝不向上超范围提权
-        val qualitiesToTry = when (targetQuality) {
-            QualityLevel.JYMASTER -> listOf(QualityLevel.JYMASTER, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
-            QualityLevel.HIRES -> listOf(QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
-            QualityLevel.LOSSLESS -> listOf(QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
-            QualityLevel.EXHIGH -> listOf(QualityLevel.EXHIGH, QualityLevel.STANDARD)
-            QualityLevel.STANDARD -> listOf(QualityLevel.STANDARD)
+        // 默认按账号可获取的最高级别链依次尝试: (JYMASTER / JYEFFECT) -> HIRES -> LOSSLESS -> EXHIGH -> STANDARD
+        val qualitiesToTry = if (enableJyEffect) {
+            listOf(QualityLevel.JYMASTER, QualityLevel.JYEFFECT, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+        } else {
+            listOf(QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
         }
 
         var trialFallbackUrl: ResolvedSongUrl? = null
@@ -352,8 +354,8 @@ class NcmApi @Inject constructor(
             for (q in qualitiesToTry) {
                 try {
                     val startTime = System.currentTimeMillis()
-                    // 仅无损或母带规格传递 flac，有损规格强制声明 mp3，阻断服务端针对 VIP 用户的强行升轨
-                    val encodeType = if (q == QualityLevel.LOSSLESS || q == QualityLevel.HIRES || q == QualityLevel.JYMASTER) "flac" else "mp3"
+                    // 仅无损或母带规格传递 flac，有损规格声明 mp3
+                    val encodeType = if (q == QualityLevel.LOSSLESS || q == QualityLevel.HIRES || q == QualityLevel.JYMASTER || q == QualityLevel.JYEFFECT) "flac" else "mp3"
                     val payload = buildJsonObject {
                         put("ids", "[${song.id}]")
                         put("level", q.value)
@@ -463,7 +465,7 @@ class NcmApi @Inject constructor(
 
         // 兜底退回旧接口 /song/url
         AppLogger.w("[AME_ONLINE_PLAY]", "--- Trying legacy fallback for '${song.title}' (id=${song.id}) ---")
-        val fallbackBitrates = if (targetQuality == QualityLevel.STANDARD) listOf(128000) else listOf(320000, 128000)
+        val fallbackBitrates = listOf(320000, 128000)
         for (br in fallbackBitrates) {
             val fallbackDetails = getForcedMp3Details(song.id, br)
             if (fallbackDetails != null) return fallbackDetails
@@ -474,10 +476,10 @@ class NcmApi @Inject constructor(
     }
 
     /**
-     * 获取歌曲播放链接 (根据指定音质或默认音质)
+     * 获取歌曲播放链接
      */
-    suspend fun getSongUrl(song: PlayableMedia.Online, quality: QualityLevel? = null): String? {
-        return getSongUrlDetails(song, quality)?.url
+    suspend fun getSongUrl(song: PlayableMedia.Online, enableJyEffect: Boolean = ThemePrefs.enableJyEffect): String? {
+        return getSongUrlDetails(song, enableJyEffect)?.url
     }
 
     private suspend fun getForcedMp3Details(songId: String, bitrate: Int): ResolvedSongUrl? {

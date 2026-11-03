@@ -77,7 +77,8 @@ enum class QualityLevel(val value: String, val label: String) {
     EXHIGH("exhigh", "极高音质 (320k)"),
     LOSSLESS("lossless", "无损音质 (FLAC)"),
     HIRES("hires", "Hi-Res 高解析"),
-    JYMASTER("jymaster", "超清母带");
+    JYMASTER("jymaster", "超清母带"),
+    JYEFFECT("jyeffect", "高清臻音");
 
     companion object {
         fun fromValue(value: String): QualityLevel {

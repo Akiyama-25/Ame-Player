@@ -23,6 +23,7 @@ object ThemePrefs {
     private const val KEY_GRID_COLUMNS = "settings_grid_columns"
     private const val KEY_SHOW_MATCH_STATUS = "show_match_status"
     private const val KEY_LIVE_ISLAND_ENABLED = "live_island_enabled"
+    private const val KEY_ENABLE_JY_EFFECT = "enable_jy_effect"
     private const val KEY_PLAYBACK_REPEAT_MODE = "playback_repeat_mode"
     private const val KEY_PLAYBACK_SHUFFLE_ENABLED = "playback_shuffle_enabled"
     private const val KEY_VOLUME_NORMALIZATION_ENABLED = "volume_normalization_enabled"
@@ -82,6 +83,9 @@ object ThemePrefs {
     private val _liveIslandEnabledFlow = MutableStateFlow(true)
     val liveIslandEnabledFlow: StateFlow<Boolean> = _liveIslandEnabledFlow.asStateFlow()
 
+    private val _enableJyEffectFlow = MutableStateFlow(true)
+    val enableJyEffectFlow: StateFlow<Boolean> = _enableJyEffectFlow.asStateFlow()
+
     private val _volumeNormalizationFlow = MutableStateFlow(true)
     val volumeNormalizationFlow: StateFlow<Boolean> = _volumeNormalizationFlow.asStateFlow()
 
@@ -110,6 +114,7 @@ object ThemePrefs {
         _gridColumnsFlow.value = gridColumns
         _showMatchStatusFlow.value = showMatchStatus
         _liveIslandEnabledFlow.value = liveIslandEnabled
+        _enableJyEffectFlow.value = enableJyEffect
         _volumeNormalizationFlow.value = volumeNormalizationEnabled
         _targetLoudnessFlow.value = targetLoudnessLufs
         _loudnessPeakLimitFlow.value = loudnessPeakLimitEnabled
@@ -214,6 +219,15 @@ object ThemePrefs {
                 prefs.edit().putBoolean(KEY_LIVE_ISLAND_ENABLED, value).apply()
             }
             _liveIslandEnabledFlow.value = value
+        }
+
+    var enableJyEffect: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_ENABLE_JY_EFFECT, true) else _enableJyEffectFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_ENABLE_JY_EFFECT, value).apply()
+            }
+            _enableJyEffectFlow.value = value
         }
 
     var playbackRepeatMode: String

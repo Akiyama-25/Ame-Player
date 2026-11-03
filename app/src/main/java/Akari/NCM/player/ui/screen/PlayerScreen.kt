@@ -2241,7 +2241,7 @@ private fun PlaybackStatusDialog(
         "本地存储 (Local)"
     } else {
         val qLabel = audioFormatInfo.qualityLevel?.let { Akari.NCM.player.core.QualityLevel.fromValue(it).label }
-        if (!qLabel.isNullOrBlank()) "云端在线 (Cloud) · $qLabel" else "云端在线 (Cloud)"
+        if (!qLabel.isNullOrBlank()) "云端在线 (Cloud) · $qLabel (音质不可控)" else "云端在线 (Cloud) · 音质不可控"
     }
 
     val fileSizeText = remember(media, audioFormatInfo.fileSizeBytes) {

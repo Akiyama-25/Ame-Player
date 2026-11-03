@@ -293,8 +293,7 @@ class AmePlayerEngine @Inject constructor(
                     cachedUrl
                 } else {
                     AppLogger.i("[AME_ONLINE_PLAY]", ">>> Matched Online Track: id='${media.id}', title='${media.title}'")
-                    val targetQuality = sessionManager.getQualityLevel()
-                    val fetchedDetails = runBlocking { ncmApi.getSongUrlDetails(media, targetQuality) }
+                    val fetchedDetails = runBlocking { ncmApi.getSongUrlDetails(media, ThemePrefs.enableJyEffect) }
                     if (fetchedDetails != null) {
                         resolvedUrlCache[media.id] = fetchedDetails.url
                         resolvedDetailsCache[media.id] = fetchedDetails
@@ -597,10 +596,10 @@ class AmePlayerEngine @Inject constructor(
             }
         }
 
-        // Observe audio quality preference changes to clear URL cache dynamically
+        // Observe JYEffect preference changes to clear URL cache dynamically
         scope.launch {
-            sessionManager.qualityState.collect { quality ->
-                AppLogger.i("[AME_ONLINE_PLAY]", ">>> Audio quality preference changed to '${quality.label}' (${quality.value}), clearing resolved URL cache.")
+            ThemePrefs.enableJyEffectFlow.collect { enabled ->
+                AppLogger.i("[AME_ONLINE_PLAY]", ">>> JYEffect preference changed to $enabled, clearing resolved URL cache.")
                 resolvedUrlCache.clear()
                 resolvedDetailsCache.clear()
             }

@@ -126,7 +126,6 @@ fun SettingsScreen(
     var showLogLevelDialog by remember { mutableStateOf(false) }
     var showLogSizeDialog by remember { mutableStateOf(false) }
     var showLoudnessDialog by remember { mutableStateOf(false) }
-    var showQualityDialog by remember { mutableStateOf(false) }
 
     val updateChannel by ThemePrefs.updateChannelFlow.collectAsState()
     var showUpdateChannelDialog by remember { mutableStateOf(false) }
@@ -575,9 +574,8 @@ fun SettingsScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { showQualityDialog = true }
                         .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .testTag("setting_playback_quality"),
+                        .testTag("setting_playback_quality_info"),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -589,21 +587,55 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "在线播放音质",
+                            text = "在线播放音质 (音质不可控)",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "${qualityLevel.label} · 单向降级策略，不可用时向下回退且绝不向上提权",
+                            text = "采用逐级递减策略自动匹配账号最高可用音质；网易云服务端会对 VIP 账号强制路由高规格音轨，音质无法锁定低码率",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+            }
+
+            item {
+                val enableJyEffect by ThemePrefs.enableJyEffectFlow.collectAsState()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { ThemePrefs.enableJyEffect = !enableJyEffect }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("setting_enable_jy_effect"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Icon(
-                        imageVector = Icons.Rounded.ChevronRight,
-                        contentDescription = "选择音质",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        imageVector = Icons.Rounded.GraphicEq,
+                        contentDescription = "高清臻音",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "高清臻音 / 超清母带",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = if (enableJyEffect) "已启用 · 优先尝试匹配高清臻音 (JYEffect) 与超清母带音质"
+                            else "已关闭 · 最高匹配至 Hi-Res 高解析与无损 FLAC 音质",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = enableJyEffect,
+                        onCheckedChange = { ThemePrefs.enableJyEffect = it },
+                        modifier = Modifier.testTag("switch_enable_jy_effect")
                     )
                 }
             }
@@ -1110,17 +1142,6 @@ fun SettingsScreen(
                 TextButton(onClick = { showLoudnessDialog = false }) {
                     Text("完成")
                 }
-            }
-        )
-    }
-
-    if (showQualityDialog) {
-        QualitySelectionDialog(
-            currentQuality = qualityLevel,
-            onDismiss = { showQualityDialog = false },
-            onSelect = { selectedQuality ->
-                sessionManager.saveQualityLevel(selectedQuality)
-                showQualityDialog = false
             }
         )
     }
@@ -1704,76 +1725,6 @@ private fun UserProfileDetailDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("关闭")
-            }
-        }
-    )
-}
-
-@Composable
-private fun QualitySelectionDialog(
-    currentQuality: QualityLevel,
-    onDismiss: () -> Unit,
-    onSelect: (QualityLevel) -> Unit
-) {
-    val qualityDescs = mapOf(
-        QualityLevel.STANDARD to "128 kbps MP3 · 极速缓冲与节省流量",
-        QualityLevel.EXHIGH to "320 kbps MP3 · 高保真音质，均衡推荐",
-        QualityLevel.LOSSLESS to "FLAC 16-bit / 44.1 kHz · CD 级无损细节",
-        QualityLevel.HIRES to "FLAC 24-bit / 48~96 kHz · 高解析音频",
-        QualityLevel.JYMASTER to "超清母带 / 臻音 · 录音室母带级还原"
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Rounded.HighQuality,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("选择在线播放音质", fontWeight = FontWeight.Bold)
-            }
-        },
-        text = {
-            Column {
-                QualityLevel.entries.forEach { quality ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(quality) }
-                            .padding(vertical = 10.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = quality == currentQuality,
-                            onClick = { onSelect(quality) }
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = quality.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (quality == currentQuality) FontWeight.Bold else FontWeight.Medium
-                            )
-                            val desc = qualityDescs[quality]
-                            if (desc != null) {
-                                Text(
-                                    text = desc,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
             }
         }
     )
