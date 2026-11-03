@@ -42,20 +42,18 @@
 
 ## 包体说明与“灵动岛”伪装包
 
-本项目所有发布包体均为 **universal 全架构通用包体**（已移除过往 32-bit / 64-bit 独立架构分包，安装包内含全架构支持）。
+自**Release-0.3**开始，不提供32Bit与64Bit的单架构包体，仅提供同时支持两者的通用包体。
 
-针对国内部分定制 Android 系统对状态栏胶囊、流体云或原子岛施加的应用白名单限制（默认仅允许特定主流音乐 App 常驻），CI/CD 自动化工作流与 Releases 页面同步提供三种**包名伪装包体**，以便在未开放 Android 16 实况通知特性的系统上无缝触发“灵动岛”交互：
+Ame Player的“灵动岛”通过Android实时通知触发，HyperOS 3及以上原生支持上岛，但不保证所有系统遵守Android规范，且可能设置上岛应用白名单，故本项目提供**Spotify/Apple Music/网易云音乐**包名的伪装包
 
-| 包体类型 | 文件名命名格式 | Application ID (包名) | 适用场景 |
-|---------|--------------|----------------------|----------|
-| **标准通用包** | `Ame-Player-<版本号>-signed.apk` | `Akari.NCM.player` | 官方默认包体，通用各机型与标准 AOSP 系统 |
-| **Apple Music 伪装包** | `Ame-Player-<版本号>-Apple_Music-signed.apk` | `com.apple.android.music` | 伪装为 Apple Music，突破系统音乐胶囊白名单 |
-| **Spotify 伪装包** | `Ame-Player-<版本号>-Spotify-signed.apk` | `com.spotify.music` | 伪装为 Spotify，适合限制特定国际流媒体白名单的设备 |
-| **网易云音乐 伪装包** | `Ame-Player-<版本号>-Netease_Music-signed.apk` | `com.netease.cloudmusic` | 伪装为网易云音乐，原生激活各品牌桌面与状态栏胶囊 |
-
-> **注意事项**：
-> 1. 所有包体均使用同一套官方密钥签名，校验指纹与功能完全一致。
-> 2. 由于各伪装包包名不同，它们可与标准包共存安装。但如果您的设备上**已安装了对应官方正版 App**（例如官方网易云音乐），则由于签名证书不同，直接安装对应的伪装包会提示签名冲突，此时可优先选择其他未安装的伪装包（例如使用 `-Apple_Music` 或 `-Spotify`）。
+| 包体类型 | 文件名命名格式 | Application ID (包名) |
+|---------|--------------|----------------------|
+| **标准通用包** | `Ame-Player-<版本号>-signed.apk` | `Akari.NCM.player` |
+| **Apple Music 伪装包** | `Ame-Player-<版本号>-Apple_Music-signed.apk` | `com.apple.android.music` |
+| **Spotify 伪装包** | `Ame-Player-<版本号>-Spotify-signed.apk` | `com.spotify.music` |
+| **网易云音乐 伪装包** | `Ame-Player-<版本号>-Netease_Music-signed.apk` | `com.netease.cloudmusic` |
+> [!WARNING]
+> 由于使用伪装对象的包名，不同包名的Ame Player之间数据不互通，且不能与伪装对象共存，建议优先尝试标准包，若无法上岛，再考虑换用伪装包。
 
 ---
 
@@ -84,7 +82,7 @@ cd Ame-Player
 ./gradlew assembleRelease -PcustomApplicationId=com.apple.android.music
 ```
 
-> **提示**：GitHub Actions 工作流（`.github/workflows/build-signed-apk.yml` 与 `release-signed-apk.yml`）依赖仓库配置的签名 Secrets，若在 Fork 仓库中构建，需自行配置对应的签名变量，或使用未签名构建。
+> **提示**：GitHub Actions 工作流（`.github/workflows/build-signed-apk.yml` 与 `release-signed-apk.yml`）依赖仓库配置的签名 Secrets，且运行在[Instabox](instabox.sh)上。若在 Fork 仓库中构建，需自行配置对应的签名变量，或使用未签名构建。
 
 ---
 
@@ -92,6 +90,7 @@ cd Ame-Player
 
 - **[NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)** — 提供网易云音乐 API 结构参考与兼容后端支持。
 - **[rinchao0721/Melodia](https://github.com/rinchao0721/Melodia)** — 提供了纯 Kotlin 加密直连网易云官方接口的架构思路与协议参考。
+- **[Ma145/decent-player](https://github.com/Ma145/decent-player)** - 在USB独占模式下实现192kHz+输出的思路参考
 - **应用图标来源** — [kanae3792 (Pinterest)](https://jp.pinterest.com/kanae3792/)
 
 ---
