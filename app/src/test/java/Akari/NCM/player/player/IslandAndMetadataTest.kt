@@ -179,7 +179,7 @@ class IslandAndMetadataTest {
     }
 
     @Test
-    @Config(qualifiers = "w400dp-h1600dp")
+    @Config(qualifiers = "w400dp-h2000dp")
     fun testSettingsScreen_liveIslandSwitch_togglesAndPersists() {
         val sessionManager = UserSessionManager(context)
         val playlistManager = PlaylistManager(context)
