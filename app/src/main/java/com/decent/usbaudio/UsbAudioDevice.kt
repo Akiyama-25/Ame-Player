@@ -33,8 +33,11 @@ class UsbAudioDevice private constructor(private val context: Context) {
     private var usbManager: UsbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
     private var connection: UsbDeviceConnection? = null
     private var currentDevice: UsbDevice? = null
+    private var claimedControlInterface: UsbInterface? = null
     private var claimedInterface: UsbInterface? = null
     private var featureUnitId: Int = -1
+    private var confirmedClockSourceId: Int = -1
+    private val detectedClockIds = mutableListOf<Int>()
 
     companion object {
         private const val TAG = "UsbAudioDevice"
@@ -214,6 +217,9 @@ class UsbAudioDevice private constructor(private val context: Context) {
         if (controlInterface != null) {
             val claimed = conn.claimInterface(controlInterface, true)
             Log.i(TAG, "Claimed AudioControl interface ${controlInterface.id} force=true: $claimed")
+            if (claimed) {
+                claimedControlInterface = controlInterface
+            }
         }
 
         // Claim the AudioStreaming interface with force=true to disconnect kernel driver (snd-usb-audio)
@@ -305,6 +311,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         // Clear cache so openDevice re-claims, but KEEP the connection
         // so the same fd is reused (native claims are on this fd).
         cachedDeviceInfo = null
+        claimedControlInterface = null
         claimedInterface = null
         // DO NOT close connection — the fd from reset+native claim must be reused
         // The next openDevice() will see connection != null and skip re-opening
@@ -321,9 +328,11 @@ class UsbAudioDevice private constructor(private val context: Context) {
      */
     private fun parseClockSourceId(conn: UsbDeviceConnection): Int {
         val raw = conn.rawDescriptors ?: return -1
+        detectedClockIds.clear()
 
         var i = 0
         var inAudioControl = false
+        var primaryClockId = -1
 
         while (i + 1 < raw.size) {
             val bLength = raw[i].toInt() and 0xFF
@@ -341,17 +350,43 @@ class UsbAudioDevice private constructor(private val context: Context) {
             }
 
             // CS_INTERFACE descriptor (0x24) inside AudioControl
-            if (inAudioControl && bDescriptorType == 0x24 && bLength >= 3) {
+            if (inAudioControl && bDescriptorType == 0x24 && bLength >= 4) {
                 val bDescriptorSubtype = raw[i + 2].toInt() and 0xFF
-                // CLOCK_SOURCE = 0x0A
-                if (bDescriptorSubtype == 0x0A && bLength >= 5) {
-                    val bClockID = raw[i + 3].toInt() and 0xFF
-                    Log.i(TAG, "parseClockSourceId: found CLOCK_SOURCE bClockID=0x${bClockID.toString(16)}")
-                    return bClockID
+                when (bDescriptorSubtype) {
+                    0x0A -> { // CLOCK_SOURCE
+                        val bClockID = raw[i + 3].toInt() and 0xFF
+                        Log.i(TAG, "parseClockSourceId: found CLOCK_SOURCE bClockID=0x${bClockID.toString(16)}")
+                        if (!detectedClockIds.contains(bClockID)) detectedClockIds.add(bClockID)
+                        if (primaryClockId < 0) primaryClockId = bClockID
+                    }
+                    0x0B -> { // CLOCK_SELECTOR
+                        val bClockID = raw[i + 3].toInt() and 0xFF
+                        Log.i(TAG, "parseClockSourceId: found CLOCK_SELECTOR bClockID=0x${bClockID.toString(16)}")
+                        if (!detectedClockIds.contains(bClockID)) detectedClockIds.add(bClockID)
+                    }
+                    0x0C -> { // CLOCK_MULTIPLIER
+                        val bClockID = raw[i + 3].toInt() and 0xFF
+                        Log.i(TAG, "parseClockSourceId: found CLOCK_MULTIPLIER bClockID=0x${bClockID.toString(16)}")
+                        if (!detectedClockIds.contains(bClockID)) detectedClockIds.add(bClockID)
+                    }
+                    0x02 -> { // INPUT_TERMINAL (AudioStreaming)
+                        if (bLength >= 8) {
+                            val bCSourceID = raw[i + 7].toInt() and 0xFF
+                            if (bCSourceID > 0) {
+                                Log.i(TAG, "parseClockSourceId: found INPUT_TERMINAL linked bCSourceID=0x${bCSourceID.toString(16)}")
+                                if (!detectedClockIds.contains(bCSourceID)) detectedClockIds.add(0, bCSourceID)
+                                if (primaryClockId < 0) primaryClockId = bCSourceID
+                            }
+                        }
+                    }
                 }
             }
 
             i += bLength
+        }
+
+        if (primaryClockId > 0) {
+            return primaryClockId
         }
 
         Log.w(TAG, "parseClockSourceId: no CLOCK_SOURCE descriptor found")
@@ -494,14 +529,20 @@ class UsbAudioDevice private constructor(private val context: Context) {
     fun closeDevice() {
         cachedDeviceInfo = null
         featureUnitId = -1
+        confirmedClockSourceId = -1
+        detectedClockIds.clear()
+        claimedControlInterface?.let { iface ->
+            try { connection?.releaseInterface(iface) } catch (_: Exception) {}
+            claimedControlInterface = null
+        }
         claimedInterface?.let { iface ->
-            connection?.releaseInterface(iface)
+            try { connection?.releaseInterface(iface) } catch (_: Exception) {}
             claimedInterface = null
         }
-        connection?.close()
+        try { connection?.close() } catch (_: Exception) {}
         connection = null
         currentDevice = null
-        Log.i(TAG, "USB device closed")
+        Log.i(TAG, "USB device closed and all interfaces released")
     }
 
     /**
@@ -513,10 +554,10 @@ class UsbAudioDevice private constructor(private val context: Context) {
         if (conn != null) {
             val fd = conn.fileDescriptor
             try {
-                Log.i(TAG, "Issuing USBDEVFS_RESET before closing device to re-bind kernel ALSA driver...")
-                UsbAudioStream.nativeUsbReset(fd)
+                Log.i(TAG, "Releasing USB interfaces and re-binding kernel ALSA driver via nativeUsbReleaseAndRebind...")
+                UsbAudioStream.nativeUsbReleaseAndRebind(fd)
             } catch (e: Exception) {
-                Log.w(TAG, "nativeUsbReset failed: ${e.message}")
+                Log.w(TAG, "nativeUsbReleaseAndRebind failed: ${e.message}")
             }
         }
         closeDevice()
@@ -583,16 +624,23 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val ctrlIntfId = cachedDeviceInfo?.controlInterfaceId ?: 0
 
         val candidateIds = mutableListOf<Int>()
-        if (detectedId > 0) candidateIds.add(detectedId)
+        if (confirmedClockSourceId > 0) candidateIds.add(confirmedClockSourceId)
+        if (detectedId > 0 && !candidateIds.contains(detectedId)) candidateIds.add(detectedId)
+        for (id in detectedClockIds) {
+            if (!candidateIds.contains(id)) candidateIds.add(id)
+        }
         val commonIds = listOf(
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
-            0x10, 0x11, 0x12, 0x20, 0x21, 0x22, 0x28, 0x29, 0x2A, 0x30, 0x40
+            0x29, 0x28, 0x2A, 0x05, 0x0A, 0x09, 0x0B, 0x0C, 0x0D,
+            0x04, 0x06, 0x07, 0x08, 0x10, 0x11, 0x12, 0x20, 0x21, 0x22, 0x30, 0x40, 0x01, 0x02, 0x03
         )
         for (id in commonIds) {
             if (!candidateIds.contains(id)) candidateIds.add(id)
         }
 
-        // 1. Try UAC2 Clock Source SET_CUR on AudioControl interface
+        var fallbackAcceptedCsId = -1
+        var fallbackWIndex = -1
+
+        // 1. Try UAC2 Clock Source SET_CUR on AudioControl interface and verify with GET_CUR
         for (csId in candidateIds) {
             val indices = if (ctrlIntfId != 0) intArrayOf((csId shl 8) or ctrlIntfId, (csId shl 8) or 0)
                           else intArrayOf((csId shl 8) or 0)
@@ -604,13 +652,42 @@ class UsbAudioDevice private constructor(private val context: Context) {
                     wIndex,
                     data,
                     data.size,
-                    1000     // timeout ms
+                    500     // timeout ms
                 )
                 if (ret >= 0) {
-                    Log.i(TAG, "setSampleRate($sampleRateHz Hz): SUCCESS with clockSourceId=0x${csId.toString(16)} (wIndex=0x${wIndex.toString(16)}, ret=$ret)")
-                    return true
+                    val readBuf = ByteArray(4)
+                    val readRet = conn.controlTransfer(
+                        0xA1,    // Device-to-Host, Class, Interface
+                        0x01,    // GET_CUR
+                        0x0100,  // CS_SAM_FREQ_CONTROL
+                        wIndex,
+                        readBuf,
+                        readBuf.size,
+                        500
+                    )
+                    if (readRet >= 4) {
+                        val verified = (readBuf[0].toInt() and 0xFF) or
+                                ((readBuf[1].toInt() and 0xFF) shl 8) or
+                                ((readBuf[2].toInt() and 0xFF) shl 16) or
+                                ((readBuf[3].toInt() and 0xFF) shl 24)
+                        if (verified == sampleRateHz) {
+                            confirmedClockSourceId = csId
+                            Log.i(TAG, "setSampleRate($sampleRateHz Hz): VERIFIED SUCCESS with clockSourceId=0x${csId.toString(16)} (wIndex=0x${wIndex.toString(16)})")
+                            return true
+                        }
+                    }
+                    if (fallbackAcceptedCsId < 0) {
+                        fallbackAcceptedCsId = csId
+                        fallbackWIndex = wIndex
+                    }
                 }
             }
+        }
+
+        if (fallbackAcceptedCsId > 0) {
+            confirmedClockSourceId = fallbackAcceptedCsId
+            Log.i(TAG, "setSampleRate($sampleRateHz Hz): SET_CUR accepted on clockSourceId=0x${fallbackAcceptedCsId.toString(16)} (wIndex=0x${fallbackWIndex.toString(16)})")
+            return true
         }
 
         // 2. Try UAC 1.0 endpoint frequency control (Class, Endpoint, Out)
@@ -650,10 +727,14 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val detectedId = cachedDeviceInfo?.clockSourceId ?: -1
         val ctrlIntfId = cachedDeviceInfo?.controlInterfaceId ?: 0
         val candidateIds = mutableListOf<Int>()
-        if (detectedId > 0) candidateIds.add(detectedId)
+        if (confirmedClockSourceId > 0) candidateIds.add(confirmedClockSourceId)
+        if (detectedId > 0 && !candidateIds.contains(detectedId)) candidateIds.add(detectedId)
+        for (id in detectedClockIds) {
+            if (!candidateIds.contains(id)) candidateIds.add(id)
+        }
         val commonIds = listOf(
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x0D,
-            0x10, 0x11, 0x12, 0x20, 0x21, 0x22, 0x28, 0x29, 0x2A, 0x30, 0x40
+            0x29, 0x28, 0x2A, 0x05, 0x0A, 0x09, 0x0B, 0x0C, 0x0D,
+            0x04, 0x06, 0x07, 0x08, 0x10, 0x11, 0x12, 0x20, 0x21, 0x22, 0x30, 0x40, 0x01, 0x02, 0x03
         )
         for (id in commonIds) {
             if (!candidateIds.contains(id)) candidateIds.add(id)
@@ -669,7 +750,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
                     wIndex,
                     data,
                     data.size,
-                    1000
+                    500
                 )
                 if (ret >= 4) {
                     val rate = (data[0].toInt() and 0xFF) or
@@ -700,8 +781,12 @@ class UsbAudioDevice private constructor(private val context: Context) {
         val detectedId = cachedDeviceInfo?.clockSourceId ?: -1
         val ctrlIntfId = cachedDeviceInfo?.controlInterfaceId ?: 0
         val candidateIds = mutableListOf<Int>()
-        if (detectedId > 0) candidateIds.add(detectedId)
-        val commonIds = listOf(0x01, 0x02, 0x03, 0x04, 0x05, 0x09, 0x0A, 0x0B, 0x0C, 0x28, 0x29)
+        if (confirmedClockSourceId > 0) candidateIds.add(confirmedClockSourceId)
+        if (detectedId > 0 && !candidateIds.contains(detectedId)) candidateIds.add(detectedId)
+        for (id in detectedClockIds) {
+            if (!candidateIds.contains(id)) candidateIds.add(id)
+        }
+        val commonIds = listOf(0x29, 0x28, 0x2A, 0x05, 0x0A, 0x09, 0x0B, 0x0C, 0x01, 0x02, 0x03)
         for (id in commonIds) {
             if (!candidateIds.contains(id)) candidateIds.add(id)
         }

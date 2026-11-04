@@ -227,5 +227,12 @@ class UsbAudioStream(
          */
         @JvmStatic
         external fun nativeUsbReset(fd: Int): Int
+
+        /**
+         * Release userspace interface claims, reconnect Linux kernel snd-usb-audio driver,
+         * and reset USB device for standard system audio routing.
+         */
+        @JvmStatic
+        external fun nativeUsbReleaseAndRebind(fd: Int): Int
     }
 }

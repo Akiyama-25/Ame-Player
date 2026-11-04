@@ -176,7 +176,7 @@ class LoudnessAudioProcessorTest {
     }
 
     @Test
-    fun `未校准音轨在起播时动态分析并自适应平准`() {
+    fun `未校准音轨在起播时保持稳定初始电平并在全曲响度就绪后平滑应用`() {
         val processor = LoudnessAudioProcessor()
         processor.isEnabled = true
         processor.targetLufs = -14.0f
@@ -188,13 +188,14 @@ class LoudnessAudioProcessorTest {
         // 重置为未知响度曲目 (null)
         processor.resetForTrack("uncalibrated_song", null)
         assertEquals(null, processor.staticGainDb)
+        assertEquals(1.0f, processor.currentMultiplier, 0.001f)
 
-        // 喂入响度较高的连续音频流（幅值约 0.38，接近 -8 LUFS 能量）
-        val frameCount = 30000 // 约 625ms
+        // 喂入连续音频流，未获取全曲响度前保持 1.0 原始电平输出，绝不在播放中途动态漂移
+        val frameCount = 1000
         val input = ByteBuffer.allocateDirect(frameCount * 4).order(ByteOrder.LITTLE_ENDIAN)
         for (i in 0 until frameCount) {
-            input.putShort(12500)
-            input.putShort(12500)
+            input.putShort(10000)
+            input.putShort(10000)
         }
         input.flip()
 
@@ -203,14 +204,33 @@ class LoudnessAudioProcessorTest {
         output.order(ByteOrder.LITTLE_ENDIAN)
 
         output.position((frameCount - 10) * 4)
-        val measuredOutput = output.short.toInt()
+        val initialSample = output.short.toInt()
+        assertEquals(10000, initialSample)
 
-        // 动态自适应探测到大能量后会自动将增益拉低以匹配 -14 LUFS 目标
-        assertTrue("动态自适应应调低过响曲目，实际输出样本: $measuredOutput", measuredOutput < 11000)
+        // 全曲扫描完成后，设置全曲静态增益 (-6.0 dB, 乘数 ≈ 0.501)
+        processor.setStaticGain(-6.0f, 0.501187f)
+        assertEquals(-6.0f, processor.staticGainDb)
+
+        // 再次喂入音频，增益应平滑收敛至目标值
+        val nextFrames = 12000
+        val inputNext = ByteBuffer.allocateDirect(nextFrames * 4).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until nextFrames) {
+            inputNext.putShort(10000)
+            inputNext.putShort(10000)
+        }
+        inputNext.flip()
+
+        processor.queueInput(inputNext)
+        val outputNext = processor.output
+        outputNext.order(ByteOrder.LITTLE_ENDIAN)
+
+        outputNext.position((nextFrames - 10) * 4)
+        val settledSample = outputNext.short.toInt()
+        assertTrue("全曲增益就绪后应平滑收敛，实际: $settledSample", settledSample in 4900..5150)
     }
 
     @Test
-    fun `积累满有效音频分块后成功回调BS1770综合响度结果`() {
+    fun `反复开关音量均衡保持稳定且不发生累积衰减`() {
         val processor = LoudnessAudioProcessor()
         processor.isEnabled = true
         processor.targetLufs = -14.0f
@@ -219,38 +239,22 @@ class LoudnessAudioProcessorTest {
         processor.configure(format)
         processor.flush()
 
-        var callbackReceived: LoudnessData? = null
-        processor.onLoudnessMeasured = { id, data ->
-            if (id == "song_analyze_test") {
-                callbackReceived = data
-            }
+        val knownLoudness = LoudnessData(-8.0f, 1.0f, LoudnessSource.REPLAYGAIN_TAG)
+        processor.resetForTrack("toggle_test_song", knownLoudness)
+
+        val targetMult = processor.currentMultiplier
+        assertTrue("已知 -8 LUFS 增益乘数应在 0.5 左右", targetMult in 0.49f..0.52f)
+
+        // 反复开关 20 次
+        for (i in 0 until 20) {
+            processor.updateSettings(enabled = false, target = -14.0f, peakLimit = true)
+            assertEquals(1.0f, processor.currentMultiplier, 0.001f)
+
+            processor.updateSettings(enabled = true, target = -14.0f, peakLimit = true)
+            assertEquals(targetMult, processor.currentMultiplier, 0.001f)
         }
 
-        processor.resetForTrack("song_analyze_test", null)
-
-        // 48000Hz 下一个分块为 0.4s = 19200 帧，25 个分块为 480,000 帧
-        // 构造带有正弦波信号的连续缓冲
-        val chunkSize = 48000 // 1 秒一段
-        val inputBuf = ByteBuffer.allocateDirect(chunkSize * 4).order(ByteOrder.LITTLE_ENDIAN)
-        val f0 = 997.0
-        val fs = 48000.0
-
-        for (chunk in 0 until 11) {
-            inputBuf.clear()
-            for (i in 0 until chunkSize) {
-                val t = (chunk * chunkSize + i) / fs
-                val s = (kotlin.math.sin(2.0 * Math.PI * f0 * t) * 16384).toInt().toShort()
-                inputBuf.putShort(s)
-                inputBuf.putShort(s)
-            }
-            inputBuf.flip()
-            processor.queueInput(inputBuf)
-        }
-
-        assertNotNull("分析完成应触发回调并返回 BS1770 数据", callbackReceived)
-        val data = callbackReceived!!
-        assertEquals(LoudnessSource.BS1770_SCAN, data.source)
-        // 正弦波幅值 0.5 (-6 dBFS) 经 K-weighting 后的 LUFS 在 -6 ~ -10 之间
-        assertTrue("测得的综合响度应在 -12 ~ -6 LUFS 之间，实际: ${data.integratedLufs}", data.integratedLufs in -12.0f..-6.0f)
+        // 最终确认增益绝对未发生向下衰减漂移
+        assertEquals(targetMult, processor.currentMultiplier, 0.001f)
     }
 }

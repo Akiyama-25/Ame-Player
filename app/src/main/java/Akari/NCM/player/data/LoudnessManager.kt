@@ -15,7 +15,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 管理与缓存所有在线与本地曲目的 EBU R128 / ITU-R BS.1770 响度特征
+ * 管理与缓存所有在线与本地曲目的 EBU R128 / ITU-R BS.1770 全曲综合响度特征
  */
 @Singleton
 class LoudnessManager @Inject constructor(
@@ -49,8 +49,7 @@ class LoudnessManager @Inject constructor(
                         val peak = parts[1].toFloatOrNull()
                         val srcName = parts[2]
                         val src = runCatching { LoudnessSource.valueOf(srcName) }.getOrDefault(LoudnessSource.BS1770_SCAN)
-                        // 忽略旧版本 10 秒短切片产生的漂移错误缓存，仅载入可靠的云端与标签数据
-                        if (lufs != null && peak != null && src != LoudnessSource.BS1770_SCAN) {
+                        if (lufs != null && peak != null) {
                             memoryCache[key] = LoudnessData(lufs, peak, src)
                         }
                     }
@@ -63,7 +62,7 @@ class LoudnessManager @Inject constructor(
     }
 
     /**
-     * 保存并持久化曲目综合响度数据
+     * 保存并持久化曲目全曲综合响度数据
      */
     fun saveLoudness(mediaId: String, data: LoudnessData) {
         memoryCache[mediaId] = data
@@ -77,7 +76,7 @@ class LoudnessManager @Inject constructor(
     }
 
     /**
-     * 注册随在线音频链接解析一并返回的云端综合响度与峰值特征
+     * 注册随在线音频链接解析一并返回的云端全曲综合响度与峰值特征
      */
     fun registerOnlineLoudness(songId: String, gainDb: Float?, peak: Float?) {
         if (gainDb != null) {
@@ -93,7 +92,7 @@ class LoudnessManager @Inject constructor(
     }
 
     /**
-     * 异步获取曲目的综合响度数据；若尚未测算或无内嵌标签则返回 null，由音频处理器进行实时分析
+     * 异步获取曲目的综合响度数据；若尚未测算或无内嵌标签则返回 null，由全曲扫描器进行后台分析
      */
     suspend fun getLoudness(media: PlayableMedia): LoudnessData? = withContext(Dispatchers.IO) {
         val cached = memoryCache[media.id]
@@ -101,6 +100,21 @@ class LoudnessManager @Inject constructor(
 
         when (media) {
             is PlayableMedia.Online -> {
+                // 检查持久化磁盘缓存
+                val persisted = prefs.getString(media.id, null)
+                if (persisted != null) {
+                    val parts = persisted.split(",")
+                    if (parts.size >= 3) {
+                        val lufs = parts[0].toFloatOrNull()
+                        val peak = parts[1].toFloatOrNull()
+                        val src = runCatching { LoudnessSource.valueOf(parts[2]) }.getOrDefault(LoudnessSource.BS1770_SCAN)
+                        if (lufs != null && peak != null) {
+                            val data = LoudnessData(lufs, peak, src)
+                            memoryCache[media.id] = data
+                            return@withContext data
+                        }
+                    }
+                }
                 null
             }
             is PlayableMedia.LocalNcm -> {
@@ -125,7 +139,6 @@ class LoudnessManager @Inject constructor(
                     return@withContext tagData
                 }
 
-                // 3. 本地音频无标签，返回 null 以触发播放时实时 BS.1770 算法分析与动态平衡
                 null
             }
         }

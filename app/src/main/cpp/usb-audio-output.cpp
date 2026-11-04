@@ -204,9 +204,9 @@ static void handleFeedbackCompletion(UsbAudioContext *ctx) {
         uint32_t raw = fb[0] | (fb[1] << 8) | (fb[2] << 16) | (fb[3] << 24);
         double newFpmf = raw / 65536.0;
 
-        // Sanity check: feedback should be within ±1% of nominal
+        // Sanity check: feedback should be within ±5% of nominal
         double nominal = ctx->sampleRate / 8000.0;
-        if (newFpmf > nominal * 0.99 && newFpmf < nominal * 1.01) {
+        if (newFpmf > nominal * 0.95 && newFpmf < nominal * 1.05) {
             ctx->calibratedFpmf = newFpmf;
             // Log only every 10000th feedback — logging in the audio path is expensive
             if (g_feedbackCount % 10000 == 0) {
@@ -500,12 +500,12 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(
 
     if (ctx->endpointFeedback > 0) {
         double fb = readFeedback(ctx->fd, ctx->endpointFeedback);
-        if (fb >= nominalFpmf * 0.98 && fb <= nominalFpmf * 1.02) {
+        if (fb >= nominalFpmf * 0.95 && fb <= nominalFpmf * 1.05) {
             ctx->calibratedFpmf = fb;
             LOGI("Start: initial feedback=%.4f fpmf (%.1f Hz), nominal=%.4f (%.1f Hz)",
                  fb, fb * 8000.0, nominalFpmf, nominalFpmf * 8000.0);
         } else {
-            LOGW("Start: initial feedback %.4f deviated from nominal %.4f (>2%%), staying on nominal!",
+            LOGW("Start: initial feedback %.4f deviated from nominal %.4f (>5%%), staying on nominal!",
                  fb, nominalFpmf);
             ctx->calibratedFpmf = nominalFpmf;
         }
@@ -662,6 +662,24 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbReset(
     struct usbdevfs_setinterface si = {}; si.interface = 1; si.altsetting = 0;
     ioctl(fd, USBDEVFS_SETINTERFACE, &si);
     return 0;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_decent_usbaudio_UsbAudioStream_nativeUsbReleaseAndRebind(
+        JNIEnv *, jclass, jint fd) {
+    LOGI("USBDEVFS release and rebind fd=%d", fd);
+    // 1. Release userspace claims and re-attach kernel snd-usb-audio driver
+    for (int ifno = 0; ifno <= 1; ifno++) {
+        ioctl(fd, USBDEVFS_RELEASEINTERFACE, &ifno);
+        struct usbdevfs_ioctl cmd = {};
+        cmd.ifno = ifno;
+        cmd.ioctl_code = USBDEVFS_CONNECT;
+        ioctl(fd, USBDEVFS_IOCTL, &cmd);
+    }
+    // 2. Perform real USB reset without claiming interfaces
+    int ret = ioctl(fd, USBDEVFS_RESET, 0);
+    LOGI("USBDEVFS_RESET after release: ret=%d errno=%d", ret, errno);
+    return ret;
 }
 
 } // extern "C" — pause for non-JNI functions used by native-audio-engine

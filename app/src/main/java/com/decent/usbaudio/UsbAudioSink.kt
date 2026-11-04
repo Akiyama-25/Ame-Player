@@ -44,6 +44,9 @@ class UsbAudioSink(
     private var currentEncoding: Int = C.ENCODING_PCM_16BIT
     private var currentSampleRate: Int = 0
     private var currentChannelCount: Int = 0
+    private var activeEncoding: Int = C.ENCODING_PCM_16BIT
+    private var activeSampleRate: Int = 0
+    private var activeChannelCount: Int = 0
     private var pendingVolume: Float = runCatching {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
         val current = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
@@ -67,7 +70,7 @@ class UsbAudioSink(
             Log.i(TAG, "setBitPerfectEnabled: $enabled")
             if (enabled) {
                 // 若在播放进行中开启独占，立即初始化并启动 USB 独占输出管道
-                if (usbAudioStream == null && currentSampleRate > 0 && currentChannelCount > 0) {
+                if ((activeSampleRate != currentSampleRate || usbAudioStream == null) && currentSampleRate > 0 && currentChannelCount > 0) {
                     val device = usbAudioDevice.findUsbAudioDevice()
                     if (device != null && usbAudioDevice.hasPermission(device)) {
                         configureUsbBitPerfect(currentSampleRate, currentChannelCount, currentEncoding)
@@ -146,12 +149,6 @@ class UsbAudioSink(
                 usbStartMediaTimeUs = maxOf(0L, presentationTimeUs)
                 usbStartMediaTimeNeedsInit = false
                 Log.i(TAG, "Captured usbStartMediaTimeUs=$usbStartMediaTimeUs")
-            }
-
-            // 核心支持：即使在 USB 独占模式下，也向 LoudnessAudioProcessor 喂入音频副本进行实时 BS.1770 综合响度测算
-            loudnessAudioProcessor?.let { proc ->
-                val analysisSnapshot = buffer.slice().order(buffer.order())
-                proc.queueInput(analysisSnapshot)
             }
 
             val thread = usbStreamingThread ?: return true
@@ -267,9 +264,9 @@ class UsbAudioSink(
     }
 
     private fun configureUsbBitPerfect(sampleRate: Int, channelCount: Int, encoding: Int) {
-        if (sampleRate == currentSampleRate && channelCount == currentChannelCount
-            && usbAudioStream?.isAlive == true) {
-            Log.d(TAG, "USB stream cached for rate=$sampleRate ch=$channelCount — reusing")
+        if (sampleRate == activeSampleRate && channelCount == activeChannelCount
+            && encoding == activeEncoding && usbAudioStream?.isAlive == true) {
+            Log.d(TAG, "USB stream cached for rate=$sampleRate ch=$channelCount bits=$encoding — reusing")
             return
         }
 
@@ -304,7 +301,7 @@ class UsbAudioSink(
         }
 
         // ─── UAC2 xHCI-verified rate transition sequence ───
-        // 1. setAlt(0)       → FREE old ISO rings
+        // 1. setAlt(0) → FREE old ISO rings, idle interface
         if (!usbAudioDevice.setAltSetting(0)) {
             Log.w(TAG, "setAlt(0) failed — stale fd, reopening device...")
             usbAudioDevice.closeDevice()
@@ -329,24 +326,27 @@ class UsbAudioSink(
                 stream.release()
                 return
             }
-            Log.i(TAG, "Device reopened with fresh fd=${deviceInfo.fd}")
+            usbAudioDevice.setAltSetting(0)
         }
         Log.i(TAG, "Step 1: setAlt(0) — old ISO ring freed")
 
-        // 2. setAlt(N) → ALLOC new ISO rings with target format FIRST
-        val altResult = usbAudioDevice.setAltSetting(altSetting)
-        Log.i(TAG, "Step 2: setAlt($altSetting): $altResult — new ISO ring allocated")
-
-        // 3. SET_CUR → write new sample rate on the active interface
+        // 2. SET_CUR → write new sample rate on the clock source while in alt=0
         val rateOk = usbAudioDevice.setSampleRate(sampleRate)
         val verifiedRate = usbAudioDevice.readSampleRate()
         val clockValid = usbAudioDevice.readClockValid()
-        Log.i(TAG, "Step 3: setSampleRate($sampleRate Hz): success=$rateOk, verifiedRate=$verifiedRate Hz, CLOCK_VALID=$clockValid")
+        Log.i(TAG, "Step 2: setSampleRate($sampleRate Hz): success=$rateOk, verifiedRate=$verifiedRate Hz, CLOCK_VALID=$clockValid")
 
-        // 4. wait 50ms → DAC hardware PLL lock time
-        Thread.sleep(50)
+        // 3. wait 20ms for hardware PLL lock
+        Thread.sleep(20)
 
-        // 5. start stream
+        // 4. setAlt(altSetting) → ALLOC new ISO rings with target format on the newly locked clock
+        val altResult = usbAudioDevice.setAltSetting(altSetting)
+        Log.i(TAG, "Step 4: setAlt($altSetting): $altResult — new ISO ring allocated")
+
+        // 5. wait 30ms for endpoint stabilization
+        Thread.sleep(30)
+
+        // 6. start stream
         if (!stream.start()) {
             Log.e(TAG, "USB stream start failed")
             stream.release()
@@ -354,6 +354,9 @@ class UsbAudioSink(
         }
 
         usbAudioStream = stream
+        activeSampleRate = sampleRate
+        activeChannelCount = channelCount
+        activeEncoding = encoding
         currentSampleRate = sampleRate
         currentChannelCount = channelCount
         muteDelegateIfNeeded()
@@ -371,6 +374,9 @@ class UsbAudioSink(
     private fun releaseUsbStream() {
         val stream = usbAudioStream ?: return
         usbAudioStream = null
+        activeSampleRate = 0
+        activeChannelCount = 0
+        activeEncoding = C.ENCODING_PCM_16BIT
 
         stream.stop()
         usbStreamingThread?.stop()
