@@ -179,6 +179,27 @@ class IslandAndMetadataTest {
     }
 
     @Test
+    fun testIslandLiveNotificationManager_postTestIslandNotification() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+
+        val manager = IslandLiveNotificationManager(context)
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        manager.postTestIslandNotification()
+        assertTrue(manager.isIslandActive)
+
+        val activeNotifications = shadowOf(nm).allNotifications
+        assertTrue(activeNotifications.isNotEmpty())
+        val notif = activeNotifications.firstOrNull { it.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() == "Ame Player 实况测试" }
+        assertNotNull(notif)
+        assertTrue(notif!!.extras.getBoolean(IslandLiveNotificationManager.EXTRA_REQUEST_PROMOTED_ONGOING))
+
+        manager.cancelIsland()
+        assertFalse(manager.isIslandActive)
+    }
+
+    @Test
     @Config(qualifiers = "w400dp-h2000dp")
     fun testSettingsScreen_liveIslandSwitch_togglesAndPersists() {
         val sessionManager = UserSessionManager(context)
@@ -207,6 +228,37 @@ class IslandAndMetadataTest {
         ThemePrefs.init(context)
         assertTrue(ThemePrefs.liveIslandEnabled)
         assertTrue(ThemePrefs.liveIslandEnabledFlow.value)
+    }
+
+    @Test
+    @Config(qualifiers = "w400dp-h2000dp")
+    fun testSettingsScreen_testIslandNotification_trigger() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+
+        val sessionManager = UserSessionManager(context)
+        val playlistManager = PlaylistManager(context)
+        val ncmApi = NcmApi(sessionManager)
+        val localFolderManager = LocalFolderManager(context, sessionManager, playlistManager, ncmApi)
+
+        composeTestRule.setContent {
+            SettingsScreen(
+                sessionManager = sessionManager,
+                ncmApi = ncmApi,
+                localFolderManager = localFolderManager,
+                onBack = {}
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNodeWithText("发送上岛测试通知").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_check_island_permission").performClick()
+        composeTestRule.mainClock.advanceTimeBy(1000)
+        composeTestRule.waitForIdle()
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val activeNotifications = shadowOf(nm).allNotifications
+        assertTrue(activeNotifications.isNotEmpty())
     }
 
     @Test

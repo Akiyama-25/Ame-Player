@@ -92,10 +92,89 @@ class IslandLiveNotificationManager(private val context: Context) {
         if (Build.VERSION.SDK_INT >= 36) {
             val intent = Intent(ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS).apply {
                 data = Uri.fromParts("package", context.packageName, null)
+                putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             runCatching { context.startActivity(intent) }
         }
+    }
+
+    /**
+     * 发送一次测试实况通知，模拟未处于前台状态展示效果。
+     * 自动配置 Android 16 Live Updates (EXTRA_REQUEST_PROMOTED_ONGOING + EXTRA_SHORT_CRITICAL_TEXT)、
+     * vivo OriginOS (notification.superx.*) 以及魅族 Flyme (Ticker 实况歌词) 等多厂商上岛参数。
+     */
+    fun postTestIslandNotification(
+        songTitle: String = "Ame Player 实况测试",
+        artist: String = "模拟未处于前台状态展示效果",
+        chipText: String = "实况测试",
+        timeoutMs: Long = 60_000L
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+
+        val displayTitle = songTitle
+        val displaySubtitle = artist
+        val maxProgress = 100
+        val currentProgress = 50
+
+        val liveUpdateExtras = Bundle().apply {
+            putCharSequence(EXTRA_SHORT_CRITICAL_TEXT, chipText)
+            putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
+            putBoolean("android.styledByProgress", false)
+        }
+
+        val intent = Intent(context, Akari.NCM.player.MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("open_player", true)
+        }
+        val contentIntent = PendingIntent.getActivity(
+            context,
+            NOTIFICATION_ID,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_ame_status)
+            .setContentTitle(displayTitle)
+            .setContentText(displaySubtitle)
+            .setSubText(chipText)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setContentIntent(contentIntent)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+            .setProgress(maxProgress, currentProgress, false)
+            .setTimeoutAfter(timeoutMs)
+            .addExtras(liveUpdateExtras)
+
+        if (isVivoDevice) {
+            val vivoExtras = buildVivoSuperxExtras(
+                operation = 0,
+                title = displayTitle,
+                content = displaySubtitle,
+                coverBitmap = null,
+                clickIntent = contentIntent
+            )
+            builder.addExtras(vivoExtras)
+        }
+
+        val notification = builder.build()
+
+        FlymeTickerLyricHelper.applyTickerLyrics(
+            notification = notification,
+            currentLyric = "$songTitle - $artist",
+            isLyricOnlyUpdate = false
+        )
+
+        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        isIslandActive = true
     }
 
     /**

@@ -143,6 +143,19 @@ fun SettingsScreen(
     val islandManager = remember { Akari.NCM.player.player.island.IslandLiveNotificationManager(context) }
     var canPostPromoted by remember { mutableStateOf(islandManager.canPostLiveUpdates()) }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                canPostPromoted = islandManager.canPostLiveUpdates()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -705,58 +718,78 @@ fun SettingsScreen(
                 }
             }
 
-            if (android.os.Build.VERSION.SDK_INT >= 36) {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                canPostPromoted = islandManager.canPostLiveUpdates()
-                                if (!canPostPromoted) {
-                                    islandManager.openPromotedNotificationSettings()
-                                } else {
-                                    Toast.makeText(context, "当前系统已允许本应用发送实况上岛通知", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                            .testTag("setting_check_island_permission"),
-                        verticalAlignment = Alignment.CenterVertically
+            item {
+                val triggerTestIsland: () -> Unit = {
+                    if (android.os.Build.VERSION.SDK_INT >= 36 && !islandManager.canPostLiveUpdates()) {
+                        Toast.makeText(context, "未开启实况通知权限，点击前往开启「实况通知」", Toast.LENGTH_SHORT).show()
+                        islandManager.openPromotedNotificationSettings()
+                        return@triggerTestIsland
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                        androidx.core.content.ContextCompat.checkSelfPermission(
+                            context,
+                            android.Manifest.permission.POST_NOTIFICATIONS
+                        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.NotificationsActive,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
+                        notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        return@triggerTestIsland
+                    }
+
+                    Toast.makeText(context, "正在模拟离开前台并发送实况通知，点击胶囊可返回应用", Toast.LENGTH_SHORT).show()
+                    val activity = context as? android.app.Activity
+                    activity?.moveTaskToBack(true)
+                    scope.launch(Dispatchers.Main) {
+                        delay(400)
+                        islandManager.postTestIslandNotification()
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { triggerTestIsland() }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("setting_check_island_permission"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.NotificationsActive,
+                        contentDescription = "发送上岛测试通知",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "发送上岛测试通知",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
                         )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "检查系统上岛权限",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = if (canPostPromoted) "已获得 Android 16 实况通知 (Live Updates) 晋升权限"
-                                else "未开启实况通知权限，点击前往系统设置开启「实况通知 / 流体云」开关",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (canPostPromoted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
-                            )
+                        val subtitleText = if (android.os.Build.VERSION.SDK_INT >= 36 && !canPostPromoted) {
+                            "未开启实况通知权限，点击前往系统设置开启「实况通知 / 流体云」开关"
+                        } else {
+                            "模拟离开前台退至后台状态，触发一条实况通知以检测灵动岛/流体云/原子岛效果"
                         }
-                        FilledTonalButton(
-                            onClick = {
-                                canPostPromoted = islandManager.canPostLiveUpdates()
-                                if (!canPostPromoted) {
-                                    islandManager.openPromotedNotificationSettings()
-                                } else {
-                                    Toast.makeText(context, "当前系统已允许本应用发送实况上岛通知", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.testTag("btn_check_island_permission")
-                        ) {
-                            Text(if (canPostPromoted) "已授权" else "去开启", fontSize = 12.sp)
-                        }
+                        Text(
+                            text = subtitleText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (android.os.Build.VERSION.SDK_INT >= 36 && !canPostPromoted) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = { triggerTestIsland() },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.testTag("btn_check_island_permission")
+                    ) {
+                        Text(
+                            text = if (android.os.Build.VERSION.SDK_INT >= 36 && !canPostPromoted) "去开启" else "发送测试",
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }
