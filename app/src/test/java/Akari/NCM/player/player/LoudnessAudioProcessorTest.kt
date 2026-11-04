@@ -211,8 +211,8 @@ class LoudnessAudioProcessorTest {
         processor.setStaticGain(-6.0f, 0.501187f)
         assertEquals(-6.0f, processor.staticGainDb)
 
-        // 再次喂入音频，增益应平滑收敛至目标值
-        val nextFrames = 12000
+        // 再次喂入音频，增益在 200ms 时间常数指数平滑下完全收敛至目标值 (约 1 秒 = 48000+ 帧)
+        val nextFrames = 60000
         val inputNext = ByteBuffer.allocateDirect(nextFrames * 4).order(ByteOrder.LITTLE_ENDIAN)
         for (i in 0 until nextFrames) {
             inputNext.putShort(10000)
