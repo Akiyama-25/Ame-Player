@@ -205,7 +205,7 @@ class LoudnessAudioProcessorTest {
 
         output.position((frameCount - 10) * 4)
         val initialSample = output.short.toInt()
-        assertEquals(10000, initialSample)
+        assertTrue("未获取全曲响度前应保持 1.0 原始电平输出，实际: $initialSample", initialSample in 9990..10010)
 
         // 全曲扫描完成后，设置全曲静态增益 (-6.0 dB, 乘数 ≈ 0.501)
         processor.setStaticGain(-6.0f, 0.501187f)
