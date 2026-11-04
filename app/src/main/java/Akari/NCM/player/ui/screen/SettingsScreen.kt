@@ -723,24 +723,21 @@ fun SettingsScreen(
                     if (android.os.Build.VERSION.SDK_INT >= 36 && !islandManager.canPostLiveUpdates()) {
                         Toast.makeText(context, "未开启实况通知权限，点击前往开启「实况通知」", Toast.LENGTH_SHORT).show()
                         islandManager.openPromotedNotificationSettings()
-                        return@triggerTestIsland
-                    }
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                    } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
                         androidx.core.content.ContextCompat.checkSelfPermission(
                             context,
                             android.Manifest.permission.POST_NOTIFICATIONS
                         ) != android.content.pm.PackageManager.PERMISSION_GRANTED
                     ) {
                         notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
-                        return@triggerTestIsland
-                    }
-
-                    Toast.makeText(context, "正在模拟离开前台并发送实况通知，点击胶囊可返回应用", Toast.LENGTH_SHORT).show()
-                    val activity = context as? android.app.Activity
-                    activity?.moveTaskToBack(true)
-                    scope.launch(Dispatchers.Main) {
-                        delay(400)
-                        islandManager.postTestIslandNotification()
+                    } else {
+                        Toast.makeText(context, "正在模拟离开前台并发送实况通知，点击胶囊可返回应用", Toast.LENGTH_SHORT).show()
+                        val activity = context as? android.app.Activity
+                        activity?.moveTaskToBack(true)
+                        scope.launch {
+                            delay(400)
+                            islandManager.postTestIslandNotification()
+                        }
                     }
                 }
 
