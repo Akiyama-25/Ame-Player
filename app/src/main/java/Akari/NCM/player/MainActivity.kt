@@ -33,10 +33,6 @@ class MainActivity : ComponentActivity() {
         
         Akari.NCM.player.data.ThemePrefs.init(this)
 
-        if (Akari.NCM.player.data.ThemePrefs.usbExclusiveMode) {
-            intent?.let { com.decent.usbaudio.UsbAudioPermissionHelper.handleIntent(this, it) }
-        }
-
         if (intent?.getBooleanExtra("open_player", false) == true) {
             openPlayerRequests.value++
         }
@@ -75,9 +71,6 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (Akari.NCM.player.data.ThemePrefs.usbExclusiveMode) {
-            intent.let { com.decent.usbaudio.UsbAudioPermissionHelper.handleIntent(this, it) }
-        }
         if (intent.getBooleanExtra("open_player", false)) {
             openPlayerRequests.value++
         }

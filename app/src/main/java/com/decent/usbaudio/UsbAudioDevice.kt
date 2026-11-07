@@ -546,14 +546,15 @@ class UsbAudioDevice private constructor(private val context: Context) {
     }
 
     /**
-     * Close the USB device and issue USBDEVFS_RESET to prompt the Linux kernel
-     * to re-attach the snd-usb-audio ALSA driver for standard system audio.
+     * Close the USB device and prompt the Linux kernel to re-attach
+     * the snd-usb-audio ALSA driver for standard system audio.
      */
     fun closeDeviceAndReset() {
         val conn = connection
         if (conn != null) {
             val fd = conn.fileDescriptor
             try {
+                setAltSetting(0)
                 Log.i(TAG, "Releasing USB interfaces and re-binding kernel ALSA driver via nativeUsbReleaseAndRebind...")
                 UsbAudioStream.nativeUsbReleaseAndRebind(fd)
             } catch (e: Exception) {

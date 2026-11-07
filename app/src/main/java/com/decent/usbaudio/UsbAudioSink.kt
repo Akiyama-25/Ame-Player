@@ -88,26 +88,27 @@ class UsbAudioSink(
 
     override fun configure(inputFormat: Format, specifiedBufferSize: Int, outputChannels: IntArray?) {
         val enc = inputFormat.pcmEncoding
-        if (enc != Format.NO_VALUE) currentEncoding = enc
+        val targetEncoding = if (enc != Format.NO_VALUE && enc != C.ENCODING_INVALID) enc else currentEncoding
+        currentEncoding = targetEncoding
         handleBufferCallCount = 0
-        val sr = inputFormat.sampleRate.takeIf { it > 0 }
-        val ch = inputFormat.channelCount.takeIf { it > 0 }
-        if (sr != null) currentSampleRate = sr
-        if (ch != null) currentChannelCount = ch
+        val sr = inputFormat.sampleRate.takeIf { it > 0 } ?: currentSampleRate
+        val ch = inputFormat.channelCount.takeIf { it > 0 } ?: currentChannelCount
+        currentSampleRate = sr
+        currentChannelCount = ch
 
-        Log.i(TAG, "configure: pcmEncoding=$enc rate=${inputFormat.sampleRate} ch=${inputFormat.channelCount} bitPerfect=${config.bitPerfectEnabled}")
+        Log.i(TAG, "configure: pcmEncoding=$enc (target=$targetEncoding) rate=$sr ch=$ch bitPerfect=${config.bitPerfectEnabled}")
 
-        if (config.bitPerfectEnabled && sr != null && ch != null) {
+        if (config.bitPerfectEnabled && sr > 0 && ch > 0) {
             val device = usbAudioDevice.findUsbAudioDevice()
             if (device != null && usbAudioDevice.hasPermission(device)) {
                 loudnessAudioProcessor?.let { proc ->
                     runCatching {
-                        val fmt = androidx.media3.common.audio.AudioProcessor.AudioFormat(sr, ch, enc)
+                        val fmt = androidx.media3.common.audio.AudioProcessor.AudioFormat(sr, ch, targetEncoding)
                         proc.configure(fmt)
                         proc.flush()
                     }
                 }
-                configureUsbBitPerfect(sr, ch, enc)
+                configureUsbBitPerfect(sr, ch, targetEncoding)
                 usbStartMediaTimeNeedsInit = true
                 if (config.forceRouteToSpeaker) forceMediaToSpeaker()
 
@@ -263,6 +264,20 @@ class UsbAudioSink(
         super.release()
     }
 
+    private fun stopAndReleaseCurrentStream() {
+        usbStreamingThread?.stop()
+        usbStreamingThread = null
+        usbAudioStream?.let { stream ->
+            stream.stop()
+            val drained = stream.drainUrbs()
+            Log.i(TAG, "Old USB stream drained $drained URBs before reconfiguration")
+            stream.release()
+        }
+        usbAudioStream = null
+        activeSampleRate = 0
+        activeChannelCount = 0
+    }
+
     private fun configureUsbBitPerfect(sampleRate: Int, channelCount: Int, encoding: Int) {
         if (sampleRate == activeSampleRate && channelCount == activeChannelCount
             && encoding == activeEncoding && usbAudioStream?.isAlive == true) {
@@ -270,7 +285,9 @@ class UsbAudioSink(
             return
         }
 
-        if (usbAudioStream != null) releaseUsbStream()
+        if (usbAudioStream != null) {
+            stopAndReleaseCurrentStream()
+        }
 
         val usbDevice = usbAudioDevice.findUsbAudioDevice() ?: return
         var deviceInfo = usbAudioDevice.openDevice(usbDevice)
@@ -372,20 +389,22 @@ class UsbAudioSink(
     }
 
     private fun releaseUsbStream() {
-        val stream = usbAudioStream ?: return
+        usbStreamingThread?.stop()
+        usbStreamingThread = null
+
+        val stream = usbAudioStream
         usbAudioStream = null
         activeSampleRate = 0
         activeChannelCount = 0
         activeEncoding = C.ENCODING_PCM_16BIT
 
-        stream.stop()
-        usbStreamingThread?.stop()
-        usbStreamingThread = null
+        if (stream != null) {
+            stream.stop()
+            val drained = stream.drainUrbs()
+            Log.i(TAG, "USB stream drained $drained URBs")
+            stream.release()
+        }
 
-        val drained = stream.drainUrbs()
-        Log.i(TAG, "USB stream drained $drained URBs")
-
-        stream.release()
         usbAudioDevice.closeDeviceAndReset()
         clearForcedRouting()
     }

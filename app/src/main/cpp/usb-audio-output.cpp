@@ -668,7 +668,7 @@ JNIEXPORT jint JNICALL
 Java_com_decent_usbaudio_UsbAudioStream_nativeUsbReleaseAndRebind(
         JNIEnv *, jclass, jint fd) {
     LOGI("USBDEVFS release and rebind fd=%d", fd);
-    // 1. Release userspace claims and re-attach kernel snd-usb-audio driver
+    // Release userspace claims and re-attach kernel snd-usb-audio driver
     for (int ifno = 0; ifno <= 1; ifno++) {
         ioctl(fd, USBDEVFS_RELEASEINTERFACE, &ifno);
         struct usbdevfs_ioctl cmd = {};
@@ -676,10 +676,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbReleaseAndRebind(
         cmd.ioctl_code = USBDEVFS_CONNECT;
         ioctl(fd, USBDEVFS_IOCTL, &cmd);
     }
-    // 2. Perform real USB reset without claiming interfaces
-    int ret = ioctl(fd, USBDEVFS_RESET, 0);
-    LOGI("USBDEVFS_RESET after release: ret=%d errno=%d", ret, errno);
-    return ret;
+    return 0;
 }
 
 } // extern "C" — pause for non-JNI functions used by native-audio-engine
