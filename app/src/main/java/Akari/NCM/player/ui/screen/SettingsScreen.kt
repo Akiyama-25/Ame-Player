@@ -135,6 +135,7 @@ fun SettingsScreen(
     val volumeNormalizationEnabled by ThemePrefs.volumeNormalizationFlow.collectAsState()
     val targetLoudnessLufs by ThemePrefs.targetLoudnessFlow.collectAsState()
     val loudnessPeakLimitEnabled by ThemePrefs.loudnessPeakLimitFlow.collectAsState()
+    val playbackFadeEnabled by ThemePrefs.playbackFadeEnabledFlow.collectAsState()
 
     val currentLogLevel by AppLogger.currentLevel.collectAsState()
     val maxFileSizeKb by AppLogger.maxFileSizeKb.collectAsState()
@@ -660,6 +661,44 @@ fun SettingsScreen(
                         checked = volumeNormalizationEnabled,
                         onCheckedChange = { ThemePrefs.volumeNormalizationEnabled = it },
                         modifier = Modifier.testTag("switch_volume_normalization")
+                    )
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { ThemePrefs.playbackFadeEnabled = !playbackFadeEnabled }
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .testTag("setting_playback_fade"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.GraphicEq,
+                        contentDescription = "播放淡入淡出",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "播放淡入与淡出",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = if (playbackFadeEnabled) "已启用 · 播放、暂停与切歌时平滑过渡音量，消除突兀爆音"
+                            else "已关闭 · 播放与暂停立即响应，不做音量渐变",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = playbackFadeEnabled,
+                        onCheckedChange = { ThemePrefs.playbackFadeEnabled = it },
+                        modifier = Modifier.testTag("switch_playback_fade")
                     )
                 }
             }

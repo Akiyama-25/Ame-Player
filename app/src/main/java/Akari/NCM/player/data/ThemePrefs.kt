@@ -30,6 +30,8 @@ object ThemePrefs {
     private const val KEY_TARGET_LOUDNESS_LUFS = "target_loudness_lufs"
     private const val KEY_LOUDNESS_PEAK_LIMIT_ENABLED = "loudness_peak_limit_enabled"
     private const val KEY_USB_EXCLUSIVE_MODE = "usb_exclusive_mode"
+    private const val KEY_PLAYBACK_FADE_ENABLED = "playback_fade_enabled"
+    private const val KEY_PLAYBACK_FADE_DURATION_MS = "playback_fade_duration_ms"
     private const val KEY_UPDATE_CHANNEL = "update_channel"
 
     const val THEME_SYSTEM = "system"
@@ -99,6 +101,12 @@ object ThemePrefs {
     private val _usbExclusiveModeFlow = MutableStateFlow(false)
     val usbExclusiveModeFlow: StateFlow<Boolean> = _usbExclusiveModeFlow.asStateFlow()
 
+    private val _playbackFadeEnabledFlow = MutableStateFlow(true)
+    val playbackFadeEnabledFlow: StateFlow<Boolean> = _playbackFadeEnabledFlow.asStateFlow()
+
+    private val _playbackFadeDurationMsFlow = MutableStateFlow(500)
+    val playbackFadeDurationMsFlow: StateFlow<Int> = _playbackFadeDurationMsFlow.asStateFlow()
+
     private val _updateChannelFlow = MutableStateFlow(UpdateChannel.RELEASE)
     val updateChannelFlow: StateFlow<UpdateChannel> = _updateChannelFlow.asStateFlow()
 
@@ -123,6 +131,8 @@ object ThemePrefs {
         _targetLoudnessFlow.value = targetLoudnessLufs
         _loudnessPeakLimitFlow.value = loudnessPeakLimitEnabled
         _usbExclusiveModeFlow.value = usbExclusiveMode
+        _playbackFadeEnabledFlow.value = playbackFadeEnabled
+        _playbackFadeDurationMsFlow.value = playbackFadeDurationMs
         _updateChannelFlow.value = updateChannel
     }
 
@@ -285,6 +295,24 @@ object ThemePrefs {
                 prefs.edit().putBoolean(KEY_USB_EXCLUSIVE_MODE, value).apply()
             }
             _usbExclusiveModeFlow.value = value
+        }
+
+    var playbackFadeEnabled: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_PLAYBACK_FADE_ENABLED, true) else _playbackFadeEnabledFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_PLAYBACK_FADE_ENABLED, value).apply()
+            }
+            _playbackFadeEnabledFlow.value = value
+        }
+
+    var playbackFadeDurationMs: Int
+        get() = if (::prefs.isInitialized) prefs.getInt(KEY_PLAYBACK_FADE_DURATION_MS, 500) else _playbackFadeDurationMsFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putInt(KEY_PLAYBACK_FADE_DURATION_MS, value).apply()
+            }
+            _playbackFadeDurationMsFlow.value = value
         }
 
     var updateChannel: UpdateChannel

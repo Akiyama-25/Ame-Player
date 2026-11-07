@@ -171,6 +171,25 @@ class AmePlayerEngine @Inject constructor(
         }
     }
 
+    private var currentFadeMultiplier: Float = 1.0f
+    private var fadeJob: Job? = null
+    private var isFadingOut: Boolean = false
+
+    private fun applyEffectiveVolume(fadeMultiplier: Float = currentFadeMultiplier) {
+        currentFadeMultiplier = fadeMultiplier.coerceIn(0f, 1f)
+        val baseVol = _volume.value
+        val effectiveVol = (baseVol * currentFadeMultiplier).coerceIn(0f, 1f)
+        exoPlayer.volume = effectiveVol
+
+        val effectiveUsbVol = if (usbAudioManager.isExclusiveModeEnabled.value && ThemePrefs.volumeNormalizationEnabled) {
+            val mult = loudnessAudioProcessor.currentMultiplier
+            (effectiveVol * mult).coerceIn(0f, 1f)
+        } else {
+            effectiveVol
+        }
+        usbAudioSink?.setVolume(effectiveUsbVol)
+    }
+
     fun syncVolumeFromSystem() {
         try {
             val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
@@ -179,14 +198,7 @@ class AmePlayerEngine @Inject constructor(
             if (max > 0) {
                 val ratio = (current.toFloat() / max.toFloat()).coerceIn(0f, 1f)
                 _volume.value = ratio
-                exoPlayer.volume = ratio
-                val effectiveUsbVol = if (usbAudioManager.isExclusiveModeEnabled.value && ThemePrefs.volumeNormalizationEnabled) {
-                    val mult = loudnessAudioProcessor.currentMultiplier
-                    (ratio * mult).coerceIn(0f, 1f)
-                } else {
-                    ratio
-                }
-                usbAudioSink?.setVolume(effectiveUsbVol)
+                applyEffectiveVolume()
             }
         } catch (_: Exception) {}
     }
@@ -453,11 +465,7 @@ class AmePlayerEngine @Inject constructor(
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _isPlaying.value = isPlaying
                 AppLogger.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onIsPlayingChanged: $isPlaying")
-                if (isPlaying) {
-                    syncIslandState()
-                } else {
-                    islandManager.cancelIsland()
-                }
+                syncIslandState()
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -601,8 +609,9 @@ class AmePlayerEngine @Inject constructor(
     }
 
     private fun startBackgroundObservers() {
-        // Position ticker & in-app lyric sync
+        // Position ticker & in-app lyric sync & live island refresh
         scope.launch {
+            var islandTickCounter = 0
             while (isActive) {
                 if (_isPlaying.value) {
                     val pos = exoPlayer.currentPosition
@@ -617,7 +626,12 @@ class AmePlayerEngine @Inject constructor(
                     } else {
                         updateAudioFormatFromExo(exoPlayer.audioFormat)
                     }
-                    updateCurrentLyricForPosition(pos)
+                    val lyricChanged = updateCurrentLyricForPosition(pos)
+                    islandTickCounter++
+                    if (isLiveIslandEnabled && (lyricChanged || islandTickCounter >= 20)) {
+                        islandTickCounter = 0
+                        syncIslandState()
+                    }
                 }
                 delay(50.milliseconds)
             }
@@ -627,6 +641,17 @@ class AmePlayerEngine @Inject constructor(
         scope.launch {
             ThemePrefs.liveIslandEnabledFlow.collect {
                 syncIslandState()
+            }
+        }
+
+        // Observe playback fade enabled switch changes
+        scope.launch {
+            ThemePrefs.playbackFadeEnabledFlow.collect { enabled ->
+                if (!enabled && fadeJob?.isActive == true) {
+                    fadeJob?.cancel()
+                    isFadingOut = false
+                    applyEffectiveVolume(1.0f)
+                }
             }
         }
 
@@ -781,7 +806,7 @@ class AmePlayerEngine @Inject constructor(
             )
             // 关闭音量均衡时，若在 USB 独占模式，必须立即恢复 DAC 输出为原始基准音量
             if (usbAudioManager.isExclusiveModeEnabled.value) {
-                usbAudioSink?.setVolume(_volume.value)
+                applyEffectiveVolume()
             }
             return
         }
@@ -812,9 +837,7 @@ class AmePlayerEngine @Inject constructor(
                 )
                 // 在 USB 独占模式且启用了音量均衡时，将已知全曲响度增益同步应用至 USB 输出
                 if (usbAudioManager.isExclusiveModeEnabled.value) {
-                    val baseVol = _volume.value
-                    val finalVol = (baseVol * gainResult.linearMultiplier).coerceIn(0f, 1f)
-                    usbAudioSink?.setVolume(finalVol)
+                    applyEffectiveVolume()
                 }
                 AppLogger.i("[AME_LOUDNESS]", "Applied whole-track EBU R128: track='${media.title}', source=${loudnessData.integratedLufs} LUFS, target=$targetLufs LUFS, gain=${gainResult.effectiveGainDb} dB (peakLimited=${gainResult.isPeakLimited})")
             } else {
@@ -827,7 +850,7 @@ class AmePlayerEngine @Inject constructor(
                 // 未获取全曲综合响度前保持 1.0 (0 dB) 平稳播放，绝不在歌曲播放途中发生动态漂移
                 loudnessAudioProcessor.setStaticGain(null, 1.0f)
                 if (usbAudioManager.isExclusiveModeEnabled.value) {
-                    usbAudioSink?.setVolume(_volume.value)
+                    applyEffectiveVolume()
                 }
                 AppLogger.i("[AME_LOUDNESS]", "Loudness unknown for '${media.title}', starting full-track background scan")
                 scanWholeTrackLoudness(media)
@@ -869,6 +892,7 @@ class AmePlayerEngine @Inject constructor(
             if (_currentMedia.value?.id == currentMedia.id) {
                 _currentLyricsResult.value = loaded
                 updateCurrentLyricForPosition(exoPlayer.currentPosition)
+                syncIslandState()
             }
         }
 
@@ -999,6 +1023,7 @@ class AmePlayerEngine @Inject constructor(
                                 updatedMetadata = updatedMetadata
                             )
                         }
+                        syncIslandState()
                     }
                 }
             } catch (e: Exception) {
@@ -1008,15 +1033,61 @@ class AmePlayerEngine @Inject constructor(
     }
 
     /**
-     * 统一的媒体实时窗状态同步入口：
-     * 确保取消多余的独立横幅通知（NOTIFICATION_ID = 2002），统一由原生 MediaSession 驱动播放状态展示与快捷控制实时窗。
+     * 统一的媒体实况通知与状态同步入口：
+     * 处于运行状态（已加载曲目且未退出）时持续发布与刷新实况通知，
+     * 配合 AmePlaybackService 前台服务保障 MediaSession 与系统媒体控件长效保活。
      */
     fun syncIslandState() {
-        islandManager.cancelIsland()
-        if (isLiveIslandEnabled && exoPlayer.isPlaying) {
-            runCatching {
-                context.startService(Intent(context, AmePlaybackService::class.java))
-            }
+        if (!isLiveIslandEnabled) {
+            islandManager.cancelIsland()
+            return
+        }
+
+        val playbackState = exoPlayer.playbackState
+        val isRunning = playbackState != Player.STATE_IDLE &&
+            playbackState != Player.STATE_ENDED &&
+            exoPlayer.mediaItemCount > 0
+
+        if (!isRunning) {
+            islandManager.cancelIsland()
+            return
+        }
+
+        ensurePlaybackServiceStarted()
+
+        val currentMedia = _currentMedia.value
+        val mediaMetadata = exoPlayer.currentMediaItem?.mediaMetadata
+        val title = mediaMetadata?.title?.toString().orEmpty().ifBlank { currentMedia?.title.orEmpty() }
+        val artist = mediaMetadata?.artist?.toString().orEmpty().ifBlank { currentMedia?.artist.orEmpty() }
+
+        if (title.isBlank()) {
+            islandManager.cancelIsland()
+            return
+        }
+
+        val currentLyric = _currentLyricState.value?.text.orEmpty()
+        val currentTrans = _currentLyricState.value?.translation
+        val duration = exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+            ?: _durationMs.value.takeIf { it > 0 }
+            ?: currentMedia?.durationMs?.takeIf { it > 0 }
+            ?: 0L
+
+        islandManager.postOrUpdateIsland(
+            songTitle = title,
+            artist = artist,
+            currentLyric = currentLyric,
+            currentTranslation = currentTrans,
+            currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+            durationMs = duration.coerceAtLeast(0L),
+            coverBitmap = currentArtworkBitmap,
+            contentIntent = buildOpenPlayerPendingIntent()
+        )
+    }
+
+    private fun ensurePlaybackServiceStarted() {
+        runCatching {
+            val intent = Intent(context, AmePlaybackService::class.java)
+            context.startService(intent)
         }
     }
 
@@ -1175,6 +1246,7 @@ class AmePlayerEngine @Inject constructor(
             disableInfinitePlayback()
         }
         ensureActive()
+        ensurePlaybackServiceStarted()
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> loadPlaylist size=${items.size}, startIndex=$startIndex, keepInfiniteMode=$keepInfiniteMode")
         mediaMap.clear()
         resolvedUrlCache.clear()
@@ -1538,21 +1610,89 @@ class AmePlayerEngine @Inject constructor(
         return uniqueToAdd.size
     }
 
+    private fun startFadeIn() {
+        fadeJob?.cancel()
+        isFadingOut = false
+        val startMult = if (exoPlayer.isPlaying) currentFadeMultiplier else 0f
+        applyEffectiveVolume(startMult)
+        exoPlayer.play()
+        val duration = (ThemePrefs.playbackFadeDurationMs * (1.0f - startMult)).toLong().coerceIn(50L, 2000L)
+        val stepInterval = 20L
+        val steps = (duration / stepInterval).coerceAtLeast(1)
+        fadeJob = scope.launch {
+            for (i in 1..steps) {
+                delay(stepInterval)
+                val t = i.toFloat() / steps
+                val factor = kotlin.math.sin(t * kotlin.math.PI / 2.0).toFloat()
+                val mult = startMult + (1.0f - startMult) * factor
+                applyEffectiveVolume(mult)
+            }
+            applyEffectiveVolume(1.0f)
+        }
+    }
+
+    private fun startFadeOut(onComplete: () -> Unit) {
+        fadeJob?.cancel()
+        isFadingOut = true
+        val startMult = currentFadeMultiplier
+        val duration = (ThemePrefs.playbackFadeDurationMs * startMult).toLong().coerceIn(50L, 2000L)
+        val stepInterval = 20L
+        val steps = (duration / stepInterval).coerceAtLeast(1)
+        fadeJob = scope.launch {
+            for (i in 1..steps) {
+                delay(stepInterval)
+                val t = i.toFloat() / steps
+                val factor = kotlin.math.cos(t * kotlin.math.PI / 2.0).toFloat()
+                val mult = startMult * factor
+                applyEffectiveVolume(mult)
+            }
+            applyEffectiveVolume(0f)
+            isFadingOut = false
+            onComplete()
+            applyEffectiveVolume(1.0f)
+        }
+    }
+
     override fun play() {
         ensureActive()
-        AppLogger.i("[AME_ONLINE_PLAY]", ">>> play() called")
-        exoPlayer.play()
+        ensurePlaybackServiceStarted()
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> play() called (fadeEnabled=${ThemePrefs.playbackFadeEnabled})")
+        if (!ThemePrefs.playbackFadeEnabled) {
+            fadeJob?.cancel()
+            isFadingOut = false
+            applyEffectiveVolume(1.0f)
+            exoPlayer.play()
+            return
+        }
+        startFadeIn()
     }
 
     override fun pause() {
+        pause(immediate = false)
+    }
+
+    fun pause(immediate: Boolean = false) {
         ensureActive()
-        AppLogger.i("[AME_ONLINE_PLAY]", ">>> pause() called")
-        exoPlayer.pause()
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> pause(immediate=$immediate) called (fadeEnabled=${ThemePrefs.playbackFadeEnabled})")
+        if (immediate || !ThemePrefs.playbackFadeEnabled || !exoPlayer.isPlaying) {
+            fadeJob?.cancel()
+            isFadingOut = false
+            exoPlayer.pause()
+            applyEffectiveVolume(1.0f)
+            return
+        }
+        startFadeOut {
+            exoPlayer.pause()
+        }
     }
 
     override fun togglePlayPause() {
         ensureActive()
-        if (exoPlayer.isPlaying) pause() else play()
+        if (isFadingOut || !exoPlayer.isPlaying) {
+            play()
+        } else {
+            pause()
+        }
     }
 
     override fun seekTo(positionMs: Long) {
@@ -1568,7 +1708,7 @@ class AmePlayerEngine @Inject constructor(
         if (exoPlayer.hasNextMediaItem()) {
             exoPlayer.seekToNext()
             exoPlayer.prepare()
-            exoPlayer.play()
+            play()
             if (_infinitePlayMode.value.isActive) {
                 checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
             }
@@ -1579,7 +1719,7 @@ class AmePlayerEngine @Inject constructor(
         } else if (exoPlayer.mediaItemCount > 0) {
             exoPlayer.seekToDefaultPosition(0)
             exoPlayer.prepare()
-            exoPlayer.play()
+            play()
         }
     }
 
@@ -1590,12 +1730,12 @@ class AmePlayerEngine @Inject constructor(
         } else if (exoPlayer.hasPreviousMediaItem()) {
             exoPlayer.seekToPrevious()
             exoPlayer.prepare()
-            exoPlayer.play()
+            play()
         } else if (exoPlayer.mediaItemCount > 0) {
             val lastIdx = (exoPlayer.mediaItemCount - 1).coerceAtLeast(0)
             exoPlayer.seekToDefaultPosition(lastIdx)
             exoPlayer.prepare()
-            exoPlayer.play()
+            play()
         }
     }
 
@@ -1603,7 +1743,7 @@ class AmePlayerEngine @Inject constructor(
         ensureActive()
         exoPlayer.seekToDefaultPosition(index)
         exoPlayer.prepare()
-        exoPlayer.play()
+        play()
         _currentIndex.value = index
         _currentMedia.value = _playlist.value.getOrNull(index)
         if (_infinitePlayMode.value.isActive) {
@@ -1665,14 +1805,7 @@ class AmePlayerEngine @Inject constructor(
     override fun setVolume(volume: Float) {
         ensureActive()
         _volume.value = volume.coerceIn(0f, 1f)
-        exoPlayer.volume = _volume.value
-        val effectiveUsbVol = if (usbAudioManager.isExclusiveModeEnabled.value && ThemePrefs.volumeNormalizationEnabled) {
-            val mult = loudnessAudioProcessor.currentMultiplier
-            (_volume.value * mult).coerceIn(0f, 1f)
-        } else {
-            _volume.value
-        }
-        usbAudioSink?.setVolume(effectiveUsbVol)
+        applyEffectiveVolume()
     }
 
     override fun setVolumeNormalizationEnabled(enabled: Boolean) {
@@ -1726,7 +1859,7 @@ class AmePlayerEngine @Inject constructor(
             }
             if (isExclusive && device == null && _isPlaying.value) {
                 AppLogger.w("[AME_USB_AUDIO]", ">>> USB Audio DAC unplugged during exclusive playback! Pausing audio to protect ears/speakers.")
-                pause()
+                pause(immediate = true)
             }
         }
     }
@@ -1739,6 +1872,9 @@ class AmePlayerEngine @Inject constructor(
 
     override fun release() {
         isReleased = true
+        fadeJob?.cancel()
+        isFadingOut = false
+        applyEffectiveVolume(1.0f)
         islandManager.cancelIsland()
         scope.cancel()
         try {

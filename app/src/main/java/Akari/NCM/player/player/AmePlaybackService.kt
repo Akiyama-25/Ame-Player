@@ -86,6 +86,14 @@ class AmePlaybackService : MediaSessionService() {
             override fun hasNextMediaItem(): Boolean =
                 mediaItemCount > 0 || super.hasNextMediaItem()
 
+            override fun play() {
+                playerEngine.play()
+            }
+
+            override fun pause() {
+                playerEngine.pause()
+            }
+
             override fun seekToNext() {
                 playerEngine.skipToNext()
             }
@@ -134,12 +142,16 @@ class AmePlaybackService : MediaSessionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
         super.onStartCommand(intent, flags, startId)
-        return START_NOT_STICKY
+        return START_STICKY
+    }
+
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        val player = session.player
+        val isRunning = player.playbackState != Player.STATE_IDLE &&
+            player.playbackState != Player.STATE_ENDED &&
+            player.mediaItemCount > 0
+        super.onUpdateNotification(session, startInForegroundRequired || isRunning)
     }
 
     override fun onDestroy() {
