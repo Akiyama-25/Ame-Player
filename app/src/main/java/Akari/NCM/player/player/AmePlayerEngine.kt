@@ -782,6 +782,12 @@ class AmePlayerEngine @Inject constructor(
             val scanned = Akari.NCM.player.core.loudness.TrackLoudnessScanner.scanTrack(context, dataSource)
             if (scanned != null && isActive) {
                 loudnessManager.saveLoudness(media.id, scanned)
+                if (media is PlayableMedia.LocalNcm && media.isNcm) {
+                    val musicId = runCatching { NcmDataSource.scanMetadata(context.contentResolver, Uri.parse(media.uri))?.first?.musicId?.toString() }.getOrNull()
+                    if (!musicId.isNullOrBlank() && musicId != "0" && musicId != media.id) {
+                        loudnessManager.saveLoudness(musicId, scanned)
+                    }
+                }
                 withContext(Dispatchers.Main) {
                     if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled) {
                         applyLoudnessNormalization(media)

@@ -25,6 +25,17 @@ object AudioTagLoudnessParser {
         }
     }
 
+    fun extractNcmLoudness(context: Context, uri: Uri): LoudnessData? {
+        return try {
+            Akari.NCM.player.data.NcmDataSource.openDecryptedStream(context.contentResolver, uri)?.use { stream ->
+                parseStream(stream)
+            }
+        } catch (e: Exception) {
+            AppLogger.d(TAG, "Failed to parse NCM audio tags: ${e.message}")
+            null
+        }
+    }
+
     fun parseStream(stream: InputStream): LoudnessData? {
         val header = ByteArray(12)
         val read = stream.read(header)

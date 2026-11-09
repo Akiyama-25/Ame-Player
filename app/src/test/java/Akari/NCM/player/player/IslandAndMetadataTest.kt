@@ -288,4 +288,23 @@ class IslandAndMetadataTest {
         assertEquals("OFF", ThemePrefs.playbackRepeatMode)
         assertTrue(ThemePrefs.playbackShuffleEnabled)
     }
+
+    @Test
+    fun testPlaybackFadeDurationDefaultAndPersistence() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        ThemePrefs.init(context)
+
+        // Default should be 750ms and enabled
+        assertTrue(ThemePrefs.playbackFadeEnabled)
+        assertEquals(750, ThemePrefs.playbackFadeDurationMs)
+        assertEquals(750, ThemePrefs.playbackFadeDurationMsFlow.value)
+
+        // Update fade duration
+        ThemePrefs.playbackFadeDurationMs = 1000
+        assertEquals(1000, ThemePrefs.playbackFadeDurationMs)
+        assertEquals(1000, ThemePrefs.playbackFadeDurationMsFlow.value)
+
+        ThemePrefs.init(context)
+        assertEquals(1000, ThemePrefs.playbackFadeDurationMs)
+    }
 }

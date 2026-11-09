@@ -104,7 +104,7 @@ object ThemePrefs {
     private val _playbackFadeEnabledFlow = MutableStateFlow(true)
     val playbackFadeEnabledFlow: StateFlow<Boolean> = _playbackFadeEnabledFlow.asStateFlow()
 
-    private val _playbackFadeDurationMsFlow = MutableStateFlow(500)
+    private val _playbackFadeDurationMsFlow = MutableStateFlow(750)
     val playbackFadeDurationMsFlow: StateFlow<Int> = _playbackFadeDurationMsFlow.asStateFlow()
 
     private val _updateChannelFlow = MutableStateFlow(UpdateChannel.RELEASE)
@@ -307,7 +307,7 @@ object ThemePrefs {
         }
 
     var playbackFadeDurationMs: Int
-        get() = if (::prefs.isInitialized) prefs.getInt(KEY_PLAYBACK_FADE_DURATION_MS, 500) else _playbackFadeDurationMsFlow.value
+        get() = if (::prefs.isInitialized) prefs.getInt(KEY_PLAYBACK_FADE_DURATION_MS, 750) else _playbackFadeDurationMsFlow.value
         set(value) {
             if (::prefs.isInitialized) {
                 prefs.edit().putInt(KEY_PLAYBACK_FADE_DURATION_MS, value).apply()

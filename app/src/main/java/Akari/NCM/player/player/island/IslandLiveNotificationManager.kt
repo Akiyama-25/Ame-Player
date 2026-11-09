@@ -51,6 +51,12 @@ class IslandLiveNotificationManager(private val context: Context) {
             Build.BRAND.equals("vivo", ignoreCase = true) ||
             Build.BRAND.equals("iQOO", ignoreCase = true)
 
+    private val isXiaomiDevice: Boolean
+        get() = Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true) ||
+            Build.BRAND.equals("Xiaomi", ignoreCase = true) ||
+            Build.BRAND.equals("Redmi", ignoreCase = true) ||
+            Build.BRAND.equals("POCO", ignoreCase = true)
+
     init {
         // 清理旧版本可能残留的独立歌词横幅通知，避免遮挡系统原生媒体控制实时窗
         runCatching {
@@ -194,6 +200,14 @@ class IslandLiveNotificationManager(private val context: Context) {
             ActivityCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
             != PackageManager.PERMISSION_GRANTED
         ) {
+            return
+        }
+
+        // Xiaomi HyperOS / MIUI 具备原生系统级 MediaSession 控制卡片，
+        // 严禁在此类设备上发送重复的独立通知卡片，避免遮挡或多发实时通知；系统媒体控制完全由 AmePlaybackService 原生托管
+        if (isXiaomiDevice) {
+            runCatching { NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID) }
+            isIslandActive = false
             return
         }
 

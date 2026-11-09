@@ -109,6 +109,17 @@ class AmePlaybackService : MediaSessionService() {
             override fun seekToPreviousMediaItem() {
                 playerEngine.skipToPrevious()
             }
+
+            override fun getPlaybackState(): Int {
+                val state = super.getPlaybackState()
+                // 当已加载媒体曲目时，若处于 IDLE 或 ENDED 停止状态，向 MediaSession 报告 STATE_READY，
+                // 确保系统媒体控制组件在播放停止/暂停时持续驻留在系统锁屏与通知栏播放控件上，绝不自动消失
+                return if ((state == Player.STATE_IDLE || state == Player.STATE_ENDED) && mediaItemCount > 0) {
+                    Player.STATE_READY
+                } else {
+                    state
+                }
+            }
         }
 
         val session = MediaSession.Builder(this, sessionPlayer)
@@ -148,10 +159,8 @@ class AmePlaybackService : MediaSessionService() {
 
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
         val player = session.player
-        val isRunning = player.playbackState != Player.STATE_IDLE &&
-            player.playbackState != Player.STATE_ENDED &&
-            player.mediaItemCount > 0
-        super.onUpdateNotification(session, startInForegroundRequired || isRunning)
+        val hasMedia = player.mediaItemCount > 0
+        super.onUpdateNotification(session, startInForegroundRequired || hasMedia)
     }
 
     override fun onDestroy() {

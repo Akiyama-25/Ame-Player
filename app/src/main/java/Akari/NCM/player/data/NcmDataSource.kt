@@ -1,6 +1,8 @@
 package Akari.NCM.player.data
 
 import android.content.ContentResolver
+import android.content.Context
+import android.media.MediaDataSource
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import Akari.NCM.player.core.AppLogger
@@ -11,6 +13,7 @@ import androidx.media3.datasource.DataSpec
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.FileInputStream
+import java.io.IOException
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
@@ -114,53 +117,13 @@ class NcmDataSource : DataSource {
         audioDataSize = 0
     }
 
-    private data class HeaderResult(
+    internal data class HeaderResult(
         val keyBox: IntArray,
         val metadata: NcmMetadata,
         val format: AudioFormat
     )
 
-    private fun parseHeader(input: InputStream): HeaderResult {
-        // Verify magic: "CTENFDAM"
-        val magic = readBytes(input, 8)
-        val expected = byteArrayOf(67, 84, 69, 78, 70, 68, 65, 77)
-        if (!magic.contentEquals(expected)) {
-            throw IllegalArgumentException("Not a valid NCM file")
-        }
-
-        // Skip 2 bytes
-        readBytes(input, 2)
-
-        // Key block: length (uint32 LE) + encrypted data
-        val keyLength = readUint32LE(input)
-        val keyEncrypted = readBytes(input, keyLength)
-        for (i in keyEncrypted.indices) {
-            keyEncrypted[i] = (keyEncrypted[i].toInt() xor 0x64).toByte()
-        }
-        val decryptedKey = AesEcbDecryptor.decrypt(keyEncrypted, CORE_KEY)
-        val rc4Key = decryptedKey.copyOfRange(17, decryptedKey.size)
-        val keyBox = Rc4Engine.buildKeyBox(rc4Key)
-
-        // Meta block: length (uint32 LE) + encrypted data
-        val metaLength = readUint32LE(input)
-        val metaEncrypted = readBytes(input, metaLength)
-        for (i in metaEncrypted.indices) {
-            metaEncrypted[i] = (metaEncrypted[i].toInt() xor 0x63).toByte()
-        }
-        val metadata = parseMetaBlock(metaEncrypted)
-
-        // Gap block: skip
-        skipBytes(input, 5)
-        val gapSize = readUint32LE(input)
-        skipBytes(input, gapSize.toLong() + 4)
-
-        val format = when (metadata.format.lowercase()) {
-            "flac" -> AudioFormat.FLAC
-            else -> AudioFormat.MP3
-        }
-
-        return HeaderResult(keyBox, metadata, format)
-    }
+    private fun parseHeader(input: InputStream): HeaderResult = parseHeaderStatic(input)
 
     private fun parseMetaBlock(data: ByteArray): NcmMetadata {
         if (data.size <= 22) return NcmMetadata()
@@ -246,7 +209,7 @@ class NcmDataSource : DataSource {
         }
     }
 
-    private class CountingInputStream(private val delegate: InputStream) : InputStream() {
+    internal class CountingInputStream(private val delegate: InputStream) : InputStream() {
         var count: Long = 0
             private set
 
@@ -429,5 +392,184 @@ class NcmDataSource : DataSource {
                 remaining -= read.toLong()
             }
         }
+
+        internal fun parseHeaderStatic(input: InputStream): HeaderResult {
+            // Verify magic: "CTENFDAM"
+            val magic = readBytesStatic(input, 8)
+            val expected = byteArrayOf(67, 84, 69, 78, 70, 68, 65, 77)
+            if (!magic.contentEquals(expected)) {
+                throw IllegalArgumentException("Not a valid NCM file")
+            }
+
+            // Skip 2 bytes
+            readBytesStatic(input, 2)
+
+            // Key block: length (uint32 LE) + encrypted data
+            val keyLength = readUint32LEStatic(input)
+            val keyEncrypted = readBytesStatic(input, keyLength)
+            for (i in keyEncrypted.indices) {
+                keyEncrypted[i] = (keyEncrypted[i].toInt() xor 0x64).toByte()
+            }
+            val decryptedKey = AesEcbDecryptor.decrypt(keyEncrypted, CORE_KEY)
+            val rc4Key = decryptedKey.copyOfRange(17, decryptedKey.size)
+            val keyBox = Rc4Engine.buildKeyBox(rc4Key)
+
+            // Meta block: length (uint32 LE) + encrypted data
+            val metaLength = readUint32LEStatic(input)
+            val metaEncrypted = readBytesStatic(input, metaLength)
+            for (i in metaEncrypted.indices) {
+                metaEncrypted[i] = (metaEncrypted[i].toInt() xor 0x63).toByte()
+            }
+            val metadata = parseMetaBlockStatic(metaEncrypted)
+
+            // Gap block: skip
+            skipBytesStatic(input, 5)
+            val gapSize = readUint32LEStatic(input)
+            skipBytesStatic(input, gapSize.toLong() + 4)
+
+            val format = when (metadata.format.lowercase()) {
+                "flac" -> AudioFormat.FLAC
+                else -> AudioFormat.MP3
+            }
+
+            return HeaderResult(keyBox, metadata, format)
+        }
+
+        fun openDecryptedStream(cr: ContentResolver, uri: Uri): InputStream? {
+            return try {
+                val pfd = cr.openFileDescriptor(uri, "r") ?: return null
+                val fis = FileInputStream(pfd.fileDescriptor)
+                val channel = fis.channel
+                val countingStream = CountingInputStream(fis)
+                val headerResult = parseHeaderStatic(countingStream)
+                val audioStartOffset = countingStream.count
+                val totalFileSize = channel.size()
+                val audioDataSize = maxOf(0L, totalFileSize - audioStartOffset)
+                NcmDecryptedInputStream(pfd, fis, channel, headerResult.keyBox, audioStartOffset, audioDataSize)
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+}
+
+/**
+ * 专为 Android Framework [android.media.MediaExtractor] 打造的原生流式 NCM 解密数据源。
+ * 允许底层解码器直接读取解密后的标准音频流（FLAC/MP3），实现离线全曲 EBU R128 综合响度扫描。
+ */
+class NcmMediaDataSource(
+    context: Context,
+    uri: Uri
+) : MediaDataSource() {
+
+    private var pfd: ParcelFileDescriptor? = null
+    private var fis: FileInputStream? = null
+    private var fileChannel: FileChannel? = null
+    private var keyBox: IntArray? = null
+    private var audioStartOffset: Long = 0L
+    private var audioDataSize: Long = 0L
+
+    init {
+        val cr = context.contentResolver
+        val p = cr.openFileDescriptor(uri, "r")
+            ?: throw IOException("Failed to open FileDescriptor for URI: $uri")
+        pfd = p
+        val fStream = FileInputStream(p.fileDescriptor)
+        fis = fStream
+        val channel = fStream.channel
+        fileChannel = channel
+
+        val countingStream = NcmDataSource.CountingInputStream(fStream)
+        val headerResult = NcmDataSource.parseHeaderStatic(countingStream)
+        keyBox = headerResult.keyBox
+        audioStartOffset = countingStream.count
+
+        val totalFileSize = channel.size()
+        audioDataSize = maxOf(0L, totalFileSize - audioStartOffset)
+    }
+
+    @Synchronized
+    override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+        val channel = fileChannel ?: return -1
+        val box = keyBox ?: return -1
+
+        if (position >= audioDataSize) return -1
+        val bytesToRead = minOf(size.toLong(), audioDataSize - position).toInt()
+        if (bytesToRead <= 0) return -1
+
+        val byteBuffer = ByteBuffer.wrap(buffer, offset, bytesToRead)
+        var totalRead = 0
+        while (byteBuffer.hasRemaining()) {
+            val read = channel.read(byteBuffer, audioStartOffset + position + totalRead)
+            if (read <= 0) break
+            totalRead += read
+        }
+        if (totalRead <= 0) return -1
+
+        for (i in 0 until totalRead) {
+            val filePos = position + i
+            val keyIndex = (filePos and 0xff).toInt()
+            val encryptedByte = buffer[offset + i].toInt() and 0xff
+            buffer[offset + i] = (encryptedByte xor box[keyIndex]).toByte()
+        }
+        return totalRead
+    }
+
+    override fun getSize(): Long = audioDataSize
+
+    override fun close() {
+        runCatching { fileChannel?.close() }
+        runCatching { fis?.close() }
+        runCatching { pfd?.close() }
+        fileChannel = null
+        fis = null
+        pfd = null
+        keyBox = null
+    }
+}
+
+/**
+ * NCM 本地音频流式解密输入流，供元数据标签解析器读取内嵌 ReplayGain 等标签
+ */
+class NcmDecryptedInputStream(
+    private val pfd: ParcelFileDescriptor,
+    private val fis: FileInputStream,
+    private val channel: FileChannel,
+    private val keyBox: IntArray,
+    private val audioStartOffset: Long,
+    private val audioDataSize: Long
+) : InputStream() {
+    private var pos: Long = 0L
+
+    override fun read(): Int {
+        if (pos >= audioDataSize) return -1
+        val buf = ByteBuffer.allocate(1)
+        val r = channel.read(buf, audioStartOffset + pos)
+        if (r <= 0) return -1
+        val enc = buf.get(0).toInt() and 0xff
+        val dec = enc xor keyBox[(pos and 0xff).toInt()]
+        pos++
+        return dec
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (pos >= audioDataSize) return -1
+        val toRead = minOf(len.toLong(), audioDataSize - pos).toInt()
+        if (toRead <= 0) return -1
+        val buf = ByteBuffer.wrap(b, off, toRead)
+        val r = channel.read(buf, audioStartOffset + pos)
+        if (r <= 0) return -1
+        for (i in 0 until r) {
+            val keyIdx = ((pos + i) and 0xff).toInt()
+            b[off + i] = ((b[off + i].toInt() and 0xff) xor keyBox[keyIdx]).toByte()
+        }
+        pos += r
+        return r
+    }
+
+    override fun close() {
+        runCatching { channel.close() }
+        runCatching { fis.close() }
+        runCatching { pfd.close() }
     }
 }

@@ -132,7 +132,11 @@ class LoudnessManager @Inject constructor(
                 }
 
                 // 2. 尝试从本地音频文件元数据标签提取 (FLAC Vorbis Comment / MP3 ID3v2 ReplayGain / Apple SoundCheck)
-                val tagData = AudioTagLoudnessParser.extractLoudness(context, uri)
+                val tagData = if (media.isNcm) {
+                    AudioTagLoudnessParser.extractNcmLoudness(context, uri)
+                } else {
+                    AudioTagLoudnessParser.extractLoudness(context, uri)
+                }
                 if (tagData != null) {
                     AppLogger.i(TAG, "Extracted tag loudness for '${media.title}': ${tagData.integratedLufs} LUFS, peak=${tagData.peakDb} dBFS")
                     saveLoudness(media.id, tagData)

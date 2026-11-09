@@ -1,8 +1,10 @@
 package Akari.NCM.player.core.loudness
 
 import Akari.NCM.player.core.AppLogger
+import Akari.NCM.player.data.NcmMediaDataSource
 import android.content.Context
 import android.media.MediaCodec
+import android.media.MediaDataSource
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
@@ -30,11 +32,20 @@ object TrackLoudnessScanner {
     ): LoudnessData? = withContext(Dispatchers.IO) {
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
+        var mediaDataSource: MediaDataSource? = null
         try {
-            if (dataSource.startsWith("content://")) {
+            if (isNcmDataSource(context, dataSource)) {
+                val ncmDs = NcmMediaDataSource(context, Uri.parse(dataSource))
+                mediaDataSource = ncmDs
+                extractor.setDataSource(ncmDs)
+            } else if (dataSource.startsWith("content://")) {
                 extractor.setDataSource(context, Uri.parse(dataSource), null)
             } else if (dataSource.startsWith("http://") || dataSource.startsWith("https://")) {
-                extractor.setDataSource(dataSource, headers)
+                val reqHeaders = headers ?: mapOf(
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Referer" to "https://music.163.com/"
+                )
+                extractor.setDataSource(dataSource, reqHeaders)
             } else {
                 extractor.setDataSource(dataSource)
             }
@@ -174,6 +185,22 @@ object TrackLoudnessScanner {
             runCatching { codec?.stop() }
             runCatching { codec?.release() }
             runCatching { extractor.release() }
+            runCatching { mediaDataSource?.close() }
         }
+    }
+
+    private fun isNcmDataSource(context: Context, dataSource: String): Boolean {
+        if (dataSource.contains(".ncm", ignoreCase = true)) return true
+        if (dataSource.startsWith("content://") || dataSource.startsWith("file://")) {
+            return runCatching {
+                val uri = Uri.parse(dataSource)
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    val magic = ByteArray(8)
+                    val read = stream.read(magic)
+                    read == 8 && magic.contentEquals(byteArrayOf(67, 84, 69, 78, 70, 68, 65, 77)) // "CTENFDAM"
+                } ?: false
+            }.getOrDefault(false)
+        }
+        return false
     }
 }
