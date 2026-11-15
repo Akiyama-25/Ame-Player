@@ -168,6 +168,7 @@ fun SettingsScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
@@ -192,14 +193,15 @@ fun SettingsScreen(
             androidx.window.core.layout.WindowWidthSizeClass.COMPACT -> 1
             else -> 2
         }
+        val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(settingsCols),
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(padding),
-            contentPadding = PaddingValues(bottom = 32.dp)
+                .padding(top = padding.calculateTopPadding()),
+            contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
         ) {
             // ── 账号与网易云 API 服务 ──
             if (hasApi) {
@@ -373,84 +375,6 @@ fun SettingsScreen(
                             subtitle = "点击查看或移除",
                             onClick = { showFoldersDialog = true }
                         )
-                    }
-                }
-            }
-
-            // ── 调试功能 ──
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    SectionHeader("调试功能")
-                    SettingsGroupCard {
-                        val levelLabel = if (currentLogLevel == LogLevel.ERROR) {
-                            "${currentLogLevel.label} (默认)"
-                        } else {
-                            currentLogLevel.label
-                        }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onOpenLog() }
-                                .padding(horizontal = 18.dp, vertical = 12.dp)
-                                .testTag("setting_log_record"),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "运行日志",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "等级: $levelLabel · 上限: ${maxFileSizeKb} KB（点击进入独立页面查看与导出）",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            FilledTonalButton(
-                                onClick = onOpenLog,
-                                shape = RoundedCornerShape(16.dp),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                modifier = Modifier.testTag("btn_open_log_screen")
-                            ) {
-                                Text("查看", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        SettingsInnerDivider()
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { ThemePrefs.showMatchStatus = !showMatchStatus }
-                                .padding(horizontal = 18.dp, vertical = 12.dp)
-                                .testTag("setting_show_match_status"),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "歌曲匹配列表查看",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "开启后在歌单详情页快速过滤已匹配/未匹配本地源的歌曲",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Switch(
-                                checked = showMatchStatus,
-                                onCheckedChange = { ThemePrefs.showMatchStatus = it },
-                                modifier = Modifier.testTag("switch_show_match_status")
-                            )
-                        }
                     }
                 }
             }
@@ -962,6 +886,84 @@ fun SettingsScreen(
                                     Text("检查", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // ── 调试功能 ──
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SectionHeader("调试功能")
+                    SettingsGroupCard {
+                        val levelLabel = if (currentLogLevel == LogLevel.ERROR) {
+                            "${currentLogLevel.label} (默认)"
+                        } else {
+                            currentLogLevel.label
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onOpenLog() }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_log_record"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "运行日志",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "等级: $levelLabel · 上限: ${maxFileSizeKb} KB（点击进入独立页面查看与导出）",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            FilledTonalButton(
+                                onClick = onOpenLog,
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("btn_open_log_screen")
+                            ) {
+                                Text("查看", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        SettingsInnerDivider()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { ThemePrefs.showMatchStatus = !showMatchStatus }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_show_match_status"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "歌曲匹配列表查看",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "开启后在歌单详情页快速过滤已匹配/未匹配本地源的歌曲",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = showMatchStatus,
+                                onCheckedChange = { ThemePrefs.showMatchStatus = it },
+                                modifier = Modifier.testTag("switch_show_match_status")
+                            )
                         }
                     }
                 }

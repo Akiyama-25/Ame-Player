@@ -566,7 +566,7 @@ fun OnlinePlaylistDetailView(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 32.dp)
+                    contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
                     items(displayedSongs, key = { it.second.id }) { (origIndex, onlineMedia, isMatched) ->
                         SongItem(

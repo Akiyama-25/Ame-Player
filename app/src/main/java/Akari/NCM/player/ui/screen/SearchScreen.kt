@@ -296,6 +296,7 @@ fun SearchScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             Column(
                 modifier = Modifier
@@ -405,10 +406,11 @@ fun SearchScreen(
             }
         }
     ) { innerPadding ->
+        val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(top = innerPadding.calculateTopPadding())
                 .wrapContentWidth(Alignment.CenterHorizontally)
                 .widthIn(max = 840.dp)
         ) {
@@ -546,7 +548,7 @@ fun SearchScreen(
                         } else {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 32.dp)
+                                contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
                             ) {
                                 // 1. 歌手模块（仅在名称匹配时展示）
                                 if (mixedResult.artists.isNotEmpty()) {
@@ -683,7 +685,7 @@ fun SearchScreen(
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 32.dp)
+                                contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
                             ) {
                                 item {
                                     Row(
@@ -757,7 +759,7 @@ fun SearchScreen(
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 32.dp)
+                                contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
                             ) {
                                 items(categoryAlbums, key = { it.id }) { album ->
                                     AlbumRowItem(album = album, onClick = { handleAlbumClick(album) })
@@ -777,7 +779,7 @@ fun SearchScreen(
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 32.dp)
+                                contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
                             ) {
                                 items(categoryArtists, key = { it.id }) { artist ->
                                     ArtistCardItem(artist = artist, onClick = { handleArtistClick(artist) })
@@ -797,7 +799,7 @@ fun SearchScreen(
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 32.dp)
+                                contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
                             ) {
                                 item {
                                     Text(

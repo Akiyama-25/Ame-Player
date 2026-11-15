@@ -75,7 +75,7 @@ class DebugFeaturesAndMatchFilterTest {
     }
 
     @Test
-    @Config(qualifiers = "w400dp-h1200dp")
+    @Config(qualifiers = "w400dp-h2400dp")
     fun testSettingsScreen_debugSection_rendersAllElements() {
         composeTestRule.setContent {
             SettingsScreen(
@@ -95,7 +95,7 @@ class DebugFeaturesAndMatchFilterTest {
     }
 
     @Test
-    @Config(qualifiers = "w400dp-h1200dp")
+    @Config(qualifiers = "w400dp-h2400dp")
     fun testSettingsScreen_openLog_triggersCallback() {
         var logOpened = false
         composeTestRule.setContent {
@@ -156,7 +156,7 @@ class DebugFeaturesAndMatchFilterTest {
     }
 
     @Test
-    @Config(qualifiers = "w400dp-h1200dp")
+    @Config(qualifiers = "w400dp-h2400dp")
     fun testSettingsScreen_matchStatusSwitch_togglesAndPersists() {
         composeTestRule.setContent {
             SettingsScreen(

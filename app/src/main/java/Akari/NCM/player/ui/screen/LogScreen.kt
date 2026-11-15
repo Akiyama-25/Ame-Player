@@ -89,6 +89,7 @@ fun LogScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
@@ -208,10 +209,11 @@ fun LogScreen(
             )
         }
     ) { paddingValues ->
+        val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
+                .padding(top = paddingValues.calculateTopPadding())
                 .background(MaterialTheme.colorScheme.background)
         ) {
             if (lines.isEmpty()) {
@@ -242,7 +244,7 @@ fun LogScreen(
                         .fillMaxSize()
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                         .testTag("list_logs"),
-                    contentPadding = PaddingValues(bottom = 72.dp)
+                    contentPadding = PaddingValues(bottom = navBarBottom + 72.dp)
                 ) {
                     itemsIndexed(lines) { _, line ->
                         val textColor = when {
@@ -282,6 +284,7 @@ fun LogScreen(
                         },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
+                            .navigationBarsPadding()
                             .padding(16.dp),
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
                         contentColor = MaterialTheme.colorScheme.onPrimaryContainer

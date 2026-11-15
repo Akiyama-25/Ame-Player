@@ -132,4 +132,41 @@ class AdaptiveNavigationTest {
         // Should return to homepage
         composeTestRule.onNodeWithContentDescription("用户首页").assertIsDisplayed()
     }
+
+    @Test
+    @Config(qualifiers = "w400dp-h800dp")
+    fun testMiniPlayerBar_noPrevNextButtons_andSwipeSwitchesTracks() {
+        val songs = listOf(
+            Akari.NCM.player.core.PlayableMedia.Online(
+                id = "101",
+                title = "第一首歌",
+                artist = "歌手A",
+                album = "专辑A",
+                coverUrl = null,
+                durationMs = 200_000L
+            ),
+            Akari.NCM.player.core.PlayableMedia.Online(
+                id = "102",
+                title = "第二首歌",
+                artist = "歌手B",
+                album = "专辑B",
+                coverUrl = null,
+                durationMs = 200_000L
+            )
+        )
+        playerEngine.loadPlaylist(songs, 0)
+
+        composeTestRule.setContent {
+            MainScreen(playerEngine = playerEngine)
+        }
+        composeTestRule.waitForIdle()
+
+        // Prev and Next buttons must be removed from MiniPlayerBar
+        composeTestRule.onNodeWithContentDescription("上一首").assertDoesNotExist()
+        composeTestRule.onNodeWithContentDescription("下一首").assertDoesNotExist()
+
+        // Play/Pause and Queue buttons remain
+        composeTestRule.onNodeWithContentDescription("播放队列").assertIsDisplayed()
+        composeTestRule.onNodeWithText("第一首歌").assertIsDisplayed()
+    }
 }

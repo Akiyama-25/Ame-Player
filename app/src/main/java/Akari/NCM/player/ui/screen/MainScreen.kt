@@ -23,17 +23,29 @@ import Akari.NCM.player.ui.component.SongActionBottomSheet
 import Akari.NCM.player.ui.component.predictiveBackBackground
 import Akari.NCM.player.ui.component.predictiveBackForeground
 import Akari.NCM.player.ui.component.rememberPredictiveBackState
+import Akari.NCM.player.ui.theme.blend
+import Akari.NCM.player.ui.theme.buildExpressiveColorScheme
+import Akari.NCM.player.ui.theme.ensureContrast
+import Akari.NCM.player.ui.theme.extractSeedColorFromBitmap
+import Akari.NCM.player.ui.theme.rememberIsDarkTheme
 import android.content.Intent
+import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,6 +53,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -48,30 +61,36 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
+import coil.imageLoader
+import coil.request.ImageRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
-import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
 
 enum class TopLevelScreen {
     PLAYER, LOG, SETTINGS, SEARCH, MAIN
@@ -348,6 +367,7 @@ fun MainScreen(
                     Scaffold(
                         modifier = Modifier.weight(1f),
                         containerColor = MaterialTheme.colorScheme.background,
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         topBar = {
                             TopAppBar(
                                 title = {},
@@ -384,43 +404,21 @@ fun MainScreen(
                             )
                         },
                         bottomBar = {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .navigationBarsPadding()
-                            ) {
-                                // 常驻悬浮底部播放状态栏 (Material 3 Expressive 悬浮卡片样式)
-                                AnimatedVisibility(
-                                    visible = !showPlayerScreen,
-                                    enter = slideInVertically(initialOffsetY = { it }),
-                                    exit = slideOutVertically(targetOffsetY = { it })
+                            // 仅保留图标的紧凑底部页面切换栏，背景色无缝延伸至屏幕最底端（消除导航手势区色块断开/留白）
+                            if (!useNavRail) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceContainer,
+                                    tonalElevation = 2.dp,
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    MiniPlayerBar(
-                                        media = currentMedia,
-                                        isPlaying = isPlaying,
-                                        positionMs = positionMs,
-                                        durationMs = durationMs,
-                                        onTogglePlayPause = { playerEngine.togglePlayPause() },
-                                        onClick = {
-                                            if (currentMedia != null) {
-                                                showPlayerScreen = true
-                                            }
-                                        },
-                                        onSkipNext = { playerEngine.skipToNext() },
-                                        onSkipPrevious = { playerEngine.skipToPrevious() },
-                                        onQueueClick = { showQueueBottomSheet = true }
-                                    )
-                                }
-
-                                // 仅保留图标的紧凑底部页面切换栏（压低高度）
-                                if (!useNavRail) {
                                     NavigationBar(
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .windowInsetsPadding(WindowInsets.navigationBars)
                                             .height(52.dp)
                                             .testTag("main_bottom_nav_bar"),
-                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                        tonalElevation = 2.dp,
+                                        containerColor = Color.Transparent,
+                                        tonalElevation = 0.dp,
                                         windowInsets = WindowInsets(0, 0, 0, 0)
                                     ) {
                                         if (hasApi) {
@@ -919,7 +917,8 @@ fun MainScreen(
                                                                 } else {
                                                                     LazyColumn(
                                                                         state = localPlaylistListState,
-                                                                        modifier = Modifier.fillMaxSize()
+                                                                        modifier = Modifier.fillMaxSize(),
+                                                                        contentPadding = PaddingValues(bottom = 96.dp)
                                                                     ) {
                                                                         items(displayedSongs, key = { it.second.id }) { (origIndex, songDto, isMatched) ->
                                                                             val media = songDto.toPlayableMedia()
@@ -979,6 +978,35 @@ fun MainScreen(
                                         }
                                     }
                                 }
+                            }
+
+                            // 常驻悬浮底部播放状态栏（无外圈背景遮罩，直接悬浮于主页面内容上方）
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = !showPlayerScreen,
+                                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .then(
+                                        if (useNavRail) Modifier.windowInsetsPadding(WindowInsets.navigationBars)
+                                        else Modifier
+                                    )
+                            ) {
+                                MiniPlayerBar(
+                                    media = currentMedia,
+                                    isPlaying = isPlaying,
+                                    positionMs = positionMs,
+                                    durationMs = durationMs,
+                                    onTogglePlayPause = { playerEngine.togglePlayPause() },
+                                    onClick = {
+                                        if (currentMedia != null) {
+                                            showPlayerScreen = true
+                                        }
+                                    },
+                                    onSkipNext = { playerEngine.skipToNext() },
+                                    onSkipPrevious = { playerEngine.skipToPrevious() },
+                                    onQueueClick = { showQueueBottomSheet = true }
+                                )
                             }
                         }
                     }
@@ -1344,7 +1372,10 @@ private fun PlaylistsView(
                 )
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 96.dp)
+            ) {
                 itemsIndexed(playlists) { _, playlist ->
                     Card(
                         modifier = Modifier
@@ -1859,32 +1890,203 @@ private fun MiniPlayerBar(
     onSkipPrevious: () -> Unit,
     onQueueClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
     val hasMedia = media != null
-    Surface(
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 4.dp,
-        shadowElevation = 8.dp,
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+
+    val isDarkTheme = rememberIsDarkTheme()
+    val colorVariant by ThemePrefs.colorVariantFlow.collectAsState()
+    val contrastLevel by ThemePrefs.contrastLevelFlow.collectAsState()
+    val fallbackAccentInt by ThemePrefs.accentColorFlow.collectAsState()
+    val defaultSeedColor = remember(fallbackAccentInt) { Color(fallbackAccentInt.toInt()) }
+
+    var extractedSeedColor by remember { mutableStateOf(defaultSeedColor) }
+
+    LaunchedEffect(media?.id, media?.coverUrl, defaultSeedColor) {
+        val url = media?.coverUrl
+        if (!url.isNullOrEmpty()) {
+            val seed = withTimeoutOrNull(650) {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        val request = ImageRequest.Builder(context)
+                            .data(url)
+                            .allowHardware(false)
+                            .size(96, 96)
+                            .build()
+                        val result = context.imageLoader.execute(request)
+                        val bmp = (result.drawable as? BitmapDrawable)?.bitmap
+                        if (bmp != null) {
+                            extractSeedColorFromBitmap(bmp, defaultSeedColor)
+                        } else null
+                    }.getOrNull()
+                }
+            }
+            extractedSeedColor = seed ?: defaultSeedColor
+        } else {
+            extractedSeedColor = defaultSeedColor
+        }
+    }
+
+    val animatedSeedColor by animateColorAsState(
+        targetValue = extractedSeedColor,
+        animationSpec = tween(420, easing = FastOutSlowInEasing),
+        label = "MiniPlayerCoverSeedColor"
+    )
+
+    val coverScheme = remember(animatedSeedColor, isDarkTheme, colorVariant, contrastLevel) {
+        buildExpressiveColorScheme(
+            seedColor = animatedSeedColor,
+            darkTheme = isDarkTheme,
+            variant = colorVariant,
+            contrastLevel = contrastLevel,
+            useMaterialBackground = true
+        )
+    }
+
+    // 未播放部分色彩：使用歌曲封面 Material 取色的背景色
+    val targetUnplayedBgColor = remember(coverScheme, isDarkTheme) {
+        if (isDarkTheme) {
+            coverScheme.surfaceContainerHigh
+        } else {
+            coverScheme.surfaceContainerHigh
+        }
+    }
+
+    // 已播放部分色彩：使用歌曲封面的 Material 取色结果，并与未播放背景色拉开清晰层次
+    val targetPlayedFillColor = remember(coverScheme, targetUnplayedBgColor, isDarkTheme) {
+        val rawFill = if (isDarkTheme) {
+            blend(coverScheme.primaryContainer, coverScheme.primary, 0.36f)
+        } else {
+            blend(coverScheme.primaryContainer, coverScheme.primary, 0.32f)
+        }
+        ensureContrast(
+            foreground = rawFill,
+            background = targetUnplayedBgColor,
+            minRatio = 1.42f,
+            preferChroma = true
+        )
+    }
+
+    val animatedUnplayedColor by animateColorAsState(
+        targetValue = targetUnplayedBgColor,
+        animationSpec = tween(360),
+        label = "MiniPlayerUnplayedColor"
+    )
+    val animatedPlayedColor by animateColorAsState(
+        targetValue = targetPlayedFillColor,
+        animationSpec = tween(360),
+        label = "MiniPlayerPlayedColor"
+    )
+
+    // 确保标题、歌手与按钮图标在已播放与未播放区域均具备充足对比度
+    val primaryContentColor = remember(coverScheme, animatedUnplayedColor, animatedPlayedColor, contrastLevel) {
+        val c1 = ensureContrast(coverScheme.onSurface, animatedUnplayedColor, contrastLevel.minTextContrast, preferChroma = false)
+        ensureContrast(c1, animatedPlayedColor, contrastLevel.minTextContrast, preferChroma = false)
+    }
+    val secondaryContentColor = remember(coverScheme, animatedUnplayedColor, animatedPlayedColor) {
+        val c1 = ensureContrast(coverScheme.onSurfaceVariant, animatedUnplayedColor, 4.0f, preferChroma = false)
+        ensureContrast(c1, animatedPlayedColor, 4.0f, preferChroma = false)
+    }
+
+    val progressFraction = if (hasMedia && durationMs > 0L) {
+        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
+
+    // 水平滑动切歌：跟随手指水平偏移，松手超过阈值切歌并回弹
+    var dragOffsetX by remember { mutableFloatStateOf(0f) }
+    var isDragging by remember { mutableStateOf(false) }
+    val swipeThresholdPx = with(density) { 52.dp.toPx() }
+    val maxDragPx = with(density) { 140.dp.toPx() }
+
+    val animatedOffsetX by animateFloatAsState(
+        targetValue = dragOffsetX,
+        animationSpec = if (isDragging) {
+            snap()
+        } else {
+            spring(
+                dampingRatio = Spring.DampingRatioLowBouncy,
+                stiffness = Spring.StiffnessMedium
+            )
+        },
+        label = "MiniPlayerSwipeOffset"
+    )
+
+    val capsuleShape = RoundedCornerShape(percent = 50)
+
+    // 外圈无任何背景遮罩，仅保留半圆胶囊本体
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(24.dp))
-            .clickable(enabled = hasMedia, onClick = onClick)
-            .testTag("floating_mini_player_bar")
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Column {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(animatedOffsetX.roundToInt(), 0) }
+                .shadow(elevation = 8.dp, shape = capsuleShape, clip = false)
+                .clip(capsuleShape)
+                .drawBehind {
+                    // 未播放部分色彩：封面取色的背景色
+                    drawRect(color = animatedUnplayedColor)
+                    // 已播放部分色彩：歌曲封面的 Material 取色结果（整条播放栏作为进度条）
+                    val p = progressFraction.coerceIn(0f, 1f)
+                    if (p > 0f) {
+                        drawRect(
+                            color = animatedPlayedColor,
+                            size = size.copy(width = size.width * p)
+                        )
+                    }
+                }
+                .border(
+                    width = 0.5.dp,
+                    color = coverScheme.outlineVariant.copy(alpha = 0.45f),
+                    shape = capsuleShape
+                )
+                .pointerInput(hasMedia, onSkipNext, onSkipPrevious) {
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            isDragging = true
+                        },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            dragOffsetX = (dragOffsetX + dragAmount).coerceIn(-maxDragPx, maxDragPx)
+                        },
+                        onDragEnd = {
+                            val finalDrag = dragOffsetX
+                            isDragging = false
+                            dragOffsetX = 0f
+                            if (hasMedia) {
+                                if (finalDrag <= -swipeThresholdPx) {
+                                    onSkipNext()
+                                } else if (finalDrag >= swipeThresholdPx) {
+                                    onSkipPrevious()
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            isDragging = false
+                            dragOffsetX = 0f
+                        }
+                    )
+                }
+                .clickable(enabled = hasMedia, onClick = onClick)
+                .testTag("floating_mini_player_bar")
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                    .padding(start = 8.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // 左侧封面采用圆形，与半圆胶囊左端同心贴合
                 Box(
                     modifier = Modifier
                         .size(42.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
+                        .clip(CircleShape)
+                        .background(coverScheme.primaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
                     if (media?.coverUrl != null) {
@@ -1898,8 +2100,8 @@ private fun MiniPlayerBar(
                         Icon(
                             painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(24.dp)
+                            tint = coverScheme.onPrimaryContainer,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
@@ -1911,70 +2113,43 @@ private fun MiniPlayerBar(
                         text = media?.title ?: "暂未播放音乐",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (hasMedia) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (hasMedia) primaryContentColor else secondaryContentColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = media?.artist ?: "选择歌曲开始播放",
+                        text = media?.artist ?: "左右滑动切换歌曲",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = secondaryContentColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                IconButton(
-                    onClick = onSkipPrevious,
-                    enabled = hasMedia
-                ) {
-                    Icon(
-                        Icons.Rounded.SkipPrevious,
-                        contentDescription = "上一首",
-                        modifier = Modifier.size(26.dp)
                     )
                 }
 
                 IconButton(
                     onClick = onTogglePlayPause,
-                    enabled = hasMedia
+                    enabled = hasMedia,
+                    modifier = Modifier.testTag("mini_player_play_pause")
                 ) {
                     Icon(
                         if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (isPlaying) "暂停" else "播放",
-                        modifier = Modifier.size(30.dp)
+                        tint = primaryContentColor,
+                        modifier = Modifier.size(28.dp)
                     )
                 }
 
                 IconButton(
-                    onClick = onSkipNext,
-                    enabled = hasMedia
+                    onClick = onQueueClick,
+                    modifier = Modifier.testTag("mini_player_queue")
                 ) {
-                    Icon(
-                        Icons.Rounded.SkipNext,
-                        contentDescription = "下一首",
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-
-                IconButton(onClick = onQueueClick) {
                     Icon(
                         Icons.AutoMirrored.Rounded.QueueMusic,
                         contentDescription = "播放队列",
-                        modifier = Modifier.size(26.dp)
+                        tint = primaryContentColor,
+                        modifier = Modifier.size(25.dp)
                     )
                 }
-            }
-
-            if (hasMedia && durationMs > 0) {
-                LinearProgressIndicator(
-                    progress = { (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .height(2.dp),
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                )
             }
         }
     }

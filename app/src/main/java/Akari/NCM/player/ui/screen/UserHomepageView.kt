@@ -239,7 +239,7 @@ internal fun DiscoverBlocksHomepage(
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 32.dp)
+                contentPadding = PaddingValues(bottom = 96.dp)
             ) {
                 // Dragon Balls
                 if (dragonBalls.isNotEmpty()) {
@@ -521,8 +521,8 @@ internal fun PlaylistGrid(
             else -> 12.dp
         }
         val bottomPadding = when {
-            isExpanded -> 36.dp
-            else -> 28.dp
+            isExpanded -> 96.dp
+            else -> 96.dp
         }
         val horizontalSpacing = when {
             isExpanded -> 16.dp
