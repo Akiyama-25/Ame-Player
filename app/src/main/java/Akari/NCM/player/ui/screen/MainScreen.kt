@@ -67,13 +67,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -1967,6 +1971,42 @@ private fun MiniPlayerBar(
         )
     }
 
+    // 分别针对已播放端与未播放端背景计算高对比度前景色，允许同一文字/图标被进度条分割为两种颜色
+    val targetPlayedPrimaryColor = remember(coverScheme, targetPlayedFillColor, contrastLevel) {
+        ensureContrast(
+            coverScheme.onPrimaryContainer,
+            targetPlayedFillColor,
+            maxOf(contrastLevel.minTextContrast, 4.5f),
+            preferChroma = false
+        )
+    }
+    val targetPlayedSecondaryColor = remember(coverScheme, targetPlayedFillColor, targetPlayedPrimaryColor, contrastLevel) {
+        val softCandidate = blend(targetPlayedPrimaryColor, targetPlayedFillColor, 0.18f)
+        ensureContrast(
+            softCandidate,
+            targetPlayedFillColor,
+            maxOf(contrastLevel.minTextContrast * 0.88f, 4.5f),
+            preferChroma = false
+        )
+    }
+
+    val targetUnplayedPrimaryColor = remember(coverScheme, targetUnplayedBgColor, contrastLevel) {
+        ensureContrast(
+            coverScheme.onSurface,
+            targetUnplayedBgColor,
+            maxOf(contrastLevel.minTextContrast, 4.5f),
+            preferChroma = false
+        )
+    }
+    val targetUnplayedSecondaryColor = remember(coverScheme, targetUnplayedBgColor, contrastLevel) {
+        ensureContrast(
+            coverScheme.onSurfaceVariant,
+            targetUnplayedBgColor,
+            maxOf(contrastLevel.minTextContrast * 0.88f, 4.5f),
+            preferChroma = false
+        )
+    }
+
     val animatedUnplayedColor by animateColorAsState(
         targetValue = targetUnplayedBgColor,
         animationSpec = tween(360),
@@ -1977,16 +2017,26 @@ private fun MiniPlayerBar(
         animationSpec = tween(360),
         label = "MiniPlayerPlayedColor"
     )
-
-    // 确保标题、歌手与按钮图标在已播放与未播放区域均具备充足对比度
-    val primaryContentColor = remember(coverScheme, animatedUnplayedColor, animatedPlayedColor, contrastLevel) {
-        val c1 = ensureContrast(coverScheme.onSurface, animatedUnplayedColor, contrastLevel.minTextContrast, preferChroma = false)
-        ensureContrast(c1, animatedPlayedColor, contrastLevel.minTextContrast, preferChroma = false)
-    }
-    val secondaryContentColor = remember(coverScheme, animatedUnplayedColor, animatedPlayedColor) {
-        val c1 = ensureContrast(coverScheme.onSurfaceVariant, animatedUnplayedColor, 4.0f, preferChroma = false)
-        ensureContrast(c1, animatedPlayedColor, 4.0f, preferChroma = false)
-    }
+    val animatedPlayedPrimaryColor by animateColorAsState(
+        targetValue = targetPlayedPrimaryColor,
+        animationSpec = tween(360),
+        label = "MiniPlayerPlayedPrimaryColor"
+    )
+    val animatedPlayedSecondaryColor by animateColorAsState(
+        targetValue = targetPlayedSecondaryColor,
+        animationSpec = tween(360),
+        label = "MiniPlayerPlayedSecondaryColor"
+    )
+    val animatedUnplayedPrimaryColor by animateColorAsState(
+        targetValue = targetUnplayedPrimaryColor,
+        animationSpec = tween(360),
+        label = "MiniPlayerUnplayedPrimaryColor"
+    )
+    val animatedUnplayedSecondaryColor by animateColorAsState(
+        targetValue = targetUnplayedSecondaryColor,
+        animationSpec = tween(360),
+        label = "MiniPlayerUnplayedSecondaryColor"
+    )
 
     val progressFraction = if (hasMedia && durationMs > 0L) {
         (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
@@ -2075,82 +2125,177 @@ private fun MiniPlayerBar(
                 .clickable(enabled = hasMedia, onClick = onClick)
                 .testTag("floating_mini_player_bar")
         ) {
-            Row(
+            // 1. 未播放端前景层（承载交互、无障碍语义与 testTag，视觉裁剪至 [splitX, width]）
+            MiniPlayerForegroundRow(
+                media = media,
+                isPlaying = isPlaying,
+                hasMedia = hasMedia,
+                primaryColor = animatedUnplayedPrimaryColor,
+                secondaryColor = animatedUnplayedSecondaryColor,
+                onTogglePlayPause = onTogglePlayPause,
+                onQueueClick = onQueueClick,
+                interactive = true,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 8.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 左侧封面采用圆形，与半圆胶囊左端同心贴合
-                Box(
-                    modifier = Modifier
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(coverScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (media?.coverUrl != null) {
-                        AsyncImage(
-                            model = media.coverUrl,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Icon(
-                            painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
-                            contentDescription = null,
-                            tint = coverScheme.onPrimaryContainer,
-                            modifier = Modifier.size(22.dp)
-                        )
+                    .drawWithContent {
+                        val splitX = size.width * progressFraction.coerceIn(0f, 1f)
+                        if (splitX < size.width) {
+                            clipRect(left = splitX, right = size.width) {
+                                this@drawWithContent.drawContent()
+                            }
+                        }
                     }
-                }
+            )
 
-                Spacer(modifier = Modifier.width(12.dp))
+            // 2. 已播放端前景层（像素级对齐的镜像层，视觉裁剪至 [0, splitX]，允许单个字符被进度线分割）
+            if (progressFraction > 0f) {
+                MiniPlayerForegroundRow(
+                    media = media,
+                    isPlaying = isPlaying,
+                    hasMedia = hasMedia,
+                    primaryColor = animatedPlayedPrimaryColor,
+                    secondaryColor = animatedPlayedSecondaryColor,
+                    onTogglePlayPause = {},
+                    onQueueClick = {},
+                    interactive = false,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clearAndSetSemantics { }
+                        .drawWithContent {
+                            val splitX = size.width * progressFraction.coerceIn(0f, 1f)
+                            if (splitX > 0f) {
+                                clipRect(left = 0f, right = splitX) {
+                                    this@drawWithContent.drawContent()
+                                }
+                            }
+                        }
+                )
+            }
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = media?.title ?: "暂未播放音乐",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (hasMedia) primaryContentColor else secondaryContentColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+            // 3. 左侧圆形封面（独立单一层，保持原色不被进度裁剪）
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 8.dp)
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(coverScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                if (media?.coverUrl != null) {
+                    AsyncImage(
+                        model = media.coverUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
-                    Text(
-                        text = media?.artist ?: "左右滑动切换歌曲",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = secondaryContentColor,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                IconButton(
-                    onClick = onTogglePlayPause,
-                    enabled = hasMedia,
-                    modifier = Modifier.testTag("mini_player_play_pause")
-                ) {
+                } else {
                     Icon(
-                        if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (isPlaying) "暂停" else "播放",
-                        tint = primaryContentColor,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-
-                IconButton(
-                    onClick = onQueueClick,
-                    modifier = Modifier.testTag("mini_player_queue")
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Rounded.QueueMusic,
-                        contentDescription = "播放队列",
-                        tint = primaryContentColor,
-                        modifier = Modifier.size(25.dp)
+                        painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
+                        contentDescription = null,
+                        tint = coverScheme.onPrimaryContainer,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MiniPlayerForegroundRow(
+    media: PlayableMedia?,
+    isPlaying: Boolean,
+    hasMedia: Boolean,
+    primaryColor: Color,
+    secondaryColor: Color,
+    onTogglePlayPause: () -> Unit,
+    onQueueClick: () -> Unit,
+    interactive: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .padding(start = 8.dp, end = 10.dp, top = 7.dp, bottom = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // 封面占位，保证两侧前景层与独立封面层像素级对齐
+        Spacer(modifier = Modifier.size(42.dp))
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = media?.title ?: "暂未播放音乐",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (hasMedia) primaryColor else secondaryColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = media?.artist ?: "左右滑动切换歌曲",
+                style = MaterialTheme.typography.bodySmall,
+                color = secondaryColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .then(
+                    if (interactive) {
+                        Modifier
+                            .clickable(
+                                enabled = hasMedia,
+                                role = Role.Button,
+                                onClick = onTogglePlayPause
+                            )
+                            .testTag("mini_player_play_pause")
+                    } else {
+                        Modifier
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                contentDescription = if (interactive) {
+                    if (isPlaying) "暂停" else "播放"
+                } else {
+                    null
+                },
+                tint = primaryColor,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .then(
+                    if (interactive) {
+                        Modifier
+                            .clickable(
+                                role = Role.Button,
+                                onClick = onQueueClick
+                            )
+                            .testTag("mini_player_queue")
+                    } else {
+                        Modifier
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
+                contentDescription = if (interactive) "播放队列" else null,
+                tint = primaryColor,
+                modifier = Modifier.size(25.dp)
+            )
         }
     }
 }
