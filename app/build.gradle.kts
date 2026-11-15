@@ -18,7 +18,7 @@ android {
     defaultConfig {
         applicationId = customApplicationId ?: "Akari.NCM.player"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 37
         versionCode = 3
         versionName = "release-0.3"
 

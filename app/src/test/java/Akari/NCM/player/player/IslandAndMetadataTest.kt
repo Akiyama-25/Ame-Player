@@ -231,7 +231,7 @@ class IslandAndMetadataTest {
     }
 
     @Test
-    @Config(qualifiers = "w400dp-h2000dp")
+    @Config(qualifiers = "w400dp-h2400dp")
     fun testSettingsScreen_testIslandNotification_trigger() {
         val app = ApplicationProvider.getApplicationContext<Application>()
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)

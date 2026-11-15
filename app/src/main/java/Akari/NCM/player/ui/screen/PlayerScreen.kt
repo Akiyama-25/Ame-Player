@@ -902,7 +902,13 @@ private fun PlayerMainContentView(
 
         val ToolbarBlock: @Composable () -> Unit = {
             val btnSize = 48.dp
-            val iconSize = 22.dp
+            val iconSize = 24.dp
+            val bottomIconColor = ensureContrast(
+                foreground = palette.playedLyricColor,
+                background = palette.effectiveBackgroundColor,
+                minRatio = 4.5f,
+                preferChroma = true
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -910,7 +916,6 @@ private fun PlayerMainContentView(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val isModeHighlighted = infinitePlayMode.isActive || repeatMode == RepeatMode.ONE || shuffleEnabled
                 Surface(
                     onClick = {
                         if (infinitePlayMode.isActive) {
@@ -928,8 +933,10 @@ private fun PlayerMainContentView(
                         }
                     },
                     shape = RoundedCornerShape(16.dp),
-                    color = if (isModeHighlighted) palette.secondaryButtonContainer else Color.Transparent,
-                    modifier = Modifier.size(btnSize)
+                    color = Color.Transparent,
+                    modifier = Modifier
+                        .size(btnSize)
+                        .testTag("btn_play_mode")
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         if (infinitePlayMode.isActive) {
@@ -937,7 +944,7 @@ private fun PlayerMainContentView(
                                 text = "∞",
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (isModeHighlighted) palette.onSecondaryButton else palette.playedLyricColor,
+                                color = bottomIconColor,
                                 modifier = Modifier.semantics {
                                     contentDescription = "无限模式"
                                 }
@@ -951,29 +958,10 @@ private fun PlayerMainContentView(
                             Icon(
                                 modeIcon,
                                 modeDesc,
-                                tint = if (isModeHighlighted) palette.onSecondaryButton else palette.primaryTextColor,
+                                tint = bottomIconColor,
                                 modifier = Modifier.size(iconSize)
                             )
                         }
-                    }
-                }
-
-                // 封面模糊背景快速切换按钮
-                Surface(
-                    onClick = { ThemePrefs.playerBlurCoverBackground = !blurCoverBg },
-                    shape = RoundedCornerShape(16.dp),
-                    color = if (blurCoverBg) palette.secondaryButtonContainer else Color.Transparent,
-                    modifier = Modifier
-                        .size(btnSize)
-                        .testTag("btn_toggle_player_blur_bg")
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = if (blurCoverBg) Icons.Rounded.BlurOn else Icons.Rounded.BlurOff,
-                            contentDescription = if (blurCoverBg) "关闭模糊封面背景" else "开启模糊封面背景",
-                            tint = if (blurCoverBg) palette.onSecondaryButton else palette.primaryTextColor,
-                            modifier = Modifier.size(iconSize)
-                        )
                     }
                 }
 
@@ -981,13 +969,15 @@ private fun PlayerMainContentView(
                     onClick = onOpenQueueClick,
                     shape = RoundedCornerShape(16.dp),
                     color = Color.Transparent,
-                    modifier = Modifier.size(btnSize)
+                    modifier = Modifier
+                        .size(btnSize)
+                        .testTag("btn_open_queue")
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             Icons.AutoMirrored.Rounded.QueueMusic,
                             "播放队列",
-                            tint = palette.primaryTextColor,
+                            tint = bottomIconColor,
                             modifier = Modifier.size(iconSize)
                         )
                     }
@@ -997,13 +987,15 @@ private fun PlayerMainContentView(
                     onClick = { showQuickFunctionsDialog = true },
                     shape = RoundedCornerShape(16.dp),
                     color = Color.Transparent,
-                    modifier = Modifier.size(btnSize)
+                    modifier = Modifier
+                        .size(btnSize)
+                        .testTag("btn_quick_functions")
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             Icons.Rounded.MoreHoriz,
                             "快捷功能",
-                            tint = palette.primaryTextColor,
+                            tint = bottomIconColor,
                             modifier = Modifier.size(iconSize)
                         )
                     }
@@ -1046,9 +1038,6 @@ private fun PlayerMainContentView(
                                         .size(maxCoverSize)
                                         .shadow(16.dp, RoundedCornerShape(24.dp))
                                         .clip(RoundedCornerShape(24.dp))
-                                        .clickable {
-                                            if (isLyricsMode) goToCover() else goToLyrics()
-                                        }
                                 ) {
                                     if (coverUrl != null) {
                                         AsyncImage(
@@ -1083,56 +1072,69 @@ private fun PlayerMainContentView(
                             contentAlignment = Alignment.Center
                         ) {
                             val rightMaxHeight = maxHeight
-                            if (isLyricsMode) {
-                                SaltFullLyricsView(
-                                    modifier = Modifier.fillMaxSize().graphicsLayer { alpha = p },
-                                    lyricResult = lyricResult,
-                                    currentIndex = currentLineIndex,
-                                    currentPositionMs = smoothPositionMs,
-                                    showTranslation = showTranslation,
-                                    palette = palette,
-                                    listState = lyricsListState,
-                                    onToggleTranslation = { showTranslation = !showTranslation },
-                                    onLyricClick = { playerController.seekTo(it) }
-                                )
-                            }
-
-                            if (p < 1f) {
-                                Column(
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .graphicsLayer { alpha = 1f - p },
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
+                                        .clickable(
+                                            enabled = isLyricsMode,
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = { goToCover() }
+                                        )
+                                        .padding(bottom = 8.dp),
+                                    contentAlignment = Alignment.CenterEnd
                                 ) {
-                                    Box(
-                                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                                        contentAlignment = Alignment.CenterEnd
+                                    Surface(
+                                        onClick = { showTranslation = !showTranslation },
+                                        shape = CircleShape,
+                                        color = if (showTranslation) palette.secondaryButtonContainer else Color.Transparent,
+                                        modifier = Modifier.size(48.dp)
                                     ) {
-                                        Surface(
-                                            onClick = { showTranslation = !showTranslation },
-                                            shape = CircleShape,
-                                            color = if (showTranslation) palette.secondaryButtonContainer else Color.Transparent,
-                                            modifier = Modifier.size(48.dp)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    Icons.Rounded.Translate,
-                                                    contentDescription = "翻译开关",
-                                                    tint = if (showTranslation) palette.onSecondaryButton else palette.secondaryTextColor
-                                                )
-                                            }
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                Icons.Rounded.Translate,
+                                                contentDescription = "翻译开关",
+                                                tint = if (showTranslation) palette.onSecondaryButton else palette.secondaryTextColor
+                                            )
                                         }
                                     }
+                                }
 
-                                    val controlsHeight = 220.dp
-                                    val availableHeight = rightMaxHeight - controlsHeight
-                                    val fixedLineHeight = 64.dp
-                                    val maxLinesCount = when {
-                                        availableHeight >= fixedLineHeight * 3 -> 3
-                                        availableHeight >= fixedLineHeight * 2 -> 2
-                                        else -> 1
+                                Box(
+                                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isLyricsMode) {
+                                        SaltFullLyricsView(
+                                            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = p },
+                                            lyricResult = lyricResult,
+                                            currentIndex = currentLineIndex,
+                                            currentPositionMs = smoothPositionMs,
+                                            showTranslation = showTranslation,
+                                            palette = palette,
+                                            listState = lyricsListState,
+                                            onLyricClick = { playerController.seekTo(it) },
+                                            onCollapseLyrics = { goToCover() }
+                                        )
                                     }
+
+                                    if (p < 1f) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .graphicsLayer { alpha = 1f - p },
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            val controlsHeight = 220.dp
+                                            val availableHeight = rightMaxHeight - controlsHeight
+                                            val fixedLineHeight = 64.dp
+                                            val maxLinesCount = when {
+                                                availableHeight >= fixedLineHeight * 3 -> 3
+                                                availableHeight >= fixedLineHeight * 2 -> 2
+                                                else -> 1
+                                            }
 
                                     Box(
                                         modifier = Modifier
@@ -1220,12 +1222,14 @@ private fun PlayerMainContentView(
                                         }
                                     }
 
-                                    Spacer(Modifier.height(16.dp))
-                                    ProgressBarBlock()
-                                    Spacer(Modifier.height(8.dp))
-                                    ControlsBlock()
-                                    Spacer(Modifier.height(8.dp))
-                                    ToolbarBlock()
+                                            Spacer(Modifier.height(16.dp))
+                                            ProgressBarBlock()
+                                            Spacer(Modifier.height(8.dp))
+                                            ControlsBlock()
+                                            Spacer(Modifier.height(8.dp))
+                                            ToolbarBlock()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1294,20 +1298,41 @@ private fun PlayerMainContentView(
 
                         Spacer(Modifier.width(32.dp))
 
-                        Box(
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                            contentAlignment = Alignment.Center
+                        Column(
+                            modifier = Modifier.weight(1f).fillMaxHeight()
                         ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 4.dp),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                Surface(
+                                    onClick = { showTranslation = !showTranslation },
+                                    shape = CircleShape,
+                                    color = if (showTranslation) palette.secondaryButtonContainer else Color.Transparent,
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            Icons.Rounded.Translate,
+                                            contentDescription = "翻译开关",
+                                            tint = if (showTranslation) palette.onSecondaryButton else palette.secondaryTextColor
+                                        )
+                                    }
+                                }
+                            }
+
                             SaltFullLyricsView(
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
                                 lyricResult = lyricResult,
                                 currentIndex = currentLineIndex,
                                 currentPositionMs = smoothPositionMs,
                                 showTranslation = showTranslation,
                                 palette = palette,
                                 listState = lyricsListState,
-                                onToggleTranslation = { showTranslation = !showTranslation },
-                                onLyricClick = { playerController.seekTo(it) }
+                                onLyricClick = { playerController.seekTo(it) },
+                                onCollapseLyrics = { goToCover() }
                             )
                         }
                     }
@@ -1330,9 +1355,18 @@ private fun PlayerMainContentView(
                         .fillMaxSize()
                         .padding(horizontal = 24.dp)
                 ) {
-                    // ── 顶部栏 ────────────────────────────
+                    // ── 顶部栏 (展开歌词后翻译开关保持在右上角，点击顶部空白区域可收起歌词) ────────
                     Row(
-                        modifier = Modifier.fillMaxWidth().height(64.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .clickable(
+                                enabled = isLyricsMode,
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { goToCover() }
+                            )
+                            .testTag("player_top_header_blank"),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1357,7 +1391,7 @@ private fun PlayerMainContentView(
                             color = if (showTranslation) palette.secondaryButtonContainer else Color.Transparent,
                             modifier = Modifier
                                 .size(48.dp)
-                                .graphicsLayer { alpha = 1f - p }
+                                .testTag("btn_player_top_translate")
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
@@ -1369,29 +1403,40 @@ private fun PlayerMainContentView(
                         }
                     }
 
-                    // ── 标题行 ────────────────────────────────────────────────────────
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    // ── 标题行 (展开歌词时点击歌词上方的区域可收起歌词) ────────────────────────────
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                enabled = isLyricsMode,
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { goToCover() }
+                            )
                     ) {
-                        Spacer(Modifier.width((52.dp + 12.dp) * p))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Spacer(Modifier.width((52.dp + 12.dp) * p))
 
-                        TitleAndArtistBlock(
-                            Modifier
-                                .weight(1f)
-                                .onGloballyPositioned { coords ->
-                                    val colPos = coords.positionInRoot()
-                                    val colH = coords.size.height.toFloat()
-                                    val mx = colPos.x - with(density) { (52.dp + 12.dp).toPx() }
-                                    val my = colPos.y + (colH - miniCoverSizePx) / 2f
-                                    if ((miniCoverTopLeft - Offset(mx, my)).getDistanceSquared() > 1f) {
-                                        miniCoverTopLeft = Offset(mx, my)
+                            TitleAndArtistBlock(
+                                Modifier
+                                    .weight(1f)
+                                    .onGloballyPositioned { coords ->
+                                        val colPos = coords.positionInRoot()
+                                        val colH = coords.size.height.toFloat()
+                                        val mx = colPos.x - with(density) { (52.dp + 12.dp).toPx() }
+                                        val my = colPos.y + (colH - miniCoverSizePx) / 2f
+                                        if ((miniCoverTopLeft - Offset(mx, my)).getDistanceSquared() > 1f) {
+                                            miniCoverTopLeft = Offset(mx, my)
+                                        }
                                     }
-                                }
-                        )
-                    }
+                            )
+                        }
 
-                    Spacer(Modifier.height(14.dp))
+                        Spacer(Modifier.height(14.dp))
+                    }
 
                     // ── 内容区 ────────────────────────────────────────────────────────
                     BoxWithConstraints(
@@ -1416,10 +1461,18 @@ private fun PlayerMainContentView(
                                         }
                                 )
 
+                                // 未展开时的歌词区域作为展开歌词的触发范围
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .fillMaxWidth(),
+                                        .fillMaxWidth()
+                                        .clickable(
+                                            enabled = !isLyricsMode,
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = { goToLyrics() }
+                                        )
+                                        .testTag("collapsed_lyric_expand_trigger"),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Box(
@@ -1445,8 +1498,8 @@ private fun PlayerMainContentView(
                                 showTranslation = showTranslation,
                                 palette = palette,
                                 listState = lyricsListState,
-                                onToggleTranslation = { showTranslation = !showTranslation },
-                                onLyricClick = { playerController.seekTo(it) }
+                                onLyricClick = { playerController.seekTo(it) },
+                                onCollapseLyrics = { goToCover() }
                             )
                         }
                     }
@@ -1461,7 +1514,7 @@ private fun PlayerMainContentView(
             }
         }
 
-        // ── 封面覆层 (仅在 Portrait 模式下显示) ──────────────────────────────────────────────────────────
+        // ── 封面覆层 (仅在 Portrait 模式下显示：移除未展开时点击封面展开歌词的触发范围，仅在展开歌词后允许点击顶部小封面收起) ──
         if (!isLandscape && largeCoverSizePx > 0f && miniCoverTopLeft != Offset.Zero) {
             Box(
                 modifier = Modifier
@@ -1472,12 +1525,19 @@ private fun PlayerMainContentView(
                     .shadow(shadowDp, RoundedCornerShape(cornerDp))
                     .clip(RoundedCornerShape(cornerDp))
                     .background(palette.secondaryButtonContainer)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        if (p < 0.5f) goToLyrics() else goToCover()
-                    }
+                    .then(
+                        if (p >= 0.5f) {
+                            Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                goToCover()
+                            }
+                        } else {
+                            Modifier
+                        }
+                    )
+                    .testTag("player_album_cover")
             ) {
                 if (coverUrl != null) {
                     AsyncImage(
@@ -1893,8 +1953,8 @@ private fun SaltFullLyricsView(
     showTranslation: Boolean,
     palette: PlayerExpressivePalette,
     listState: androidx.compose.foundation.lazy.LazyListState,
-    onToggleTranslation: () -> Unit,
-    onLyricClick: (Long) -> Unit
+    onLyricClick: (Long) -> Unit,
+    onCollapseLyrics: () -> Unit = {}
 ) {
     var isInitialScroll by remember { mutableStateOf(true) }
     var lastScrolledIndex by remember { mutableIntStateOf(-1) }
@@ -1956,10 +2016,30 @@ private fun SaltFullLyricsView(
     }
 
     Column(modifier = modifier) {
-        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onCollapseLyrics
+                )
+                .testTag("expanded_lyrics_blank_area")
+        ) {
             val halfHeight = maxHeight / 2
+            val maxTextWidth = (maxWidth - 64.dp).coerceAtLeast(120.dp)
             if (lyricResult.lines.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onCollapseLyrics
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
                         "暂无歌词",
                         fontSize = 18.sp,
@@ -2008,65 +2088,78 @@ private fun SaltFullLyricsView(
                             palette.unplayedLyricColor
                         }
 
-                        Column(
+                        // 外层行容器：点击歌词两侧空白区域触发收起歌词
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onLyricClick(line.timeMs) }
-                                .padding(vertical = 4.dp, horizontal = 8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = onCollapseLyrics
+                                )
+                                .padding(vertical = 2.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                if (isSelected) {
-                                    val nextLineMs = lyricResult.lines.getOrNull(index + 1)?.timeMs
-                                    val fallbackDur = if (nextLineMs != null && nextLineMs > line.timeMs) {
-                                        (nextLineMs - line.timeMs).coerceIn(800L, 10000L)
-                                    } else 3600L
-
-                                    WordByWordLyricView(
-                                        line = line,
-                                        currentPositionMs = currentPositionMs,
-                                        fontSize = 22.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        lineHeight = 30.sp,
-                                        activeColor = palette.playedLyricColor,
-                                        inactiveColor = palette.unplayedLyricColor,
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        hasWordTimestamps = hasWordTimestamps,
-                                        fallbackLineDurationMs = fallbackDur
-                                    )
-                                } else {
-                                    Text(
-                                        text = line.text.trim(),
-                                        fontSize = 18.sp,
-                                        fontWeight = if (isPlayedLine) FontWeight.SemiBold else FontWeight.Medium,
-                                        color = nonSelectedLineColor,
-                                        lineHeight = 26.sp,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                            }
-
-                            AnimatedVisibility(
-                                visible = showTranslation && !line.translation.isNullOrBlank(),
-                                enter = fadeIn(animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)) +
-                                    expandVertically(
-                                        animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
-                                        clip = false,
-                                        expandFrom = Alignment.Top
-                                    ),
-                                exit = fadeOut(animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)) +
-                                    shrinkVertically(
-                                        animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
-                                        clip = false,
-                                        shrinkTowards = Alignment.Top
-                                    )
+                            // 内层歌词文字容器：点击歌词文字本身跳转该句进度
+                            Column(
+                                modifier = Modifier
+                                    .widthIn(max = maxTextWidth)
+                                    .wrapContentWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onLyricClick(line.timeMs) }
+                                    .padding(vertical = 4.dp, horizontal = 8.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalAlignment = Alignment.CenterHorizontally
+                                Box(contentAlignment = Alignment.Center) {
+                                    if (isSelected) {
+                                        val nextLineMs = lyricResult.lines.getOrNull(index + 1)?.timeMs
+                                        val fallbackDur = if (nextLineMs != null && nextLineMs > line.timeMs) {
+                                            (nextLineMs - line.timeMs).coerceIn(800L, 10000L)
+                                        } else 3600L
+
+                                        WordByWordLyricView(
+                                            line = line,
+                                            currentPositionMs = currentPositionMs,
+                                            fontSize = 22.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            lineHeight = 30.sp,
+                                            activeColor = palette.playedLyricColor,
+                                            inactiveColor = palette.unplayedLyricColor,
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            hasWordTimestamps = hasWordTimestamps,
+                                            fallbackLineDurationMs = fallbackDur
+                                        )
+                                    } else {
+                                        Text(
+                                            text = line.text.trim(),
+                                            fontSize = 18.sp,
+                                            fontWeight = if (isPlayedLine) FontWeight.SemiBold else FontWeight.Medium,
+                                            color = nonSelectedLineColor,
+                                            lineHeight = 26.sp,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+
+                                AnimatedVisibility(
+                                    visible = showTranslation && !line.translation.isNullOrBlank(),
+                                    enter = fadeIn(animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)) +
+                                        expandVertically(
+                                            animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                                            clip = false,
+                                            expandFrom = Alignment.Top
+                                        ),
+                                    exit = fadeOut(animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)) +
+                                        shrinkVertically(
+                                            animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                                            clip = false,
+                                            shrinkTowards = Alignment.Top
+                                        )
                                 ) {
-                                    Spacer(Modifier.height(4.dp))
-                                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Spacer(Modifier.height(4.dp))
                                         Text(
                                             text = line.translation?.trim().orEmpty(),
                                             fontSize = 14.sp,
@@ -2080,57 +2173,6 @@ private fun SaltFullLyricsView(
                             }
                         }
                     }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        // 底部指示与译文开关
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val badgeText = when (lyricResult.source) {
-                LyricSource.TTML -> if (hasWordTimestamps) "AMLL TTML 逐词" else "AMLL TTML"
-                LyricSource.YRC -> if (hasWordTimestamps) "网易云 YRC 逐字" else "网易云 YRC"
-                LyricSource.LOCAL_LRC -> "本地歌词"
-                LyricSource.EMBEDDED -> "内嵌歌词"
-                LyricSource.ONLINE -> "网易云 LRC"
-                LyricSource.NONE -> ""
-            }
-            if (badgeText.isNotEmpty()) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = palette.secondaryButtonContainer
-                ) {
-                    Text(
-                        text = badgeText,
-                        fontSize = 11.sp,
-                        color = palette.onSecondaryButton,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
-            } else {
-                Spacer(Modifier.width(1.dp))
-            }
-
-            Surface(
-                onClick = onToggleTranslation,
-                shape = CircleShape,
-                color = if (showTranslation) palette.secondaryButtonContainer else Color.Transparent,
-                modifier = Modifier.size(48.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Rounded.Translate,
-                        contentDescription = "翻译开关",
-                        tint = if (showTranslation) palette.onSecondaryButton else palette.secondaryTextColor
-                    )
                 }
             }
         }

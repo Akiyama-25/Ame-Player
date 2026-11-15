@@ -9,9 +9,12 @@ import Akari.NCM.player.core.PlayerState
 import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.core.RepeatMode
 import Akari.NCM.player.data.NcmDataSource
+import Akari.NCM.player.data.PlayableMediaDTO
 import android.content.Context
 import android.net.Uri
 import Akari.NCM.player.core.AppLogger
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import androidx.core.net.toUri
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -288,11 +291,59 @@ class AmePlayerEngine @Inject constructor(
     @Volatile
     private var isReleased = false
 
+    private val playbackPersistJson = Json { ignoreUnknownKeys = true }
+
     private var exoPlayer: ExoPlayer
 
     init {
         exoPlayer = createExoPlayer()
+        restoreLastPlaybackState()
         startBackgroundObservers()
+    }
+
+    private fun saveLastPlaybackState() {
+        val items = _playlist.value
+        if (items.isEmpty()) return
+        val idx = _currentIndex.value.coerceIn(0, items.lastIndex)
+        val sourceType = _playlistSourceType.value.name
+        runCatching {
+            val dtos = items.take(500).map { PlayableMediaDTO.fromPlayableMedia(it) }
+            ThemePrefs.lastPlaybackPlaylistJson = playbackPersistJson.encodeToString(dtos)
+            ThemePrefs.lastPlaybackIndex = idx.coerceAtMost(dtos.lastIndex)
+            ThemePrefs.lastPlaybackSourceType = sourceType
+        }
+    }
+
+    private fun restoreLastPlaybackState() {
+        runCatching {
+            val rawJson = ThemePrefs.lastPlaybackPlaylistJson
+            if (rawJson.isBlank()) return
+            val dtos = playbackPersistJson.decodeFromString<List<PlayableMediaDTO>>(rawJson)
+            if (dtos.isEmpty()) return
+            val items = dtos.map { it.toPlayableMedia() }
+            val savedIndex = ThemePrefs.lastPlaybackIndex.coerceIn(0, items.lastIndex)
+            val savedSource = runCatching {
+                PlaylistSourceType.valueOf(ThemePrefs.lastPlaybackSourceType)
+            }.getOrDefault(PlaylistSourceType.NONE)
+
+            _playlistSourceType.value = savedSource
+            mediaMap.clear()
+            val mediaItems = items.map { media ->
+                mediaMap[media.id] = media
+                buildMediaItem(media)
+            }
+            val restoredMedia = items[savedIndex]
+            _playlist.value = items
+            _currentIndex.value = savedIndex
+            _currentMedia.value = restoredMedia
+            _currentPositionMs.value = 0L
+            _durationMs.value = restoredMedia.durationMs
+            _isPlaying.value = false
+            prepareLoudnessSync(restoredMedia)
+            exoPlayer.playWhenReady = false
+            exoPlayer.setMediaItems(mediaItems, savedIndex, 0L)
+            onTrackChanged(restoredMedia)
+        }
     }
 
     private fun ensureActive() {
@@ -554,6 +605,9 @@ class AmePlayerEngine @Inject constructor(
                 _currentMedia.value = currentMedia
                 _currentIndex.value = player.currentMediaItemIndex
                 _durationMs.value = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L
+                if (currentMedia != null) {
+                    saveLastPlaybackState()
+                }
 
                 // 同步预置音频处理器增益，消除切歌后协程调度期间的未均衡音频泄漏
                 prepareLoudnessSync(currentMedia)
@@ -1685,6 +1739,7 @@ class AmePlayerEngine @Inject constructor(
         _playlist.value = listOf(media)
         _currentIndex.value = 0
         _currentMedia.value = media
+        saveLastPlaybackState()
         prepareLoudnessSync(media)
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> load single track '${media.title}' (id=${media.id})")
         exoPlayer.setMediaItem(mediaItem)
@@ -1731,6 +1786,7 @@ class AmePlayerEngine @Inject constructor(
         val startMedia = items.getOrNull(safeStartIndex)
         _currentMedia.value = startMedia
         _currentIndex.value = safeStartIndex
+        saveLastPlaybackState()
         prepareLoudnessSync(startMedia)
         exoPlayer.setMediaItems(mediaItems, safeStartIndex, C.TIME_UNSET)
         exoPlayer.prepare()
@@ -2136,6 +2192,11 @@ class AmePlayerEngine @Inject constructor(
             isInterTrackWaiting = false
             _loudnessState.value = _loudnessState.value.copy(isInterTrackWaiting = false)
             prepareLoudnessSync(_currentMedia.value)
+        }
+        if (exoPlayer.playbackState == Player.STATE_IDLE && exoPlayer.mediaItemCount > 0) {
+            exoPlayer.prepare()
+            applyLoudnessNormalization(_currentMedia.value)
+            prefetchUpcomingTracksLoudness()
         }
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> play() called (fadeEnabled=${ThemePrefs.playbackFadeEnabled})")
         if (!ThemePrefs.playbackFadeEnabled) {

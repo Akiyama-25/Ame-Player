@@ -255,7 +255,7 @@ class DebugFeaturesAndMatchFilterTest {
         composeTestRule.waitForIdle()
 
         // Navigate to Playlists tab and open "测试混合歌单"
-        composeTestRule.onNodeWithText("歌单", substring = true).performClick()
+        composeTestRule.onNodeWithContentDescription("我的歌单").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("测试混合歌单").performClick()
         composeTestRule.waitForIdle()
@@ -316,7 +316,7 @@ class DebugFeaturesAndMatchFilterTest {
         composeTestRule.waitForIdle()
 
         // 导航至歌单页面并打开测试歌单
-        composeTestRule.onNodeWithText("歌单", substring = true).performClick()
+        composeTestRule.onNodeWithContentDescription("我的歌单").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("搜索播放测试歌单").performClick()
         composeTestRule.waitForIdle()

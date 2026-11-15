@@ -183,4 +183,25 @@ class ExpressiveThemeAndContrastTest {
             secondBounds.top >= firstBounds.bottom - 1f
         )
     }
+
+    @Test
+    fun `ColorVariant entries strictly match the 4 M3 Expressive variants plus Monochrome`() {
+        val variants = ColorVariant.entries
+        assertEquals(5, variants.size)
+        assertEquals(
+            listOf(
+                ColorVariant.NEUTRAL,
+                ColorVariant.TONAL_SPOT,
+                ColorVariant.VIBRANT,
+                ColorVariant.EXPRESSIVE,
+                ColorVariant.MONOCHROME
+            ),
+            variants
+        )
+        assertEquals("克制、低彩度的界面基调", ColorVariant.NEUTRAL.description)
+        assertEquals("均衡的 Material 默认风格", ColorVariant.TONAL_SPOT.description)
+        assertEquals("保留色相并显著提高彩度", ColorVariant.VIBRANT.description)
+        assertEquals("旋转色相，产生更强个性", ColorVariant.EXPRESSIVE.description)
+        assertEquals("纯黑白，最大限度削弱色彩", ColorVariant.MONOCHROME.description)
+    }
 }

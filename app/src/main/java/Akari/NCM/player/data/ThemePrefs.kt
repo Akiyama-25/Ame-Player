@@ -37,6 +37,9 @@ object ThemePrefs {
     private const val KEY_PLAYBACK_FADE_ENABLED = "playback_fade_enabled"
     private const val KEY_PLAYBACK_FADE_DURATION_MS = "playback_fade_duration_ms"
     private const val KEY_UPDATE_CHANNEL = "update_channel"
+    private const val KEY_LAST_PLAYBACK_PLAYLIST_JSON = "last_playback_playlist_json"
+    private const val KEY_LAST_PLAYBACK_INDEX = "last_playback_index"
+    private const val KEY_LAST_PLAYBACK_SOURCE_TYPE = "last_playback_source_type"
 
     const val THEME_SYSTEM = "system"
     const val THEME_LIGHT = "light"
@@ -411,6 +414,30 @@ object ThemePrefs {
             }
             _updateChannelFlow.value = value
         }
+
+    var lastPlaybackPlaylistJson: String
+        get() = if (::prefs.isInitialized) prefs.getString(KEY_LAST_PLAYBACK_PLAYLIST_JSON, "") ?: "" else ""
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putString(KEY_LAST_PLAYBACK_PLAYLIST_JSON, value).apply()
+            }
+        }
+
+    var lastPlaybackIndex: Int
+        get() = if (::prefs.isInitialized) prefs.getInt(KEY_LAST_PLAYBACK_INDEX, 0) else 0
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putInt(KEY_LAST_PLAYBACK_INDEX, value).apply()
+            }
+        }
+
+    var lastPlaybackSourceType: String
+        get() = if (::prefs.isInitialized) prefs.getString(KEY_LAST_PLAYBACK_SOURCE_TYPE, "NONE") ?: "NONE" else "NONE"
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putString(KEY_LAST_PLAYBACK_SOURCE_TYPE, value).apply()
+            }
+        }
 }
 
 enum class ColorVariant(
@@ -418,13 +445,11 @@ enum class ColorVariant(
     val label: String,
     val description: String
 ) {
-    EXPRESSIVE("expressive", "表现力 (Expressive)", "M3 Expressive 多色相灵动撞色与高表现力强调色"),
-    TONAL_SPOT("tonal_spot", "色调聚光 (Tonal Spot)", "经典 Material You 温和和谐主色调"),
-    VIBRANT("vibrant", "活力高饱和 (Vibrant)", "高纯度色彩与鲜活次级容器"),
-    FIDELITY("fidelity", "忠实还原 (Fidelity)", "精准贴合壁纸或歌曲封面的原始主色"),
-    CONTENT("content", "内容自适应 (Content)", "围绕源色彩构建深邃内敛的同色系层次"),
-    NEUTRAL("neutral", "柔和中性 (Neutral)", "低饱和度雅致灰调，突出内容本身"),
-    MONOCHROME("monochrome", "纯粹单色 (Monochrome)", "极简无彩色黑白灰高反差视觉");
+    NEUTRAL("neutral", "Neutral", "克制、低彩度的界面基调"),
+    TONAL_SPOT("tonal_spot", "Tonal Spot", "均衡的 Material 默认风格"),
+    VIBRANT("vibrant", "Vibrant", "保留色相并显著提高彩度"),
+    EXPRESSIVE("expressive", "Expressive", "旋转色相，产生更强个性"),
+    MONOCHROME("monochrome", "Monochrome", "纯黑白，最大限度削弱色彩");
 
     companion object {
         fun fromKey(key: String): ColorVariant =

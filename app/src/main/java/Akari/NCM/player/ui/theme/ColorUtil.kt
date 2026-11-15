@@ -295,16 +295,15 @@ fun buildExpressiveColorScheme(
     val neutralS: Float
 
     when (variant) {
-        ColorVariant.EXPRESSIVE -> {
-            // M3 Expressive 标志性的多色相撞色与高表现力饱和度
-            primaryH = (h + 8f) % 360f
-            primaryS = seedHsl.s.coerceIn(64f, 88f)
-            secondaryH = (h + 48f) % 360f
-            secondaryS = (seedHsl.s * 0.72f).coerceIn(42f, 66f)
-            tertiaryH = (h + 135f) % 360f
-            tertiaryS = (seedHsl.s * 0.90f).coerceIn(58f, 86f)
-            neutralH = (h + 12f) % 360f
-            neutralS = 20f
+        ColorVariant.NEUTRAL -> {
+            primaryH = h
+            primaryS = 14f
+            secondaryH = h
+            secondaryS = 8f
+            tertiaryH = (h + 30f) % 360f
+            tertiaryS = 16f
+            neutralH = h
+            neutralS = 4f
         }
         ColorVariant.TONAL_SPOT -> {
             primaryH = h
@@ -326,35 +325,16 @@ fun buildExpressiveColorScheme(
             neutralH = h
             neutralS = 26f
         }
-        ColorVariant.FIDELITY -> {
-            primaryH = h
-            primaryS = seedHsl.s.coerceIn(28f, 92f)
-            secondaryH = h
-            secondaryS = (seedHsl.s * 0.55f).coerceIn(18f, 52f)
-            tertiaryH = (h + 32f) % 360f
-            tertiaryS = (seedHsl.s * 0.75f).coerceIn(26f, 68f)
-            neutralH = h
-            neutralS = (seedHsl.s * 0.22f).coerceIn(8f, 22f)
-        }
-        ColorVariant.CONTENT -> {
-            primaryH = h
-            primaryS = seedHsl.s.coerceIn(36f, 84f)
-            secondaryH = (h + 14f) % 360f
-            secondaryS = (seedHsl.s * 0.65f).coerceIn(24f, 58f)
-            tertiaryH = (h + 340f) % 360f
-            tertiaryS = (seedHsl.s * 0.75f).coerceIn(30f, 66f)
-            neutralH = h
-            neutralS = (seedHsl.s * 0.25f).coerceIn(10f, 24f)
-        }
-        ColorVariant.NEUTRAL -> {
-            primaryH = h
-            primaryS = 14f
-            secondaryH = h
-            secondaryS = 8f
-            tertiaryH = (h + 30f) % 360f
-            tertiaryS = 16f
-            neutralH = h
-            neutralS = 4f
+        ColorVariant.EXPRESSIVE -> {
+            // M3 Expressive 标志性的旋转色相与高表现力饱和度
+            primaryH = (h + 8f) % 360f
+            primaryS = seedHsl.s.coerceIn(64f, 88f)
+            secondaryH = (h + 48f) % 360f
+            secondaryS = (seedHsl.s * 0.72f).coerceIn(42f, 66f)
+            tertiaryH = (h + 135f) % 360f
+            tertiaryS = (seedHsl.s * 0.90f).coerceIn(58f, 86f)
+            neutralH = (h + 12f) % 360f
+            neutralS = 20f
         }
         ColorVariant.MONOCHROME -> {
             primaryH = 0f

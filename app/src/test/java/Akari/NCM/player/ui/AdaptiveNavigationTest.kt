@@ -53,13 +53,13 @@ class AdaptiveNavigationTest {
             MainScreen(playerEngine = playerEngine)
         }
 
-        // Check that navigation items exist and are displayed
-        composeTestRule.onNodeWithText("首页").assertIsDisplayed()
-        composeTestRule.onNodeWithText("歌单", substring = true).assertIsDisplayed()
+        // Check that icon-only navigation items exist and are displayed
+        composeTestRule.onNodeWithContentDescription("用户首页").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("我的歌单").assertIsDisplayed()
 
         // In Compact mode (NavigationBar at bottom), navigation items should be positioned near bottom of screen
-        val homeBounds = composeTestRule.onNodeWithText("首页").getUnclippedBoundsInRoot()
-        val playlistBounds = composeTestRule.onNodeWithText("歌单", substring = true).getUnclippedBoundsInRoot()
+        val homeBounds = composeTestRule.onNodeWithContentDescription("用户首页").getUnclippedBoundsInRoot()
+        val playlistBounds = composeTestRule.onNodeWithContentDescription("我的歌单").getUnclippedBoundsInRoot()
 
         // Y position of items should be near the bottom (screen height = 800dp)
         assertTrue("In compact mode, Home tab top (${homeBounds.top}) should be near bottom (>650dp)", homeBounds.top > 650.dp)
@@ -76,11 +76,11 @@ class AdaptiveNavigationTest {
             MainScreen(playerEngine = playerEngine)
         }
 
-        composeTestRule.onNodeWithText("首页").assertIsDisplayed()
-        composeTestRule.onNodeWithText("歌单", substring = true).assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("用户首页").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("我的歌单").assertIsDisplayed()
 
-        val homeBounds = composeTestRule.onNodeWithText("首页").getUnclippedBoundsInRoot()
-        val playlistBounds = composeTestRule.onNodeWithText("歌单", substring = true).getUnclippedBoundsInRoot()
+        val homeBounds = composeTestRule.onNodeWithContentDescription("用户首页").getUnclippedBoundsInRoot()
+        val playlistBounds = composeTestRule.onNodeWithContentDescription("我的歌单").getUnclippedBoundsInRoot()
 
         // In NavigationRail (left side), items X position is at the start (<100dp)
         assertTrue("In NavigationRail, Home X (${homeBounds.left}) should be on the left (<100dp)", homeBounds.left < 100.dp)
@@ -97,11 +97,11 @@ class AdaptiveNavigationTest {
             MainScreen(playerEngine = playerEngine)
         }
 
-        composeTestRule.onNodeWithText("首页").assertIsDisplayed()
-        composeTestRule.onNodeWithText("歌单", substring = true).assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("用户首页").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("我的歌单").assertIsDisplayed()
 
-        val homeBounds = composeTestRule.onNodeWithText("首页").getUnclippedBoundsInRoot()
-        val playlistBounds = composeTestRule.onNodeWithText("歌单", substring = true).getUnclippedBoundsInRoot()
+        val homeBounds = composeTestRule.onNodeWithContentDescription("用户首页").getUnclippedBoundsInRoot()
+        val playlistBounds = composeTestRule.onNodeWithContentDescription("我的歌单").getUnclippedBoundsInRoot()
 
         // In Expanded NavigationRail, items X position is on the left
         assertTrue("In Expanded NavigationRail, Home X (${homeBounds.left}) should be on the left (<100dp)", homeBounds.left < 100.dp)
@@ -119,17 +119,17 @@ class AdaptiveNavigationTest {
         }
 
         // Initially Home tab is selected, clicking Playlist tab switches to Playlist view
-        composeTestRule.onNodeWithText("歌单", substring = true).performClick()
+        composeTestRule.onNodeWithContentDescription("我的歌单").performClick()
         composeTestRule.waitForIdle()
 
         // After clicking Playlist, the view should show Playlist-specific UI (e.g., "尚未创建任何歌单" or "新建本地")
         composeTestRule.onNodeWithContentDescription("新建本地").assertIsDisplayed()
 
         // Click Home tab to switch back
-        composeTestRule.onNodeWithText("首页").performClick()
+        composeTestRule.onNodeWithContentDescription("用户首页").performClick()
         composeTestRule.waitForIdle()
 
         // Should return to homepage
-        composeTestRule.onNodeWithText("首页").assertIsDisplayed()
+        composeTestRule.onNodeWithContentDescription("用户首页").assertIsDisplayed()
     }
 }

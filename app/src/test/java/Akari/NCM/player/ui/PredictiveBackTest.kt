@@ -148,7 +148,7 @@ class PredictiveBackTest {
         assertFalse("After returning to MainScreen, no in-app back handler should be enabled", dispatcher.hasEnabledCallbacks())
 
         // 3. Navigate to Playlists tab and open playlist detail
-        composeTestRule.onNodeWithText("歌单", substring = true).performClick()
+        composeTestRule.onNodeWithContentDescription("我的歌单").performClick()
         composeTestRule.waitForIdle()
         composeTestRule.onNodeWithText("预见性测试歌单").performClick()
         composeTestRule.waitForIdle()

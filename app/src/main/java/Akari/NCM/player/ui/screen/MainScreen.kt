@@ -31,6 +31,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -294,56 +295,58 @@ fun MainScreen(
             }
         ) {
                 val adaptiveInfo = androidx.compose.material3.adaptive.currentWindowAdaptiveInfo()
-                val customLayoutType = with(adaptiveInfo.windowSizeClass) {
-                    when {
-                        windowHeightSizeClass == androidx.window.core.layout.WindowHeightSizeClass.COMPACT ->
-                            androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationRail
-                        windowWidthSizeClass == androidx.window.core.layout.WindowWidthSizeClass.EXPANDED ->
-                            androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationRail
-                        windowWidthSizeClass == androidx.window.core.layout.WindowWidthSizeClass.MEDIUM ->
-                            androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationRail
-                        else -> androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType.NavigationBar
-                    }
+                val useNavRail = with(adaptiveInfo.windowSizeClass) {
+                    windowHeightSizeClass == androidx.window.core.layout.WindowHeightSizeClass.COMPACT ||
+                        windowWidthSizeClass == androidx.window.core.layout.WindowWidthSizeClass.EXPANDED ||
+                        windowWidthSizeClass == androidx.window.core.layout.WindowWidthSizeClass.MEDIUM
                 }
 
-                // Material 3 Adaptive Navigation Suite Scaffold
-                NavigationSuiteScaffold(
-                    layoutType = customLayoutType,
-                    containerColor = MaterialTheme.colorScheme.background,
-                    navigationSuiteItems = {
-                        if (hasApi) {
-                            item(
-                                selected = selectedTab == 0,
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    if (useNavRail) {
+                        NavigationRail(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            modifier = Modifier.testTag("main_nav_rail")
+                        ) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            if (hasApi) {
+                                NavigationRailItem(
+                                    selected = selectedTab == 0,
+                                    onClick = {
+                                        if (selectedTab == 0 && selectedOnlinePlaylist != null) {
+                                            selectedOnlinePlaylist = null
+                                        }
+                                        selectedTab = 0
+                                        selectedPlaylistForDetail = null
+                                    },
+                                    icon = {
+                                        Icon(Icons.Rounded.Home, contentDescription = "用户首页")
+                                    },
+                                    label = null,
+                                    alwaysShowLabel = false,
+                                    modifier = Modifier.testTag("nav_tab_home")
+                                )
+                            }
+                            NavigationRailItem(
+                                selected = selectedTab == 1,
                                 onClick = {
-                                    if (selectedTab == 0 && selectedOnlinePlaylist != null) {
-                                        selectedOnlinePlaylist = null
-                                    }
-                                    selectedTab = 0
-                                    selectedPlaylistForDetail = null
+                                    selectedTab = 1
                                 },
                                 icon = {
-                                    Icon(Icons.Rounded.Home, contentDescription = "用户首页")
+                                    Icon(Icons.Rounded.LibraryMusic, contentDescription = "我的歌单")
                                 },
-                                label = {
-                                    Text("首页")
-                                }
+                                label = null,
+                                alwaysShowLabel = false,
+                                modifier = Modifier.testTag("nav_tab_playlists")
                             )
                         }
-                        item(
-                            selected = selectedTab == 1,
-                            onClick = {
-                                selectedTab = 1
-                            },
-                            icon = {
-                                Icon(Icons.Rounded.LibraryMusic, contentDescription = "我的歌单")
-                            },
-                            label = {
-                                Text(if (customPlaylists.isNotEmpty()) "歌单 (${customPlaylists.size})" else "歌单")
-                            }
-                        )
                     }
-                ) {
+
                     Scaffold(
+                        modifier = Modifier.weight(1f),
                         containerColor = MaterialTheme.colorScheme.background,
                         topBar = {
                             TopAppBar(
@@ -381,23 +384,77 @@ fun MainScreen(
                             )
                         },
                         bottomBar = {
-                            // Mini Player Bar
-                            AnimatedVisibility(
-                                visible = currentMedia != null && !showPlayerScreen,
-                                enter = slideInVertically(initialOffsetY = { it }),
-                                exit = slideOutVertically(targetOffsetY = { it })
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .navigationBarsPadding()
                             ) {
-                                MiniPlayerBar(
-                                    media = currentMedia,
-                                    isPlaying = isPlaying,
-                                    positionMs = positionMs,
-                                    durationMs = durationMs,
-                                    onTogglePlayPause = { playerEngine.togglePlayPause() },
-                                    onClick = { showPlayerScreen = true },
-                                    onSkipNext = { playerEngine.skipToNext() },
-                                    onSkipPrevious = { playerEngine.skipToPrevious() },
-                                    onQueueClick = { showQueueBottomSheet = true }
-                                )
+                                // 常驻悬浮底部播放状态栏 (Material 3 Expressive 悬浮卡片样式)
+                                AnimatedVisibility(
+                                    visible = !showPlayerScreen,
+                                    enter = slideInVertically(initialOffsetY = { it }),
+                                    exit = slideOutVertically(targetOffsetY = { it })
+                                ) {
+                                    MiniPlayerBar(
+                                        media = currentMedia,
+                                        isPlaying = isPlaying,
+                                        positionMs = positionMs,
+                                        durationMs = durationMs,
+                                        onTogglePlayPause = { playerEngine.togglePlayPause() },
+                                        onClick = {
+                                            if (currentMedia != null) {
+                                                showPlayerScreen = true
+                                            }
+                                        },
+                                        onSkipNext = { playerEngine.skipToNext() },
+                                        onSkipPrevious = { playerEngine.skipToPrevious() },
+                                        onQueueClick = { showQueueBottomSheet = true }
+                                    )
+                                }
+
+                                // 仅保留图标的紧凑底部页面切换栏（压低高度）
+                                if (!useNavRail) {
+                                    NavigationBar(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(52.dp)
+                                            .testTag("main_bottom_nav_bar"),
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        tonalElevation = 2.dp,
+                                        windowInsets = WindowInsets(0, 0, 0, 0)
+                                    ) {
+                                        if (hasApi) {
+                                            NavigationBarItem(
+                                                selected = selectedTab == 0,
+                                                onClick = {
+                                                    if (selectedTab == 0 && selectedOnlinePlaylist != null) {
+                                                        selectedOnlinePlaylist = null
+                                                    }
+                                                    selectedTab = 0
+                                                    selectedPlaylistForDetail = null
+                                                },
+                                                icon = {
+                                                    Icon(Icons.Rounded.Home, contentDescription = "用户首页")
+                                                },
+                                                label = null,
+                                                alwaysShowLabel = false,
+                                                modifier = Modifier.testTag("nav_tab_home")
+                                            )
+                                        }
+                                        NavigationBarItem(
+                                            selected = selectedTab == 1,
+                                            onClick = {
+                                                selectedTab = 1
+                                            },
+                                            icon = {
+                                                Icon(Icons.Rounded.LibraryMusic, contentDescription = "我的歌单")
+                                            },
+                                            label = null,
+                                            alwaysShowLabel = false,
+                                            modifier = Modifier.testTag("nav_tab_playlists")
+                                        )
+                                    }
+                                }
                             }
                         }
                     ) { padding ->
@@ -1802,40 +1859,35 @@ private fun MiniPlayerBar(
     onSkipPrevious: () -> Unit,
     onQueueClick: () -> Unit
 ) {
-    if (media == null) return
-
+    val hasMedia = media != null
     Surface(
-        tonalElevation = 3.dp,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 4.dp,
         shadowElevation = 8.dp,
+        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(enabled = hasMedia, onClick = onClick)
+            .testTag("floating_mini_player_bar")
     ) {
         Column {
-            if (durationMs > 0) {
-                LinearProgressIndicator(
-                    progress = { (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp),
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                )
-            }
-
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (media.coverUrl != null) {
+                    if (media?.coverUrl != null) {
                         AsyncImage(
                             model = media.coverUrl,
                             contentDescription = null,
@@ -1847,7 +1899,7 @@ private fun MiniPlayerBar(
                             painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
@@ -1856,14 +1908,15 @@ private fun MiniPlayerBar(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        media.title,
+                        text = media?.title ?: "暂未播放音乐",
                         style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (hasMedia) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        media.artist,
+                        text = media?.artist ?: "选择歌曲开始播放",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -1871,27 +1924,36 @@ private fun MiniPlayerBar(
                     )
                 }
 
-                IconButton(onClick = onSkipPrevious) {
+                IconButton(
+                    onClick = onSkipPrevious,
+                    enabled = hasMedia
+                ) {
                     Icon(
                         Icons.Rounded.SkipPrevious,
                         contentDescription = "上一首",
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
 
-                IconButton(onClick = onTogglePlayPause) {
+                IconButton(
+                    onClick = onTogglePlayPause,
+                    enabled = hasMedia
+                ) {
                     Icon(
                         if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (isPlaying) "暂停" else "播放",
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(30.dp)
                     )
                 }
 
-                IconButton(onClick = onSkipNext) {
+                IconButton(
+                    onClick = onSkipNext,
+                    enabled = hasMedia
+                ) {
                     Icon(
                         Icons.Rounded.SkipNext,
                         contentDescription = "下一首",
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
 
@@ -1899,9 +1961,20 @@ private fun MiniPlayerBar(
                     Icon(
                         Icons.AutoMirrored.Rounded.QueueMusic,
                         contentDescription = "播放队列",
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(26.dp)
                     )
                 }
+            }
+
+            if (hasMedia && durationMs > 0) {
+                LinearProgressIndicator(
+                    progress = { (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .height(2.dp),
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                )
             }
         }
     }

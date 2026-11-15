@@ -202,617 +202,545 @@ fun SettingsScreen(
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
             // ── 账号与网易云 API 服务 ──
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("网易云账号") }
-
             if (hasApi) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
-                            .clickable {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        SectionHeader("网易云账号")
+                        SettingsGroupCard {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (isLoggedIn) {
+                                            showProfileDetailDialog = true
+                                        } else {
+                                            showQrDialog = true
+                                        }
+                                    }
+                                    .padding(horizontal = 18.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 if (isLoggedIn) {
-                                    showProfileDetailDialog = true
+                                    if (!userProfile?.avatarUrl.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = userProfile?.avatarUrl,
+                                            contentDescription = "用户头像",
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.primaryContainer),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.primaryContainer),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = (userProfile?.nickname?.firstOrNull() ?: 'U').toString(),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(14.dp))
+                                    Row(
+                                        modifier = Modifier.weight(1f),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            userProfile?.nickname?.takeIf { it.isNotBlank() } ?: "已登录网易云用户",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if ((userProfile?.vipType ?: 0) > 0) {
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            SuggestionChip(
+                                                onClick = { showProfileDetailDialog = true },
+                                                label = { Text("VIP", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                                modifier = Modifier.height(24.dp)
+                                            )
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            if (!isRefreshingProfile) {
+                                                isRefreshingProfile = true
+                                                scope.launch {
+                                                    val profile = ncmApi.getUserProfile()
+                                                    if (profile != null) {
+                                                        sessionManager.saveUserProfile(profile)
+                                                        Toast.makeText(context, "用户信息已更新", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(context, "获取用户信息失败", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                    isRefreshingProfile = false
+                                                }
+                                            }
+                                        }
+                                    ) {
+                                        if (isRefreshingProfile) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(18.dp),
+                                                strokeWidth = 2.dp,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        } else {
+                                            Icon(
+                                                Icons.Rounded.Refresh,
+                                                contentDescription = "重新获取用户信息",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                    Icon(
+                                        Icons.Rounded.ChevronRight,
+                                        contentDescription = "查看个人信息",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 } else {
-                                    showQrDialog = true
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "未登录网易云账号",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            "登录后解锁无损/VIP音质及个人歌单",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Button(
+                                        onClick = { showQrDialog = true },
+                                        shape = RoundedCornerShape(20.dp)
+                                    ) {
+                                        Text("扫码登录", fontWeight = FontWeight.Bold)
+                                    }
                                 }
-                            },
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                        ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
-                    ) {
+                            }
+
+                            SettingsInnerDivider()
+
+                            val modeDesc = when (homepageMode) {
+                                Akari.NCM.player.core.HomepageMode.APP_LIKE -> "类官方 APP 首页体验"
+                                Akari.NCM.player.core.HomepageMode.DAILY_ONLY -> "仅获取每日推荐歌单"
+                                Akari.NCM.player.core.HomepageMode.HIGH_QUALITY_ONLY -> "仅获取精品歌单 / 网友精选碟"
+                            }
+                            SettingItem(
+                                title = "首页展示模式",
+                                subtitle = modeDesc,
+                                onClick = { showHomepageModeDialog = true }
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── 本地音乐扫描 ──
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SectionHeader("本地音乐扫描")
+                    SettingsGroupCard {
+                        SettingItem(
+                            title = "添加本地文件夹",
+                            subtitle = "选择目录并自动匹配网络元数据",
+                            onClick = { folderPickerLauncher.launch(null) }
+                        )
+                        SettingsInnerDivider()
+                        SettingItem(
+                            title = "重新扫描本地文件",
+                            subtitle = "更新本地增删变动，重新匹配网易云信息",
+                            onClick = {
+                                scope.launch {
+                                    Toast.makeText(context, "正在重新扫描...", Toast.LENGTH_SHORT).show()
+                                    localFolderManager.scanAllFolders()
+                                    Toast.makeText(context, "扫描完成", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                        SettingsInnerDivider()
+                        SettingItem(
+                            title = "管理已添加的文件夹",
+                            subtitle = "点击查看或移除",
+                            onClick = { showFoldersDialog = true }
+                        )
+                    }
+                }
+            }
+
+            // ── 调试功能 ──
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SectionHeader("调试功能")
+                    SettingsGroupCard {
+                        val levelLabel = if (currentLogLevel == LogLevel.ERROR) {
+                            "${currentLogLevel.label} (默认)"
+                        } else {
+                            currentLogLevel.label
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
+                                .clickable { onOpenLog() }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_log_record"),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (isLoggedIn) {
-                                if (!userProfile?.avatarUrl.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = userProfile?.avatarUrl,
-                                        contentDescription = "用户头像",
-                                        modifier = Modifier
-                                            .size(52.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primaryContainer),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(52.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.primaryContainer),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            Icons.Rounded.AccountCircle,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(32.dp),
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Row(
-                                    modifier = Modifier.weight(1f),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        userProfile?.nickname?.takeIf { it.isNotBlank() } ?: "已登录网易云用户",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    if ((userProfile?.vipType ?: 0) > 0) {
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        SuggestionChip(
-                                            onClick = { showProfileDetailDialog = true },
-                                            label = { Text("VIP", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                                            modifier = Modifier.height(24.dp)
-                                        )
-                                    }
-                                }
-                                IconButton(
-                                    onClick = {
-                                        if (!isRefreshingProfile) {
-                                            isRefreshingProfile = true
-                                            scope.launch {
-                                                val profile = ncmApi.getUserProfile()
-                                                if (profile != null) {
-                                                    sessionManager.saveUserProfile(profile)
-                                                    Toast.makeText(context, "用户信息已更新", Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    Toast.makeText(context, "获取用户信息失败", Toast.LENGTH_SHORT).show()
-                                                }
-                                                isRefreshingProfile = false
-                                            }
-                                        }
-                                    }
-                                ) {
-                                    if (isRefreshingProfile) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(18.dp),
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    } else {
-                                        Icon(
-                                            Icons.Rounded.Refresh,
-                                            contentDescription = "重新获取用户信息",
-                                            tint = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                }
-                                Icon(
-                                    Icons.Rounded.ChevronRight,
-                                    contentDescription = "查看个人信息",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "运行日志",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
                                 )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .size(52.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primaryContainer),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        Icons.Rounded.AccountCircle,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(32.dp),
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "未登录网易云账号",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        "登录后解锁无损/VIP音质及个人歌单",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                Button(
-                                    onClick = { showQrDialog = true },
-                                    shape = RoundedCornerShape(20.dp)
-                                ) {
-                                    Text("扫码登录", fontWeight = FontWeight.Bold)
-                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "等级: $levelLabel · 上限: ${maxFileSizeKb} KB（点击进入独立页面查看与导出）",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            FilledTonalButton(
+                                onClick = onOpenLog,
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                modifier = Modifier.testTag("btn_open_log_screen")
+                            ) {
+                                Text("查看", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
-                    }
-                }
 
-                item {
-                    val modeDesc = when (homepageMode) {
-                        Akari.NCM.player.core.HomepageMode.APP_LIKE -> "类官方 APP 首页体验"
-                        Akari.NCM.player.core.HomepageMode.DAILY_ONLY -> "仅获取每日推荐歌单"
-                        Akari.NCM.player.core.HomepageMode.HIGH_QUALITY_ONLY -> "仅获取精品歌单 / 网友精选碟"
-                    }
-                    SettingItem(
-                        icon = Icons.Rounded.Home,
-                        title = "首页展示模式",
-                        subtitle = modeDesc,
-                        onClick = { showHomepageModeDialog = true }
-                    )
-                }
-            }
+                        SettingsInnerDivider()
 
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 3.dp)) }
-
-            // ── 本地音乐扫描 ──
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("本地音乐扫描") }
-
-            item {
-                SettingItem(
-                    icon = Icons.Rounded.CreateNewFolder,
-                    title = "添加本地文件夹",
-                    subtitle = "选择目录并自动匹配网络元数据",
-                    onClick = { folderPickerLauncher.launch(null) }
-                )
-            }
-
-            item {
-                SettingItem(
-                    icon = Icons.Rounded.Refresh,
-                    title = "重新扫描本地文件",
-                    subtitle = "更新本地增删变动，重新匹配网易云信息",
-                    onClick = {
-                        scope.launch {
-                            Toast.makeText(context, "正在重新扫描...", Toast.LENGTH_SHORT).show()
-                            localFolderManager.scanAllFolders()
-                            Toast.makeText(context, "扫描完成", Toast.LENGTH_SHORT).show()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { ThemePrefs.showMatchStatus = !showMatchStatus }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_show_match_status"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "歌曲匹配列表查看",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "开启后在歌单详情页快速过滤已匹配/未匹配本地源的歌曲",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = showMatchStatus,
+                                onCheckedChange = { ThemePrefs.showMatchStatus = it },
+                                modifier = Modifier.testTag("switch_show_match_status")
+                            )
                         }
                     }
-                )
-            }
-            item {
-                SettingItem(
-                    icon = Icons.Rounded.Folder,
-                    title = "管理已添加的文件夹",
-                    subtitle = "点击查看或移除",
-                    onClick = { showFoldersDialog = true }
-                )
-            }
-
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 3.dp)) }
-
-            // ── 调试功能 ──
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("调试功能") }
-
-            item {
-                val levelLabel = if (currentLogLevel == LogLevel.ERROR) {
-                    "${currentLogLevel.label} (默认)"
-                } else {
-                    currentLogLevel.label
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onOpenLog() }
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                        .testTag("setting_log_record"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.BugReport,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "运行日志",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "等级: $levelLabel · 上限: ${maxFileSizeKb} KB（点击进入独立页面查看与导出）",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    FilledTonalButton(
-                        onClick = onOpenLog,
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                        modifier = Modifier.testTag("btn_open_log_screen")
-                    ) {
-                        Text("查看", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
                 }
             }
-
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { ThemePrefs.showMatchStatus = !showMatchStatus }
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                        .testTag("setting_show_match_status"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.FactCheck,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "歌曲匹配列表查看",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "开启后在歌单详情页快速过滤已匹配/未匹配本地源的歌曲",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = showMatchStatus,
-                        onCheckedChange = { ThemePrefs.showMatchStatus = it },
-                        modifier = Modifier.testTag("switch_show_match_status")
-                    )
-                }
-            }
-
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 3.dp)) }
 
             // ── 主题与外观 (Material 3 Expressive) ──
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("主题与外观 (Material 3 Expressive)") }
-
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 val themeMode by ThemePrefs.themeFlow.collectAsState()
                 val themeModeDesc = when (themeMode) {
                     ThemePrefs.THEME_LIGHT -> "浅色模式"
                     ThemePrefs.THEME_DARK -> "深色模式"
                     else -> "跟随系统"
                 }
-                SettingItem(
-                    icon = Icons.Rounded.DarkMode,
-                    title = "应用主题",
-                    subtitle = themeModeDesc,
-                    onClick = { showThemeModeDialog = true }
-                )
-            }
-
-            item {
-                SettingItem(
-                    icon = Icons.Rounded.Palette,
-                    title = "色彩变体与对比度级别",
-                    subtitle = "${colorVariant.label} · ${contrastLevel.label}",
-                    onClick = { showExpressiveStyleDialog = true },
-                    modifier = Modifier.testTag("setting_color_variant_contrast")
-                )
-            }
-
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { ThemePrefs.useMonetColors = !isMonet }
-                        .padding(horizontal = 16.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Rounded.ColorLens,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "动态取色 (Material You)",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SectionHeader("主题与外观")
+                    SettingsGroupCard {
+                        SettingItem(
+                            title = "应用主题",
+                            subtitle = themeModeDesc,
+                            onClick = { showThemeModeDialog = true }
                         )
-                        Text(
-                            if (isMonet) "非播放页使用系统壁纸取色，播放页基于歌曲封面取色"
-                            else "非播放页使用自定义颜色，播放页基于歌曲封面取色",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                        SettingsInnerDivider()
+
+                        SettingItem(
+                            title = "色彩变体与对比度级别",
+                            subtitle = "${colorVariant.label} · ${contrastLevel.label}",
+                            onClick = { showExpressiveStyleDialog = true },
+                            modifier = Modifier.testTag("setting_color_variant_contrast")
                         )
-                    }
-                    val currentScheme = MaterialTheme.colorScheme
-                    Switch(
-                        checked = isMonet,
-                        onCheckedChange = { newValue ->
-                            if (!newValue) {
-                                ThemePrefs.customAccentColor = currentScheme.primary.toArgb().toLong()
-                                ThemePrefs.customLightBgColor = currentScheme.surface.toArgb().toLong()
-                                ThemePrefs.customDarkBgColor = currentScheme.surface.toArgb().toLong()
+
+                        SettingsInnerDivider()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { ThemePrefs.useMonetColors = !isMonet }
+                                .padding(horizontal = 18.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "动态取色 (Material You)",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    if (isMonet) "非播放页使用系统壁纸取色，播放页基于歌曲封面取色"
+                                    else "非播放页使用自定义颜色，播放页基于歌曲封面取色",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                            ThemePrefs.useMonetColors = newValue
+                            Spacer(modifier = Modifier.width(12.dp))
+                            val currentScheme = MaterialTheme.colorScheme
+                            Switch(
+                                checked = isMonet,
+                                onCheckedChange = { newValue ->
+                                    if (!newValue) {
+                                        ThemePrefs.customAccentColor = currentScheme.primary.toArgb().toLong()
+                                        ThemePrefs.customLightBgColor = currentScheme.surface.toArgb().toLong()
+                                        ThemePrefs.customDarkBgColor = currentScheme.surface.toArgb().toLong()
+                                    }
+                                    ThemePrefs.useMonetColors = newValue
+                                }
+                            )
                         }
-                    )
-                }
-            }
 
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { ThemePrefs.useMaterialBackground = !useMaterialBg }
-                        .padding(horizontal = 16.dp, vertical = 5.dp)
-                        .testTag("setting_use_material_bg"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Rounded.FormatPaint,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Material 取色背景色",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            if (useMaterialBg) "已开启 · APP 背景使用 Material 取色的背景色显示"
-                            else "已关闭 · APP 背景色显示为纯黑或纯白色，跟随浅色/深色模式",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = useMaterialBg,
-                        onCheckedChange = { ThemePrefs.useMaterialBackground = it },
-                        modifier = Modifier.testTag("switch_use_material_bg")
-                    )
-                }
-            }
+                        AnimatedVisibility(
+                            visible = !isMonet,
+                            enter = fadeIn(tween(300)) + expandVertically(tween(300)),
+                            exit = fadeOut(tween(200)) + shrinkVertically(tween(200))
+                        ) {
+                            Column {
+                                Text(
+                                    "强调色",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 18.dp, top = 4.dp, bottom = 2.dp)
+                                )
 
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { ThemePrefs.playerBlurCoverBackground = !playerBlurCoverBg }
-                        .padding(horizontal = 16.dp, vertical = 5.dp)
-                        .testTag("setting_player_blur_cover_bg"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        if (playerBlurCoverBg) Icons.Rounded.BlurOn else Icons.Rounded.BlurOff,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "播放界面模糊封面背景",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            if (playerBlurCoverBg) "已开启 · 播放界面以模糊处理后的歌曲封面作为背景"
-                            else "已关闭 · 播放界面使用应用背景色（取色背景或纯黑/纯白）",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = playerBlurCoverBg,
-                        onCheckedChange = { ThemePrefs.playerBlurCoverBackground = it },
-                        modifier = Modifier.testTag("switch_setting_player_blur_cover_bg")
-                    )
-                }
-            }
+                                val accentOptions = listOf(
+                                    Color(0xFF388E3C), // Green
+                                    Color(0xFF1976D2), // Blue
+                                    Color(0xFF7B1FA2), // Purple
+                                    Color(0xFFD32F2F), // Red
+                                    Color(0xFFF57C00), // Orange
+                                    Color(0xFF0097A7), // Cyan
+                                    Color(0xFFC2185B), // Pink
+                                    Color(0xFF303F9F)  // Indigo
+                                )
 
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                AnimatedVisibility(
-                    visible = !isMonet,
-                    enter = fadeIn(tween(300)) + expandVertically(tween(300)),
-                    exit = fadeOut(tween(200)) + shrinkVertically(tween(200))
-                ) {
-                    Column {
-                        Text(
-                            "强调色",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 56.dp, top = 4.dp, bottom = 2.dp)
-                        )
+                                ColorPickerRow(
+                                    colors = accentOptions,
+                                    selectedColor = Color(accentColorLong.toInt()),
+                                    onColorSelected = {
+                                        val hsl = Akari.NCM.player.ui.theme.colorToHsl(it)
+                                        ThemePrefs.customAccentH = hsl.h
+                                        ThemePrefs.customAccentS = hsl.s
+                                        ThemePrefs.customAccentL = hsl.l
+                                        ThemePrefs.customAccentColor = it.toArgb().toLong()
+                                    },
+                                    onCustomClick = { showCustomAccentDialog = true }
+                                )
+                            }
+                        }
 
-                        val accentOptions = listOf(
-                            Color(0xFF388E3C), // Green
-                            Color(0xFF1976D2), // Blue
-                            Color(0xFF7B1FA2), // Purple
-                            Color(0xFFD32F2F), // Red
-                            Color(0xFFF57C00), // Orange
-                            Color(0xFF0097A7), // Cyan
-                            Color(0xFFC2185B), // Pink
-                            Color(0xFF303F9F)  // Indigo
-                        )
+                        SettingsInnerDivider()
 
-                        ColorPickerRow(
-                            colors = accentOptions,
-                            selectedColor = Color(accentColorLong.toInt()),
-                            onColorSelected = {
-                                val hsl = Akari.NCM.player.ui.theme.colorToHsl(it)
-                                ThemePrefs.customAccentH = hsl.h
-                                ThemePrefs.customAccentS = hsl.s
-                                ThemePrefs.customAccentL = hsl.l
-                                ThemePrefs.customAccentColor = it.toArgb().toLong()
-                            },
-                            onCustomClick = { showCustomAccentDialog = true }
-                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { ThemePrefs.useMaterialBackground = !useMaterialBg }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_use_material_bg"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Material 取色背景色",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    if (useMaterialBg) "已开启 · APP 背景使用 Material 取色的背景色显示"
+                                    else "已关闭 · APP 背景色显示为纯黑或纯白色，跟随浅色/深色模式",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = useMaterialBg,
+                                onCheckedChange = { ThemePrefs.useMaterialBackground = it },
+                                modifier = Modifier.testTag("switch_use_material_bg")
+                            )
+                        }
+
+                        SettingsInnerDivider()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { ThemePrefs.playerBlurCoverBackground = !playerBlurCoverBg }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_player_blur_cover_bg"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "播放界面模糊封面背景",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    if (playerBlurCoverBg) "已开启 · 播放界面以模糊处理后的歌曲封面作为背景"
+                                    else "已关闭 · 播放界面使用应用背景色（取色背景或纯黑/纯白）",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = playerBlurCoverBg,
+                                onCheckedChange = { ThemePrefs.playerBlurCoverBackground = it },
+                                modifier = Modifier.testTag("switch_setting_player_blur_cover_bg")
+                            )
+                        }
                     }
                 }
             }
-
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 3.dp)) }
 
             // ── 音频与声音设置 ──
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("音频与声音") }
-
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 val enableJyEffect by ThemePrefs.enableJyEffectFlow.collectAsState()
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { ThemePrefs.enableJyEffect = !enableJyEffect }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .testTag("setting_enable_jy_effect"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.GraphicEq,
-                        contentDescription = "高清臻音",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "高清臻音 / 超清母带",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = if (enableJyEffect) "已启用 · 优先尝试匹配高清臻音 (JYEffect) 与超清母带音质"
-                            else "已关闭 · 最高匹配至 Hi-Res 高解析与无损 FLAC 音质",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = enableJyEffect,
-                        onCheckedChange = { ThemePrefs.enableJyEffect = it },
-                        modifier = Modifier.testTag("switch_enable_jy_effect")
-                    )
-                }
-            }
-
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showLoudnessDialog = true }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .testTag("setting_volume_normalization"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.GraphicEq,
-                        contentDescription = "音量均衡",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "音量均衡 (EBU R128 / ITU-R BS.1770)",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        val targetDesc = when (targetLoudnessLufs) {
-                            -23.0f -> "EBU R128 标准 (-23.0 LUFS)"
-                            -16.0f -> "Apple 演播室标准 (-16.0 LUFS)"
-                            else -> "流媒体推荐 (-14.0 LUFS)"
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SectionHeader("音频与声音")
+                    SettingsGroupCard {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { ThemePrefs.enableJyEffect = !enableJyEffect }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_enable_jy_effect"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "高清臻音 / 超清母带",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (enableJyEffect) "已启用 · 优先尝试匹配高清臻音 (JYEffect) 与超清母带音质"
+                                    else "已关闭 · 最高匹配至 Hi-Res 高解析与无损 FLAC 音质",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = enableJyEffect,
+                                onCheckedChange = { ThemePrefs.enableJyEffect = it },
+                                modifier = Modifier.testTag("switch_enable_jy_effect")
+                            )
                         }
-                        Text(
-                            text = if (volumeNormalizationEnabled) "已启用 · 基准: $targetDesc · -1.0 dBTP 防过载"
-                            else "基于综合响度与真峰值防过载算法，自动均衡不同歌曲的响度差异",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+
+                        SettingsInnerDivider()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showLoudnessDialog = true }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_volume_normalization"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "音量均衡 (EBU R128 / ITU-R BS.1770)",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                val targetDesc = when (targetLoudnessLufs) {
+                                    -23.0f -> "EBU R128 标准 (-23.0 LUFS)"
+                                    -16.0f -> "Apple 演播室标准 (-16.0 LUFS)"
+                                    else -> "流媒体推荐 (-14.0 LUFS)"
+                                }
+                                Text(
+                                    text = if (volumeNormalizationEnabled) "已启用 · 基准: $targetDesc · -1.0 dBTP 防过载"
+                                    else "基于综合响度与真峰值防过载算法，自动均衡不同歌曲的响度差异",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = volumeNormalizationEnabled,
+                                onCheckedChange = { ThemePrefs.volumeNormalizationEnabled = it },
+                                modifier = Modifier.testTag("switch_volume_normalization")
+                            )
+                        }
+
+                        SettingsInnerDivider()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { ThemePrefs.playbackFadeEnabled = !playbackFadeEnabled }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_playback_fade"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "播放淡入与淡出",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (playbackFadeEnabled) "已启用 · 播放、暂停与切歌时平滑过渡音量，消除突兀爆音"
+                                    else "已关闭 · 播放与暂停立即响应，不做音量渐变",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = playbackFadeEnabled,
+                                onCheckedChange = { ThemePrefs.playbackFadeEnabled = it },
+                                modifier = Modifier.testTag("switch_playback_fade")
+                            )
+                        }
                     }
-                    Switch(
-                        checked = volumeNormalizationEnabled,
-                        onCheckedChange = { ThemePrefs.volumeNormalizationEnabled = it },
-                        modifier = Modifier.testTag("switch_volume_normalization")
-                    )
                 }
             }
-
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { ThemePrefs.playbackFadeEnabled = !playbackFadeEnabled }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .testTag("setting_playback_fade"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.GraphicEq,
-                        contentDescription = "播放淡入淡出",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "播放淡入与淡出",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = if (playbackFadeEnabled) "已启用 · 播放、暂停与切歌时平滑过渡音量，消除突兀爆音"
-                            else "已关闭 · 播放与暂停立即响应，不做音量渐变",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = playbackFadeEnabled,
-                        onCheckedChange = { ThemePrefs.playbackFadeEnabled = it },
-                        modifier = Modifier.testTag("switch_playback_fade")
-                    )
-                }
-            }
-
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
 
             // ── 灵动岛与实时播放控制窗 ──
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("灵动岛与实时播放控制") }
-
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 val toggleLiveIsland: (Boolean) -> Unit = { enabled ->
                     ThemePrefs.liveIslandEnabled = enabled
                     if (enabled && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
@@ -825,43 +753,6 @@ fun SettingsScreen(
                         }
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { toggleLiveIsland(!liveIslandEnabled) }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .testTag("setting_live_island"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
-                        contentDescription = "Ame 状态栏与控制中心图标",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "启用播放状态与快捷控制实时窗",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "通过标准 MediaSession 实时同步高清专辑封面、播放进度条与上一首/暂停/下一首快捷控制（适配澎湃焦点岛、流体云、原子岛等）",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(
-                        checked = liveIslandEnabled,
-                        onCheckedChange = toggleLiveIsland,
-                        modifier = Modifier.testTag("switch_live_island")
-                    )
-                }
-            }
-
-            item {
                 val triggerTestIsland: () -> Unit = {
                     if (android.os.Build.VERSION.SDK_INT >= 36 && !islandManager.canPostLiveUpdates()) {
                         Toast.makeText(context, "未开启实况通知权限，点击前往开启「实况通知」", Toast.LENGTH_SHORT).show()
@@ -877,6 +768,7 @@ fun SettingsScreen(
                         Toast.makeText(context, "正在模拟离开前台并发送实况通知，点击胶囊可返回应用", Toast.LENGTH_SHORT).show()
                         val activity = context as? android.app.Activity
                         activity?.moveTaskToBack(true)
+                        islandManager.postTestIslandNotification()
                         scope.launch {
                             delay(400)
                             islandManager.postTestIslandNotification()
@@ -884,175 +776,197 @@ fun SettingsScreen(
                     }
                 }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { triggerTestIsland() }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .testTag("setting_check_island_permission"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.NotificationsActive,
-                        contentDescription = "发送上岛测试通知",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "发送上岛测试通知",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        val subtitleText = if (android.os.Build.VERSION.SDK_INT >= 36 && !canPostPromoted) {
-                            "未开启实况通知权限，点击前往系统设置开启「实况通知 / 流体云」开关"
-                        } else {
-                            "模拟离开前台退至后台状态，触发一条实况通知以检测灵动岛/流体云/原子岛效果"
-                        }
-                        Text(
-                            text = subtitleText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (android.os.Build.VERSION.SDK_INT >= 36 && !canPostPromoted) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SectionHeader("灵动岛与实时播放控制")
+                    SettingsGroupCard {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { toggleLiveIsland(!liveIslandEnabled) }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_live_island"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "启用播放状态与快捷控制实时窗",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "通过标准 MediaSession 实时同步高清专辑封面、播放进度条与上一首/暂停/下一首快捷控制（适配澎湃焦点岛、流体云、原子岛等）",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
-                        )
-                    }
-                    FilledTonalButton(
-                        onClick = { triggerTestIsland() },
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                        modifier = Modifier.testTag("btn_check_island_permission")
-                    ) {
-                        Text(
-                            text = if (android.os.Build.VERSION.SDK_INT >= 36 && !canPostPromoted) "去开启" else "发送测试",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = liveIslandEnabled,
+                                onCheckedChange = toggleLiveIsland,
+                                modifier = Modifier.testTag("switch_live_island")
+                            )
+                        }
+
+                        SettingsInnerDivider()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { triggerTestIsland() }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_check_island_permission"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "发送上岛测试通知",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                val subtitleText = if (android.os.Build.VERSION.SDK_INT >= 36 && !canPostPromoted) {
+                                    "未开启实况通知权限，点击前往系统设置开启「实况通知 / 流体云」开关"
+                                } else {
+                                    "模拟离开前台退至后台状态，触发一条实况通知以检测灵动岛/流体云/原子岛效果"
+                                }
+                                Text(
+                                    text = subtitleText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (android.os.Build.VERSION.SDK_INT >= 36 && !canPostPromoted) {
+                                        MaterialTheme.colorScheme.error
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            FilledTonalButton(
+                                onClick = { triggerTestIsland() },
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.testTag("btn_check_island_permission")
+                            ) {
+                                Text(
+                                    text = if (android.os.Build.VERSION.SDK_INT >= 36 && !canPostPromoted) "去开启" else "发送测试",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }
-
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
 
             // ── 软件更新 ──
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("软件更新") }
-
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showUpdateChannelDialog = true }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .testTag("setting_update_channel"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.CloudSync,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "更新通道",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "当前通道: ${updateChannel.label}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    FilledTonalButton(
-                        onClick = { showUpdateChannelDialog = true },
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                        modifier = Modifier.testTag("btn_switch_update_channel")
-                    ) {
-                        Text("切换", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 val currentPkgVariant = remember { AppPackageVariant.fromContext(context) }
                 val currentVersion = remember {
                     runCatching {
                         context.packageManager.getPackageInfo(context.packageName, 0).versionName
                     }.getOrNull() ?: BuildConfig.VERSION_NAME
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            if (!isCheckingUpdate) {
-                                isCheckingUpdate = true
-                                scope.launch {
-                                    val res = AppUpdateManager.checkUpdate(context, updateChannel)
-                                    isCheckingUpdate = false
-                                    updateResult = res
-                                    showUpdateResultDialog = true
-                                }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SectionHeader("软件更新")
+                    SettingsGroupCard {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showUpdateChannelDialog = true }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_update_channel"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "更新通道",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "当前通道: ${updateChannel.label}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            FilledTonalButton(
+                                onClick = { showUpdateChannelDialog = true },
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.testTag("btn_switch_update_channel")
+                            ) {
+                                Text("切换", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .testTag("setting_check_update"),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.SystemUpdate,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "检查更新",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "$currentVersion · ${currentPkgVariant.displayName} (${context.packageName})",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (isCheckingUpdate) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        FilledTonalButton(
-                            onClick = {
-                                isCheckingUpdate = true
-                                scope.launch {
-                                    val res = AppUpdateManager.checkUpdate(context, updateChannel)
-                                    isCheckingUpdate = false
-                                    updateResult = res
-                                    showUpdateResultDialog = true
+
+                        SettingsInnerDivider()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (!isCheckingUpdate) {
+                                        isCheckingUpdate = true
+                                        scope.launch {
+                                            val res = AppUpdateManager.checkUpdate(context, updateChannel)
+                                            isCheckingUpdate = false
+                                            updateResult = res
+                                            showUpdateResultDialog = true
+                                        }
+                                    }
                                 }
-                            },
-                            shape = RoundedCornerShape(16.dp),
-                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                            modifier = Modifier.testTag("btn_check_update")
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_check_update"),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("检查", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "检查更新",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "$currentVersion · ${currentPkgVariant.displayName} (${context.packageName})",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            if (isCheckingUpdate) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                FilledTonalButton(
+                                    onClick = {
+                                        isCheckingUpdate = true
+                                        scope.launch {
+                                            val res = AppUpdateManager.checkUpdate(context, updateChannel)
+                                            isCheckingUpdate = false
+                                            updateResult = res
+                                            showUpdateResultDialog = true
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(16.dp),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                    modifier = Modifier.testTag("btn_check_update")
+                                ) {
+                                    Text("检查", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                 Column(
@@ -1063,7 +977,7 @@ fun SettingsScreen(
                                 uriHandler.openUri("https://github.com/Akiyama-25/Ame-Player")
                             } catch (_: Exception) {}
                         }
-                        .padding(vertical = 32.dp),
+                        .padding(vertical = 28.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
@@ -1890,16 +1804,43 @@ fun SettingsScreen(
 private fun SectionHeader(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.ExtraBold,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 6.dp)
+    )
+}
+
+@Composable
+private fun SettingsGroupCard(
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun SettingsInnerDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 18.dp),
+        thickness = 0.5.dp,
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
     )
 }
 
 @Composable
 private fun SettingItem(
-    icon: ImageVector,
     title: String,
     subtitle: String,
     onClick: () -> Unit,
@@ -1913,16 +1854,9 @@ private fun SettingItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
+                .padding(horizontal = 18.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -1930,12 +1864,14 @@ private fun SettingItem(
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Medium
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            Spacer(modifier = Modifier.width(12.dp))
             Icon(
                 imageVector = Icons.Rounded.ChevronRight,
                 contentDescription = null,
@@ -2273,7 +2209,7 @@ private fun ColorPickerRow(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 56.dp, vertical = 8.dp),
+            .padding(horizontal = 18.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         colors.forEach { color ->
