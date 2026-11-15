@@ -12,7 +12,6 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.DeleteOutline
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,7 +23,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,7 +40,8 @@ fun SongActionBottomSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = MaterialTheme.colorScheme.background,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = { BottomSheetDefaults.DragHandle() }
     ) {
         Column(
@@ -59,9 +58,9 @@ fun SongActionBottomSheet(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(52.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .size(54.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                     contentAlignment = Alignment.Center
                 ) {
                     if (!media.coverUrl.isNullOrBlank()) {
@@ -85,7 +84,7 @@ fun SongActionBottomSheet(
                     Text(
                         text = "歌曲 : ${media.title}",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.ExtraBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -105,7 +104,6 @@ fun SongActionBottomSheet(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             )
 
-            // ── 1. 下一首播放 ──────────────────────────────────────────
             SongActionItem(
                 icon = Icons.AutoMirrored.Rounded.QueueMusic,
                 title = "下一首播放",
@@ -115,7 +113,6 @@ fun SongActionBottomSheet(
                 }
             )
 
-            // ── 2. 喜欢 / 取消喜欢 ─────────────────────────────────────
             if (showFavoriteAction) {
                 SongActionItem(
                     icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
@@ -128,7 +125,6 @@ fun SongActionBottomSheet(
                 )
             }
 
-            // ── 3. 收藏到歌单 / 加入歌单 ──────────────────────────────
             SongActionItem(
                 icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
                 title = "收藏到歌单",
@@ -138,7 +134,6 @@ fun SongActionBottomSheet(
                 }
             )
 
-            // ── 4. 移出当前歌单 (在“我喜欢的音乐”歌单内禁用) ───────────────
             val isFavoritePlaylist = currentPlaylist?.let {
                 it.name.contains("喜欢的音乐") || it.name.contains("My Favorite") || it.name.contains("红心歌单")
             } ?: false
@@ -168,6 +163,9 @@ private fun SongActionItem(
     onClick: () -> Unit
 ) {
     ListItem(
+        colors = ListItemDefaults.colors(
+            containerColor = Color.Transparent
+        ),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick),
@@ -183,6 +181,7 @@ private fun SongActionItem(
             Text(
                 title,
                 style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
                 color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             )
         }

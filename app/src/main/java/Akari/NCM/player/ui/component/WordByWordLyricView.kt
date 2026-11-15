@@ -19,10 +19,11 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 
 /**
- * 逐字/逐词高精度卡拉OK流光歌词组件
+ * 逐字/逐词高精度卡拉OK流光歌词组件 (Material 3 Expressive 色彩增强版)
  *
- * 基于 [WordInfo] 词级起止时间与毫秒进度 [currentPositionMs]，在每个音节上实时绘制
- * 渐变光晕扫色（Horizontal Gradient Sweep），保持字重与尺寸完全一致，仅展现半透明至不透明的播放位置平滑过渡。
+ * - 已播放部分使用经对比度校验的强调色 [activeColor]
+ * - 未播放部分使用纯黑或纯白 [inactiveColor]
+ * - 当曲目无原生逐字时间戳时，自动根据行起止时间合成字符级进度，确保已播放与未播放部分严格呈现强调色与纯黑/纯白对比
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -31,14 +32,37 @@ fun WordByWordLyricView(
     currentPositionMs: Long,
     modifier: Modifier = Modifier,
     fontSize: TextUnit = 22.sp,
-    fontWeight: FontWeight = FontWeight.Bold,
-    lineHeight: TextUnit = 28.sp,
-    activeColor: Color = Color.White,
-    inactiveColor: Color = Color.White.copy(alpha = 0.35f),
+    fontWeight: FontWeight = FontWeight.ExtraBold,
+    lineHeight: TextUnit = 30.sp,
+    activeColor: Color = Color(0xFFCFBCFF),
+    inactiveColor: Color = Color.White,
     horizontalAlignment: Alignment.Horizontal = Alignment.CenterHorizontally,
-    hasWordTimestamps: Boolean = line.words.isNotEmpty()
+    hasWordTimestamps: Boolean = line.words.isNotEmpty(),
+    fallbackLineDurationMs: Long = 3600L
 ) {
-    if (!hasWordTimestamps || line.words.isEmpty()) {
+    val effectiveWords = remember(line, hasWordTimestamps, fallbackLineDurationMs) {
+        if (hasWordTimestamps && line.words.isNotEmpty()) {
+            line.words
+        } else {
+            val trimmed = line.text.trim()
+            if (trimmed.isEmpty()) {
+                emptyList()
+            } else {
+                val chars = trimmed.map { it.toString() }
+                val totalDur = fallbackLineDurationMs.coerceIn(800L, 10000L)
+                val step = (totalDur / chars.size.coerceAtLeast(1)).coerceAtLeast(40L)
+                chars.mapIndexed { idx, ch ->
+                    WordInfo(
+                        text = ch,
+                        startOffsetMs = idx * step,
+                        durationMs = step
+                    )
+                }
+            }
+        }
+    }
+
+    if (effectiveWords.isEmpty()) {
         Text(
             text = line.text.trim(),
             fontSize = fontSize,
@@ -56,7 +80,7 @@ fun WordByWordLyricView(
         horizontalArrangement = if (horizontalAlignment == Alignment.CenterHorizontally) Arrangement.Center else Arrangement.Start,
         verticalArrangement = Arrangement.Center
     ) {
-        line.words.forEach { word ->
+        effectiveWords.forEach { word ->
             WordItem(
                 word = word,
                 lineTimeMs = line.timeMs,
@@ -88,7 +112,7 @@ private fun WordItem(
 
     when {
         currentPositionMs < wordStart -> {
-            // 未发音：半透明常驻，字重与尺寸严格统一，无缩放
+            // 未播放部分：严格使用纯黑或纯白显示
             Text(
                 text = word.text,
                 fontSize = fontSize,
@@ -98,7 +122,7 @@ private fun WordItem(
             )
         }
         currentPositionMs >= wordEnd -> {
-            // 已唱过：不透明常驻
+            // 已播放部分：使用封面取色强调色显示
             Text(
                 text = word.text,
                 fontSize = fontSize,
@@ -108,7 +132,7 @@ private fun WordItem(
             )
         }
         else -> {
-            // 正在发音：自左向右横向流光渐变扫色（仅保留半透明到不透明的播放位置平滑渐变）
+            // 正在发音：自左向右横向扫色，左侧已唱为强调色，右侧未唱为纯黑或纯白
             val progress = ((currentPositionMs - wordStart).toFloat() / wordDuration).coerceIn(0f, 1f)
             val p = progress.coerceIn(0.001f, 0.999f)
 

@@ -7,10 +7,18 @@ import kotlinx.serialization.Serializable
  * 音频响度特征来源
  */
 enum class LoudnessSource(val label: String) {
-    NETEASE_ONLINE("云端特征"),       // 网易云 API 返回的 gain/peak 响度元数据
-    REPLAYGAIN_TAG("本地标签"),       // 本地音频内嵌的 ReplayGain / R128 / SoundCheck 标签
-    BS1770_SCAN("BS.1770 算法计算"),  // 基于 ITU-R BS.1770-4 K-weighting 双重门控实时/扫描分析
-    DEFAULT_FALLBACK("基准兜底")     // 默认平准电平
+    NETEASE_ONLINE("云端特征"),         // 网易云 API 返回的有效非零 gain/peak 响度元数据
+    REPLAYGAIN_TAG("本地标签"),         // 本地音频内嵌的 ReplayGain / R128 / SoundCheck 标签
+    FAST_PREVIEW_SCAN("极速初判"),      // 双阶段第一阶段：多点跳帧极速抽样或首秒解码流 BS.1770 初判
+    BS1770_SCAN("BS.1770 全曲锁定"),    // 双阶段第二阶段：基于 ITU-R BS.1770-4 全曲门控积分锁定并缓存
+    QUEUE_AVERAGE("队列均值预补偿"),     // 基于未来 3 首预计算平均响度的先验初始补偿
+    DEFAULT_FALLBACK("基准兜底");       // 默认平准电平
+
+    val isKnownValid: Boolean
+        get() = this != DEFAULT_FALLBACK
+
+    val isFinalLocked: Boolean
+        get() = this == NETEASE_ONLINE || this == REPLAYGAIN_TAG || this == BS1770_SCAN
 }
 
 /**
@@ -40,16 +48,35 @@ data class LoudnessNormalizationState(
     val appliedGainDb: Float = 0.0f,
     val linearMultiplier: Float = 1.0f,
     val isPeakLimited: Boolean = false,
-    val source: LoudnessSource = LoudnessSource.DEFAULT_FALLBACK
+    val source: LoudnessSource = LoudnessSource.DEFAULT_FALLBACK,
+    val upcomingAverageLufs: Float? = null,
+    val prefetchedCount: Int = 0,
+    val prefetchedTotalCount: Int = 0,
+    val isInterTrackWaiting: Boolean = false
 ) {
     val statusSummary: String
         get() = if (!isEnabled) {
             "未启用"
+        } else if (isInterTrackWaiting) {
+            if (sourceLoudnessLufs != null) {
+                String.format("曲间等候 (1s) · 已就绪 %.1f LUFS", sourceLoudnessLufs)
+            } else {
+                "曲间等候 (1s) · 响度计算中..."
+            }
         } else if (sourceLoudnessLufs == null) {
-            "标准电平 (0.0 dB)"
+            if (upcomingAverageLufs != null) {
+                String.format("队列均值预热 (%.1f LUFS)", upcomingAverageLufs)
+            } else {
+                "标准电平 (0.0 dB)"
+            }
         } else {
             val gainSign = if (appliedGainDb >= 0) "+" else ""
             val peakTag = if (isPeakLimited) " · 防过载压制" else ""
-            String.format("%.1f LUFS -> 增益: %s%.1f dB%s", sourceLoudnessLufs, gainSign, appliedGainDb, peakTag)
+            val stageTag = when (source) {
+                LoudnessSource.FAST_PREVIEW_SCAN -> " · 初判"
+                LoudnessSource.QUEUE_AVERAGE -> " · 队列均值"
+                else -> ""
+            }
+            String.format("%.1f LUFS -> 增益: %s%.1f dB%s%s", sourceLoudnessLufs, gainSign, appliedGainDb, peakTag, stageTag)
         }
 }

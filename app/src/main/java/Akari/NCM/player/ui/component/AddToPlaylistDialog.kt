@@ -38,7 +38,7 @@ fun AddToPlaylistDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("添加到歌单") },
+        title = { Text("添加到歌单", fontWeight = FontWeight.ExtraBold) },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -49,15 +49,14 @@ fun AddToPlaylistDialog(
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Create new playlist button
                 Surface(
                     onClick = { showCreateDialog = true },
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.primaryContainer,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
@@ -69,6 +68,7 @@ fun AddToPlaylistDialog(
                         Text(
                             "新建歌单",
                             style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
@@ -108,46 +108,56 @@ fun AddToPlaylistDialog(
                 }
             }
         },
-        confirmButton = {},
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
+        confirmButton = {
+            AdaptiveButtonGroup(
+                buttons = listOf(
+                    AdaptiveButtonSpec(
+                        text = "取消",
+                        onClick = onDismiss,
+                        style = ExpressiveButtonStyle.TONAL
+                    )
+                )
+            )
         }
     )
 
     if (showCreateDialog) {
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
-            title = { Text("创建歌单") },
+            title = { Text("创建歌单", fontWeight = FontWeight.ExtraBold) },
             text = {
                 OutlinedTextField(
                     value = newPlaylistName,
                     onValueChange = { newPlaylistName = it },
                     label = { Text("歌单名称") },
                     singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        if (newPlaylistName.isNotBlank()) {
-                            val created = playlistManager.createPlaylist(newPlaylistName)
-                            playlistManager.addSongToPlaylist(created.id, song)
-                            onAdded(created.name)
-                            showCreateDialog = false
-                            onDismiss()
-                        }
-                    }
-                ) {
-                    Text("创建并添加")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateDialog = false }) {
-                    Text("取消")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "创建并添加",
+                            onClick = {
+                                if (newPlaylistName.isNotBlank()) {
+                                    val created = playlistManager.createPlaylist(newPlaylistName)
+                                    playlistManager.addSongToPlaylist(created.id, song)
+                                    onAdded(created.name)
+                                    showCreateDialog = false
+                                    onDismiss()
+                                }
+                            },
+                            style = ExpressiveButtonStyle.FILLED
+                        ),
+                        AdaptiveButtonSpec(
+                            text = "取消",
+                            onClick = { showCreateDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
             }
         )
     }
@@ -161,9 +171,9 @@ private fun PlaylistItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 10.dp),
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -177,7 +187,7 @@ private fun PlaylistItem(
             Text(
                 playlist.name,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.SemiBold
             )
             Text(
                 "${playlist.songs.size} 首歌曲",

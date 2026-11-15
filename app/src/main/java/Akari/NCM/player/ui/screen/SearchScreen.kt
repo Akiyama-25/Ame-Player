@@ -295,11 +295,12 @@ fun SearchScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(MaterialTheme.colorScheme.background)
                     .statusBarsPadding()
             ) {
                 // Top Search Row
@@ -384,7 +385,7 @@ fun SearchScreen(
                 // Search Category Tabs
                 PrimaryTabRow(
                     selectedTabIndex = selectedCategory.ordinal,
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = MaterialTheme.colorScheme.background,
                     contentColor = MaterialTheme.colorScheme.primary,
                     divider = {}
                 ) {

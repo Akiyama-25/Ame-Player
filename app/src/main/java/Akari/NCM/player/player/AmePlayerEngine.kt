@@ -84,11 +84,15 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.os.SystemClock
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.size.Size
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 @UnstableApi
 @Singleton
@@ -116,6 +120,25 @@ class AmePlayerEngine @Inject constructor(
     override val loudnessState: StateFlow<LoudnessNormalizationState> = _loudnessState.asStateFlow()
 
     private var loudnessJob: Job? = null
+    private var interTrackWaitJob: Job? = null
+    private var prefetchLoudnessJob: Job? = null
+
+    @Volatile
+    private var upcomingAverageLufs: Float? = null
+
+    @Volatile
+    private var upcomingPrefetchedCount: Int = 0
+
+    @Volatile
+    private var upcomingPrefetchedTotalCount: Int = 0
+
+    @Volatile
+    private var isInterTrackWaiting: Boolean = false
+
+    companion object {
+        private const val INTER_TRACK_GAP_MS = 1000L
+        private const val UPCOMING_PREFETCH_COUNT = 3
+    }
 
     var isLiveIslandEnabled: Boolean
         get() = ThemePrefs.liveIslandEnabled
@@ -254,6 +277,7 @@ class AmePlayerEngine @Inject constructor(
     private val mediaMap = ConcurrentHashMap<String, PlayableMedia>()
     private val resolvedUrlCache = ConcurrentHashMap<String, String>()
     private val resolvedDetailsCache = ConcurrentHashMap<String, Akari.NCM.player.api.ResolvedSongUrl>()
+    private val inflightUrlFetches = ConcurrentHashMap<String, Deferred<Akari.NCM.player.api.ResolvedSongUrl?>>()
 
     // Disk Cache for online audio streaming (500MB max)
     private val audioCache: SimpleCache by lazy {
@@ -348,17 +372,28 @@ class AmePlayerEngine @Inject constructor(
                 val cachedUrl = resolvedUrlCache[media.id]
                 val url = if (!cachedUrl.isNullOrBlank()) {
                     AppLogger.d("[AME_ONLINE_PLAY]", ">>> Using cached resolved URL for '${media.title}' (id=${media.id}): $cachedUrl")
+                    if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled) {
+                        val syncData = loudnessManager.getCachedLoudnessSync(media)
+                        if (syncData != null) {
+                            loudnessAudioProcessor.resetForTrack(media.id, syncData)
+                        }
+                    }
                     cachedUrl
                 } else {
                     AppLogger.i("[AME_ONLINE_PLAY]", ">>> Matched Online Track: id='${media.id}', title='${media.title}'")
-                    val fetchedDetails = runBlocking { ncmApi.getSongUrlDetails(media, ThemePrefs.enableJyEffect) }
+                    val fetchedDetails = runBlocking { resolveOnlineSongDetails(media) }
                     if (fetchedDetails != null) {
-                        resolvedUrlCache[media.id] = fetchedDetails.url
-                        resolvedDetailsCache[media.id] = fetchedDetails
-                        loudnessManager.registerOnlineLoudness(media.id, fetchedDetails.gain, fetchedDetails.peak)
+                        val registered = loudnessManager.registerOnlineLoudness(media.id, fetchedDetails.gain, fetchedDetails.peak)
                         if (_currentMedia.value?.id == media.id) {
-                            applyLoudnessNormalization(media)
-                            applyAudioFormatFromResolvedDetails(fetchedDetails)
+                            if (registered != null && ThemePrefs.volumeNormalizationEnabled) {
+                                loudnessAudioProcessor.resetForTrack(media.id, registered)
+                            }
+                            scope.launch(Dispatchers.Main) {
+                                if (_currentMedia.value?.id == media.id) {
+                                    applyAudioFormatFromResolvedDetails(fetchedDetails)
+                                    applyLoudnessNormalization(media)
+                                }
+                            }
                         }
                     }
                     fetchedDetails?.url
@@ -459,6 +494,8 @@ class AmePlayerEngine @Inject constructor(
         }
         player.shuffleModeEnabled = _shuffleEnabled.value
         player.volume = _volume.value
+        // 在曲目自然结束并切换下一首时自动在曲间暂停，以便注入 1 秒等候窗口并完成首帧增益同步
+        player.pauseAtEndOfMediaItems = true
 
         // Player listener
         player.addListener(object : Player.Listener {
@@ -518,6 +555,9 @@ class AmePlayerEngine @Inject constructor(
                 _currentIndex.value = player.currentMediaItemIndex
                 _durationMs.value = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L
 
+                // 同步预置音频处理器增益，消除切歌后协程调度期间的未均衡音频泄漏
+                prepareLoudnessSync(currentMedia)
+
                 if (currentMedia is PlayableMedia.Online) {
                     val details = resolvedDetailsCache[currentMedia.id]
                     if (details != null) {
@@ -531,9 +571,20 @@ class AmePlayerEngine @Inject constructor(
 
                 onTrackChanged(currentMedia)
                 applyLoudnessNormalization(currentMedia)
+                prefetchUpcomingTracksLoudness()
                 syncIslandState()
                 if (_infinitePlayMode.value.isActive) {
                     checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
+                }
+
+                // 自然切歌（上一首播完自动进入下一首 / 单曲循环重复）时执行 1 秒曲间等候窗口
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+                ) {
+                    if (player.playWhenReady) {
+                        player.pause()
+                    }
+                    startInterTrackWaitAndResume(currentMedia)
                 }
             }
 
@@ -689,13 +740,42 @@ class AmePlayerEngine @Inject constructor(
             }
         }
 
+        loudnessAudioProcessor.onPreviewLoudnessMeasured = { mediaId, previewData ->
+            loudnessManager.saveLoudness(mediaId, previewData)
+            val cur = _currentMedia.value
+            if (cur?.id == mediaId && ThemePrefs.volumeNormalizationEnabled) {
+                val target = ThemePrefs.targetLoudnessLufs
+                val gain = EbuR128Calculator.computeGain(previewData, target, ThemePrefs.loudnessPeakLimitEnabled)
+                _loudnessState.value = LoudnessNormalizationState(
+                    isEnabled = true,
+                    targetLufs = target,
+                    currentMediaTitle = cur.title,
+                    sourceLoudnessLufs = previewData.integratedLufs,
+                    sourcePeakDb = previewData.peakDb,
+                    appliedGainDb = gain.effectiveGainDb,
+                    linearMultiplier = gain.linearMultiplier,
+                    isPeakLimited = gain.isPeakLimited,
+                    source = previewData.source,
+                    upcomingAverageLufs = upcomingAverageLufs,
+                    prefetchedCount = upcomingPrefetchedCount,
+                    prefetchedTotalCount = upcomingPrefetchedTotalCount,
+                    isInterTrackWaiting = isInterTrackWaiting
+                )
+                if (usbAudioManager.isExclusiveModeEnabled.value) {
+                    val baseVol = _volume.value
+                    val finalVol = (baseVol * gain.linearMultiplier).coerceIn(0f, 1f)
+                    usbAudioSink?.setVolume(finalVol)
+                }
+            }
+        }
+
         loudnessAudioProcessor.onLoudnessMeasured = { mediaId, data ->
             loudnessManager.saveLoudness(mediaId, data)
             val cur = _currentMedia.value
             if (cur?.id == mediaId) {
                 val target = ThemePrefs.targetLoudnessLufs
                 val gain = EbuR128Calculator.computeGain(data, target, ThemePrefs.loudnessPeakLimitEnabled)
-                loudnessAudioProcessor.setStaticGain(gain.effectiveGainDb, gain.linearMultiplier)
+                loudnessAudioProcessor.setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = true, smoothSec = 0.45)
                 _loudnessState.value = LoudnessNormalizationState(
                     isEnabled = ThemePrefs.volumeNormalizationEnabled,
                     targetLufs = target,
@@ -705,7 +785,11 @@ class AmePlayerEngine @Inject constructor(
                     appliedGainDb = gain.effectiveGainDb,
                     linearMultiplier = gain.linearMultiplier,
                     isPeakLimited = gain.isPeakLimited,
-                    source = data.source
+                    source = data.source,
+                    upcomingAverageLufs = upcomingAverageLufs,
+                    prefetchedCount = upcomingPrefetchedCount,
+                    prefetchedTotalCount = upcomingPrefetchedTotalCount,
+                    isInterTrackWaiting = isInterTrackWaiting
                 )
                 // 在 USB 独占模式且启用了音量均衡时，将测算出的均衡增益同步缩放至 USB 输出
                 if (usbAudioManager.isExclusiveModeEnabled.value && ThemePrefs.volumeNormalizationEnabled) {
@@ -741,45 +825,152 @@ class AmePlayerEngine @Inject constructor(
 
     private var scanJob: Job? = null
 
-    private fun scanWholeTrackLoudness(media: PlayableMedia) {
+    /**
+     * 统一下载/解析在线曲目 URL 详情并自动去重并发请求
+     */
+    private suspend fun resolveOnlineSongDetails(media: PlayableMedia.Online): Akari.NCM.player.api.ResolvedSongUrl? {
+        resolvedDetailsCache[media.id]?.let { cached ->
+            if (resolvedUrlCache[media.id] == cached.url) return cached
+        }
+        val existingDeferred = inflightUrlFetches[media.id]
+        if (existingDeferred != null && existingDeferred.isActive) {
+            return existingDeferred.await()
+        }
+        val deferred = scope.async(Dispatchers.IO) {
+            try {
+                val details = ncmApi.getSongUrlDetails(media, ThemePrefs.enableJyEffect)
+                if (details != null) {
+                    resolvedUrlCache[media.id] = details.url
+                    resolvedDetailsCache[media.id] = details
+                    loudnessManager.registerOnlineLoudness(media.id, details.gain, details.peak)
+                }
+                details
+            } finally {
+                inflightUrlFetches.remove(media.id)
+            }
+        }
+        inflightUrlFetches[media.id] = deferred
+        return deferred.await()
+    }
+
+    /**
+     * 切歌瞬间同步预置音频处理器的初始增益（零延迟，避免首帧 PCM 漏出未均衡音频）
+     */
+    private fun prepareLoudnessSync(media: PlayableMedia?) {
+        if (media == null || !ThemePrefs.volumeNormalizationEnabled) {
+            loudnessAudioProcessor.resetForTrack(media?.id, null)
+            return
+        }
+        loudnessAudioProcessor.updateSettings(
+            enabled = true,
+            target = ThemePrefs.targetLoudnessLufs,
+            peakLimit = ThemePrefs.loudnessPeakLimitEnabled
+        )
+        val cached = loudnessManager.getCachedLoudnessSync(media)
+        if (cached != null) {
+            loudnessAudioProcessor.resetForTrack(media.id, cached)
+            return
+        }
+        val avg = upcomingAverageLufs
+        if (avg != null) {
+            val prior = LoudnessData(avg, 1.0f, LoudnessSource.QUEUE_AVERAGE)
+            loudnessAudioProcessor.resetForTrack(media.id, prior)
+        } else {
+            loudnessAudioProcessor.resetForTrack(media.id, null)
+        }
+    }
+
+    /**
+     * 双阶段响度扫描：
+     * Stage 1：极速多点跳帧抽样 (<400ms) 立即给出初判并平滑生效；
+     * Stage 2：后台完整全曲 BS.1770 扫描完成后平滑收敛并持久化锁定。
+     */
+    private fun scanWholeTrackLoudness(media: PlayableMedia, needStage1Fast: Boolean) {
         scanJob?.cancel()
         scanJob = scope.launch(Dispatchers.IO) {
             val dataSource: String? = when (media) {
                 is PlayableMedia.LocalNcm -> media.uri
                 is PlayableMedia.Online -> {
-                    val cachedDetails = resolvedDetailsCache[media.id]
-                    if (cachedDetails?.gain != null) {
-                        loudnessManager.registerOnlineLoudness(media.id, cachedDetails.gain, cachedDetails.peak)
-                        withContext(Dispatchers.Main) {
-                            if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled) {
-                                applyLoudnessNormalization(media)
-                            }
-                        }
-                        return@launch
-                    }
-                    resolvedUrlCache[media.id] ?: run {
-                        val details = ncmApi.getSongUrlDetails(media, ThemePrefs.enableJyEffect)
-                        if (details != null) {
-                            resolvedUrlCache[media.id] = details.url
-                            resolvedDetailsCache[media.id] = details
-                            if (details.gain != null) {
-                                loudnessManager.registerOnlineLoudness(media.id, details.gain, details.peak)
-                                withContext(Dispatchers.Main) {
-                                    if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled) {
-                                        applyLoudnessNormalization(media)
-                                    }
+                    val details = resolvedDetailsCache[media.id] ?: resolveOnlineSongDetails(media)
+                    if (details != null) {
+                        val registered = loudnessManager.registerOnlineLoudness(media.id, details.gain, details.peak)
+                        if (registered != null) {
+                            withContext(Dispatchers.Main) {
+                                if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled) {
+                                    applyLoudnessNormalization(media)
                                 }
-                                return@launch
                             }
-                            details.url
-                        } else null
+                            return@launch
+                        }
+                        details.url
+                    } else {
+                        resolvedUrlCache[media.id]
                     }
                 }
             }
 
             if (dataSource.isNullOrBlank()) return@launch
 
-            val scanned = Akari.NCM.player.core.loudness.TrackLoudnessScanner.scanTrack(context, dataSource)
+            // Stage 1: 若当前连极速初判都还没有，先执行 3 锚点极速抽样
+            if (needStage1Fast && isActive) {
+                val fastPreview = Akari.NCM.player.core.loudness.TrackLoudnessScanner.scanTrackFast(context, dataSource)
+                if (fastPreview != null && isActive) {
+                    loudnessManager.saveLoudness(media.id, fastPreview)
+                    withContext(Dispatchers.Main) {
+                        if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled && !loudnessAudioProcessor.isFinalLocked) {
+                            val target = ThemePrefs.targetLoudnessLufs
+                            val gain = EbuR128Calculator.computeGain(fastPreview, target, ThemePrefs.loudnessPeakLimitEnabled)
+                            loudnessAudioProcessor.setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = false, smoothSec = 0.2)
+                            _loudnessState.value = LoudnessNormalizationState(
+                                isEnabled = true,
+                                targetLufs = target,
+                                currentMediaTitle = media.title,
+                                sourceLoudnessLufs = fastPreview.integratedLufs,
+                                sourcePeakDb = fastPreview.peakDb,
+                                appliedGainDb = gain.effectiveGainDb,
+                                linearMultiplier = gain.linearMultiplier,
+                                isPeakLimited = gain.isPeakLimited,
+                                source = fastPreview.source,
+                                upcomingAverageLufs = upcomingAverageLufs,
+                                prefetchedCount = upcomingPrefetchedCount,
+                                prefetchedTotalCount = upcomingPrefetchedTotalCount,
+                                isInterTrackWaiting = isInterTrackWaiting
+                            )
+                            if (usbAudioManager.isExclusiveModeEnabled.value) {
+                                applyEffectiveVolume()
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!isActive || loudnessAudioProcessor.isFinalLocked) return@launch
+
+            // Stage 2: 后台全曲精确扫描与平滑收敛锁定
+            val scanned = Akari.NCM.player.core.loudness.TrackLoudnessScanner.scanTrack(
+                context = context,
+                dataSource = dataSource,
+                onPreviewReady = { preview ->
+                    if (!loudnessAudioProcessor.isFinalLocked) {
+                        loudnessManager.saveLoudness(media.id, preview)
+                        scope.launch(Dispatchers.Main) {
+                            if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled && !loudnessAudioProcessor.isFinalLocked) {
+                                val target = ThemePrefs.targetLoudnessLufs
+                                val gain = EbuR128Calculator.computeGain(preview, target, ThemePrefs.loudnessPeakLimitEnabled)
+                                loudnessAudioProcessor.setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = false, smoothSec = 0.25)
+                                _loudnessState.value = _loudnessState.value.copy(
+                                    sourceLoudnessLufs = preview.integratedLufs,
+                                    sourcePeakDb = preview.peakDb,
+                                    appliedGainDb = gain.effectiveGainDb,
+                                    linearMultiplier = gain.linearMultiplier,
+                                    isPeakLimited = gain.isPeakLimited,
+                                    source = preview.source
+                                )
+                            }
+                        }
+                    }
+                }
+            )
             if (scanned != null && isActive) {
                 loudnessManager.saveLoudness(media.id, scanned)
                 if (media is PlayableMedia.LocalNcm && media.isNcm) {
@@ -790,7 +981,27 @@ class AmePlayerEngine @Inject constructor(
                 }
                 withContext(Dispatchers.Main) {
                     if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled) {
-                        applyLoudnessNormalization(media)
+                        val target = ThemePrefs.targetLoudnessLufs
+                        val gain = EbuR128Calculator.computeGain(scanned, target, ThemePrefs.loudnessPeakLimitEnabled)
+                        loudnessAudioProcessor.setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = true, smoothSec = 0.45)
+                        _loudnessState.value = LoudnessNormalizationState(
+                            isEnabled = true,
+                            targetLufs = target,
+                            currentMediaTitle = media.title,
+                            sourceLoudnessLufs = scanned.integratedLufs,
+                            sourcePeakDb = scanned.peakDb,
+                            appliedGainDb = gain.effectiveGainDb,
+                            linearMultiplier = gain.linearMultiplier,
+                            isPeakLimited = gain.isPeakLimited,
+                            source = scanned.source,
+                            upcomingAverageLufs = upcomingAverageLufs,
+                            prefetchedCount = upcomingPrefetchedCount,
+                            prefetchedTotalCount = upcomingPrefetchedTotalCount,
+                            isInterTrackWaiting = isInterTrackWaiting
+                        )
+                        if (usbAudioManager.isExclusiveModeEnabled.value) {
+                            applyEffectiveVolume()
+                        }
                     }
                 }
             }
@@ -805,10 +1016,15 @@ class AmePlayerEngine @Inject constructor(
         loudnessAudioProcessor.updateSettings(isEnabled, targetLufs, peakLimitEnabled)
 
         if (media == null || !isEnabled) {
+            scanJob?.cancel()
             _loudnessState.value = LoudnessNormalizationState(
                 isEnabled = isEnabled,
                 targetLufs = targetLufs,
-                currentMediaTitle = media?.title
+                currentMediaTitle = media?.title,
+                upcomingAverageLufs = upcomingAverageLufs,
+                prefetchedCount = upcomingPrefetchedCount,
+                prefetchedTotalCount = upcomingPrefetchedTotalCount,
+                isInterTrackWaiting = isInterTrackWaiting
             )
             // 关闭音量均衡时，若在 USB 独占模式，必须立即恢复 DAC 输出为原始基准音量
             if (usbAudioManager.isExclusiveModeEnabled.value) {
@@ -828,7 +1044,17 @@ class AmePlayerEngine @Inject constructor(
                     peakLimitEnabled = peakLimitEnabled
                 )
 
-                loudnessAudioProcessor.setStaticGain(gainResult.effectiveGainDb, gainResult.linearMultiplier)
+                val isLocked = loudnessData.source.isFinalLocked
+                if (loudnessAudioProcessor.currentMediaId != media.id || loudnessAudioProcessor.staticGainDb == null) {
+                    loudnessAudioProcessor.resetForTrack(media.id, loudnessData)
+                } else {
+                    loudnessAudioProcessor.setStaticGain(
+                        gainResult.effectiveGainDb,
+                        gainResult.linearMultiplier,
+                        isFinal = isLocked,
+                        smoothSec = 0.25
+                    )
+                }
 
                 _loudnessState.value = LoudnessNormalizationState(
                     isEnabled = true,
@@ -839,29 +1065,257 @@ class AmePlayerEngine @Inject constructor(
                     appliedGainDb = gainResult.effectiveGainDb,
                     linearMultiplier = gainResult.linearMultiplier,
                     isPeakLimited = gainResult.isPeakLimited,
-                    source = loudnessData.source
+                    source = loudnessData.source,
+                    upcomingAverageLufs = upcomingAverageLufs,
+                    prefetchedCount = upcomingPrefetchedCount,
+                    prefetchedTotalCount = upcomingPrefetchedTotalCount,
+                    isInterTrackWaiting = isInterTrackWaiting
                 )
-                // 在 USB 独占模式且启用了音量均衡时，将已知全曲响度增益同步应用至 USB 输出
+                // 在 USB 独占模式且启用了音量均衡时，将已知响度增益同步应用至 USB 输出
                 if (usbAudioManager.isExclusiveModeEnabled.value) {
                     applyEffectiveVolume()
                 }
-                AppLogger.i("[AME_LOUDNESS]", "Applied whole-track EBU R128: track='${media.title}', source=${loudnessData.integratedLufs} LUFS, target=$targetLufs LUFS, gain=${gainResult.effectiveGainDb} dB (peakLimited=${gainResult.isPeakLimited})")
+                AppLogger.i("[AME_LOUDNESS]", "Applied EBU R128 (${loudnessData.source.label}): track='${media.title}', source=${loudnessData.integratedLufs} LUFS, target=$targetLufs LUFS, gain=${gainResult.effectiveGainDb} dB")
+
+                // 若当前仅为预热阶段生成的极速初判结果，后台静默继续完成全曲扫描并平滑锁定
+                if (!isLocked) {
+                    scanWholeTrackLoudness(media, needStage1Fast = false)
+                }
             } else {
-                _loudnessState.value = LoudnessNormalizationState(
-                    isEnabled = true,
-                    targetLufs = targetLufs,
-                    currentMediaTitle = media.title,
-                    source = LoudnessSource.DEFAULT_FALLBACK
-                )
-                // 未获取全曲综合响度前保持 1.0 (0 dB) 平稳播放，绝不在歌曲播放途中发生动态漂移
-                loudnessAudioProcessor.setStaticGain(null, 1.0f)
+                val avg = upcomingAverageLufs
+                if (avg != null) {
+                    val prior = LoudnessData(avg, 1.0f, LoudnessSource.QUEUE_AVERAGE)
+                    val priorGain = EbuR128Calculator.computeGain(prior, targetLufs, peakLimitEnabled)
+                    loudnessAudioProcessor.resetForTrack(media.id, prior)
+                    _loudnessState.value = LoudnessNormalizationState(
+                        isEnabled = true,
+                        targetLufs = targetLufs,
+                        currentMediaTitle = media.title,
+                        sourceLoudnessLufs = prior.integratedLufs,
+                        sourcePeakDb = null,
+                        appliedGainDb = priorGain.effectiveGainDb,
+                        linearMultiplier = priorGain.linearMultiplier,
+                        isPeakLimited = priorGain.isPeakLimited,
+                        source = LoudnessSource.QUEUE_AVERAGE,
+                        upcomingAverageLufs = avg,
+                        prefetchedCount = upcomingPrefetchedCount,
+                        prefetchedTotalCount = upcomingPrefetchedTotalCount,
+                        isInterTrackWaiting = isInterTrackWaiting
+                    )
+                } else {
+                    _loudnessState.value = LoudnessNormalizationState(
+                        isEnabled = true,
+                        targetLufs = targetLufs,
+                        currentMediaTitle = media.title,
+                        source = LoudnessSource.DEFAULT_FALLBACK,
+                        upcomingAverageLufs = upcomingAverageLufs,
+                        prefetchedCount = upcomingPrefetchedCount,
+                        prefetchedTotalCount = upcomingPrefetchedTotalCount,
+                        isInterTrackWaiting = isInterTrackWaiting
+                    )
+                    loudnessAudioProcessor.resetForTrack(media.id, null)
+                }
                 if (usbAudioManager.isExclusiveModeEnabled.value) {
                     applyEffectiveVolume()
                 }
-                AppLogger.i("[AME_LOUDNESS]", "Loudness unknown for '${media.title}', starting full-track background scan")
-                scanWholeTrackLoudness(media)
+                AppLogger.i("[AME_LOUDNESS]", "Loudness unknown for '${media.title}', starting dual-stage fast+full scan")
+                scanWholeTrackLoudness(media, needStage1Fast = true)
             }
         }
+    }
+
+    /**
+     * 提取未来最多 3 首待播曲目（兼容顺序、列表循环与随机播放）
+     */
+    private fun getUpcomingTracks(count: Int = UPCOMING_PREFETCH_COUNT): List<PlayableMedia> {
+        val list = _playlist.value
+        if (list.size <= 1) return emptyList()
+
+        val result = mutableListOf<PlayableMedia>()
+        val seenIds = HashSet<String>()
+        _currentMedia.value?.id?.let { seenIds.add(it) }
+
+        val timeline = exoPlayer.currentTimeline
+        if (!timeline.isEmpty && exoPlayer.mediaItemCount > 0) {
+            var idx = exoPlayer.currentMediaItemIndex
+            val repeat = exoPlayer.repeatMode
+            val shuffle = exoPlayer.shuffleModeEnabled
+            for (step in 0 until count) {
+                val nextIdx = timeline.getNextWindowIndex(idx, repeat, shuffle)
+                if (nextIdx == C.INDEX_UNSET || nextIdx == exoPlayer.currentMediaItemIndex) break
+                val mediaId = exoPlayer.getMediaItemAt(nextIdx).mediaId
+                val media = mediaMap[mediaId] ?: list.getOrNull(nextIdx)
+                if (media != null && seenIds.add(media.id)) {
+                    result.add(media)
+                }
+                idx = nextIdx
+            }
+        }
+
+        if (result.isEmpty()) {
+            val curIdx = _currentIndex.value
+            for (offset in 1..count) {
+                val nextIdx = curIdx + offset
+                val media = if (nextIdx < list.size) {
+                    list[nextIdx]
+                } else if (_repeatMode.value == RepeatMode.ALL && list.isNotEmpty()) {
+                    list[nextIdx % list.size]
+                } else {
+                    null
+                }
+                if (media != null && seenIds.add(media.id)) {
+                    result.add(media)
+                }
+            }
+        }
+        return result
+    }
+
+    /**
+     * 后台预获取并预计算未来 3 首歌曲（含非本地在线曲目）的响度与平均响度基准
+     */
+    private fun prefetchUpcomingTracksLoudness() {
+        val upcoming = getUpcomingTracks(UPCOMING_PREFETCH_COUNT)
+        val (initialAvg, initialReady) = loudnessManager.computeUpcomingAverageLoudness(upcoming)
+        upcomingAverageLufs = initialAvg
+        upcomingPrefetchedCount = initialReady
+        upcomingPrefetchedTotalCount = upcoming.size
+        _loudnessState.value = _loudnessState.value.copy(
+            upcomingAverageLufs = initialAvg,
+            prefetchedCount = initialReady,
+            prefetchedTotalCount = upcoming.size
+        )
+
+        prefetchLoudnessJob?.cancel()
+        if (upcoming.isEmpty()) return
+
+        prefetchLoudnessJob = scope.launch(Dispatchers.IO) {
+            for (track in upcoming) {
+                if (!isActive) break
+                var resolved = loudnessManager.getLoudness(track)
+
+                if (track is PlayableMedia.Online) {
+                    // 若未缓存播放链接或未获取有效响度，提前预获取在线歌曲链接与响度元数据
+                    val needUrl = resolvedUrlCache[track.id].isNullOrBlank()
+                    if (needUrl || resolved == null) {
+                        val details = resolveOnlineSongDetails(track)
+                        if (details != null) {
+                            val cloudLoudness = loudnessManager.registerOnlineLoudness(track.id, details.gain, details.peak)
+                            if (cloudLoudness != null) {
+                                resolved = cloudLoudness
+                            } else if (resolved == null) {
+                                val fastScanned = Akari.NCM.player.core.loudness.TrackLoudnessScanner.scanTrackFast(context, details.url)
+                                if (fastScanned != null && isActive) {
+                                    loudnessManager.saveLoudness(track.id, fastScanned)
+                                    resolved = fastScanned
+                                }
+                            }
+                        }
+                    }
+                } else if (track is PlayableMedia.LocalNcm && resolved == null) {
+                    val fastScanned = Akari.NCM.player.core.loudness.TrackLoudnessScanner.scanTrackFast(context, track.uri)
+                    if (fastScanned != null && isActive) {
+                        loudnessManager.saveLoudness(track.id, fastScanned)
+                        resolved = fastScanned
+                    }
+                }
+
+                val (avg, readyCount) = loudnessManager.computeUpcomingAverageLoudness(upcoming)
+                upcomingAverageLufs = avg
+                upcomingPrefetchedCount = readyCount
+                upcomingPrefetchedTotalCount = upcoming.size
+                withContext(Dispatchers.Main) {
+                    _loudnessState.value = _loudnessState.value.copy(
+                        upcomingAverageLufs = avg,
+                        prefetchedCount = readyCount,
+                        prefetchedTotalCount = upcoming.size
+                    )
+                }
+            }
+            AppLogger.d(
+                "[AME_LOUDNESS]",
+                "Prefetched ${upcomingPrefetchedCount}/${upcoming.size} upcoming tracks, avgLufs=${upcomingAverageLufs}"
+            )
+        }
+    }
+
+    /**
+     * 在每首歌之间执行 1 秒等候窗口，并在窗口内完成目标歌曲响度锁定后无延迟入耳起播
+     */
+    private fun startInterTrackWaitAndResume(media: PlayableMedia?) {
+        interTrackWaitJob?.cancel()
+        isInterTrackWaiting = true
+        _loudnessState.value = _loudnessState.value.copy(isInterTrackWaiting = true)
+
+        interTrackWaitJob = scope.launch {
+            val waitStartMs = SystemClock.elapsedRealtime()
+            try {
+                if (ThemePrefs.volumeNormalizationEnabled && media != null) {
+                    withTimeoutOrNull(880L) {
+                        withContext(Dispatchers.IO) {
+                            var data = loudnessManager.getLoudness(media)
+                            if (data == null && media is PlayableMedia.Online) {
+                                val details = resolvedDetailsCache[media.id] ?: resolveOnlineSongDetails(media)
+                                if (details != null) {
+                                    data = loudnessManager.registerOnlineLoudness(media.id, details.gain, details.peak)
+                                    if (data == null) {
+                                        data = Akari.NCM.player.core.loudness.TrackLoudnessScanner.scanTrackFast(context, details.url)
+                                        if (data != null) {
+                                            loudnessManager.saveLoudness(media.id, data)
+                                        }
+                                    }
+                                }
+                            } else if (data == null && media is PlayableMedia.LocalNcm) {
+                                data = Akari.NCM.player.core.loudness.TrackLoudnessScanner.scanTrackFast(context, media.uri)
+                                if (data != null) {
+                                    loudnessManager.saveLoudness(media.id, data)
+                                }
+                            }
+                            if (data != null) {
+                                loudnessAudioProcessor.resetForTrack(media.id, data)
+                            }
+                        }
+                    }
+                }
+
+                val elapsed = SystemClock.elapsedRealtime() - waitStartMs
+                val remainingMs = INTER_TRACK_GAP_MS - elapsed
+                if (remainingMs > 0L) {
+                    delay(remainingMs)
+                }
+            } finally {
+                isInterTrackWaiting = false
+                _loudnessState.value = _loudnessState.value.copy(isInterTrackWaiting = false)
+            }
+
+            if (_currentMedia.value?.id == media?.id || media == null) {
+                applyLoudnessNormalization(media)
+                interTrackWaitJob = null
+                play()
+            } else {
+                interTrackWaitJob = null
+            }
+        }
+    }
+
+    /**
+     * 带 1 秒曲间等候过渡的切歌执行器
+     */
+    private fun transitionToTrackWithGap(performSeek: () -> Unit) {
+        ensureActive()
+        interTrackWaitJob?.cancel()
+        fadeJob?.cancel()
+        isFadingOut = false
+        exoPlayer.pause()
+        performSeek()
+        exoPlayer.prepare()
+        val idx = exoPlayer.currentMediaItemIndex
+        val targetMedia = exoPlayer.currentMediaItem?.mediaId?.let { mediaMap[it] }
+            ?: _playlist.value.getOrNull(idx)
+        _currentIndex.value = idx
+        _currentMedia.value = targetMedia
+        prepareLoudnessSync(targetMedia)
+        startInterTrackWaitAndResume(targetMedia)
     }
 
     private fun updateCurrentLyricForPosition(positionMs: Long): Boolean {
@@ -1219,6 +1673,9 @@ class AmePlayerEngine @Inject constructor(
     override fun load(media: PlayableMedia) {
         disableInfinitePlayback()
         ensureActive()
+        interTrackWaitJob?.cancel()
+        interTrackWaitJob = null
+        isInterTrackWaiting = false
         _playlistSourceType.value = when (media) {
             is PlayableMedia.Online -> PlaylistSourceType.ONLINE
             is PlayableMedia.LocalNcm -> PlaylistSourceType.LOCAL
@@ -1227,11 +1684,14 @@ class AmePlayerEngine @Inject constructor(
         mediaMap[media.id] = media
         _playlist.value = listOf(media)
         _currentIndex.value = 0
+        _currentMedia.value = media
+        prepareLoudnessSync(media)
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> load single track '${media.title}' (id=${media.id})")
         exoPlayer.setMediaItem(mediaItem)
         exoPlayer.prepare()
-        _currentMedia.value = media
         onTrackChanged(media)
+        applyLoudnessNormalization(media)
+        prefetchUpcomingTracksLoudness()
     }
 
     override fun loadPlaylist(
@@ -1253,6 +1713,11 @@ class AmePlayerEngine @Inject constructor(
         }
         ensureActive()
         ensurePlaybackServiceStarted()
+        interTrackWaitJob?.cancel()
+        interTrackWaitJob = null
+        isInterTrackWaiting = false
+        inflightUrlFetches.values.forEach { it.cancel() }
+        inflightUrlFetches.clear()
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> loadPlaylist size=${items.size}, startIndex=$startIndex, keepInfiniteMode=$keepInfiniteMode")
         mediaMap.clear()
         resolvedUrlCache.clear()
@@ -1263,13 +1728,15 @@ class AmePlayerEngine @Inject constructor(
         }
         _playlist.value = items
         val safeStartIndex = if (items.isEmpty()) 0 else startIndex.coerceIn(0, items.size - 1)
-        exoPlayer.setMediaItems(mediaItems, safeStartIndex, C.TIME_UNSET)
-        exoPlayer.prepare()
         val startMedia = items.getOrNull(safeStartIndex)
         _currentMedia.value = startMedia
         _currentIndex.value = safeStartIndex
+        prepareLoudnessSync(startMedia)
+        exoPlayer.setMediaItems(mediaItems, safeStartIndex, C.TIME_UNSET)
+        exoPlayer.prepare()
         onTrackChanged(startMedia)
         applyLoudnessNormalization(startMedia)
+        prefetchUpcomingTracksLoudness()
     }
 
     override fun disableInfinitePlayback() {
@@ -1609,6 +2076,7 @@ class AmePlayerEngine @Inject constructor(
         currentList.addAll(uniqueToAdd)
         _playlist.value = currentList
         exoPlayer.addMediaItems(mediaItemsToAdd)
+        prefetchUpcomingTracksLoudness()
         AppLogger.i(
             "AME_INFINITE_PLAY",
             ">>> Appended ${uniqueToAdd.size} recommended tracks to queue (total=${currentList.size}): ${uniqueToAdd.joinToString { it.title }}"
@@ -1662,6 +2130,13 @@ class AmePlayerEngine @Inject constructor(
     override fun play() {
         ensureActive()
         ensurePlaybackServiceStarted()
+        if (interTrackWaitJob?.isActive == true) {
+            interTrackWaitJob?.cancel()
+            interTrackWaitJob = null
+            isInterTrackWaiting = false
+            _loudnessState.value = _loudnessState.value.copy(isInterTrackWaiting = false)
+            prepareLoudnessSync(_currentMedia.value)
+        }
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> play() called (fadeEnabled=${ThemePrefs.playbackFadeEnabled})")
         if (!ThemePrefs.playbackFadeEnabled) {
             fadeJob?.cancel()
@@ -1679,6 +2154,12 @@ class AmePlayerEngine @Inject constructor(
 
     fun pause(immediate: Boolean = false) {
         ensureActive()
+        interTrackWaitJob?.cancel()
+        interTrackWaitJob = null
+        if (isInterTrackWaiting) {
+            isInterTrackWaiting = false
+            _loudnessState.value = _loudnessState.value.copy(isInterTrackWaiting = false)
+        }
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> pause(immediate=$immediate) called (fadeEnabled=${ThemePrefs.playbackFadeEnabled})")
         if (immediate || !ThemePrefs.playbackFadeEnabled || !exoPlayer.isPlaying) {
             fadeJob?.cancel()
@@ -1712,9 +2193,7 @@ class AmePlayerEngine @Inject constructor(
     override fun skipToNext() {
         ensureActive()
         if (exoPlayer.hasNextMediaItem()) {
-            exoPlayer.seekToNext()
-            exoPlayer.prepare()
-            play()
+            transitionToTrackWithGap { exoPlayer.seekToNext() }
             if (_infinitePlayMode.value.isActive) {
                 checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
             }
@@ -1723,9 +2202,7 @@ class AmePlayerEngine @Inject constructor(
             AppLogger.i("AME_INFINITE_PLAY", ">>> skipToNext at end of infinite queue, triggering immediate fetch & advance")
             checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = true)
         } else if (exoPlayer.mediaItemCount > 0) {
-            exoPlayer.seekToDefaultPosition(0)
-            exoPlayer.prepare()
-            play()
+            transitionToTrackWithGap { exoPlayer.seekToDefaultPosition(0) }
         }
     }
 
@@ -1734,24 +2211,16 @@ class AmePlayerEngine @Inject constructor(
         if (exoPlayer.currentPosition > 3000) {
             exoPlayer.seekTo(0)
         } else if (exoPlayer.hasPreviousMediaItem()) {
-            exoPlayer.seekToPrevious()
-            exoPlayer.prepare()
-            play()
+            transitionToTrackWithGap { exoPlayer.seekToPrevious() }
         } else if (exoPlayer.mediaItemCount > 0) {
             val lastIdx = (exoPlayer.mediaItemCount - 1).coerceAtLeast(0)
-            exoPlayer.seekToDefaultPosition(lastIdx)
-            exoPlayer.prepare()
-            play()
+            transitionToTrackWithGap { exoPlayer.seekToDefaultPosition(lastIdx) }
         }
     }
 
     override fun skipToIndex(index: Int) {
         ensureActive()
-        exoPlayer.seekToDefaultPosition(index)
-        exoPlayer.prepare()
-        play()
-        _currentIndex.value = index
-        _currentMedia.value = _playlist.value.getOrNull(index)
+        transitionToTrackWithGap { exoPlayer.seekToDefaultPosition(index) }
         if (_infinitePlayMode.value.isActive) {
             checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
         }
@@ -1772,6 +2241,7 @@ class AmePlayerEngine @Inject constructor(
         currentList.add(insertIndex, media)
         _playlist.value = currentList
         exoPlayer.addMediaItem(insertIndex, mediaItem)
+        prefetchUpcomingTracksLoudness()
         AppLogger.i("[AME_ONLINE_PLAY]", ">>> Inserted '${media.title}' as next track at index $insertIndex")
     }
 
@@ -1791,6 +2261,7 @@ class AmePlayerEngine @Inject constructor(
         fixedRepeatMode = mode
         _repeatMode.value = mode
         ThemePrefs.playbackRepeatMode = mode.name
+        prefetchUpcomingTracksLoudness()
     }
 
     override fun toggleShuffle() {
@@ -1806,6 +2277,7 @@ class AmePlayerEngine @Inject constructor(
         fixedShuffleEnabled = next
         _shuffleEnabled.value = next
         ThemePrefs.playbackShuffleEnabled = next
+        prefetchUpcomingTracksLoudness()
     }
 
     override fun setVolume(volume: Float) {
@@ -1879,6 +2351,13 @@ class AmePlayerEngine @Inject constructor(
     override fun release() {
         isReleased = true
         fadeJob?.cancel()
+        interTrackWaitJob?.cancel()
+        prefetchLoudnessJob?.cancel()
+        scanJob?.cancel()
+        loudnessJob?.cancel()
+        inflightUrlFetches.values.forEach { it.cancel() }
+        inflightUrlFetches.clear()
+        isInterTrackWaiting = false
         isFadingOut = false
         applyEffectiveVolume(1.0f)
         islandManager.cancelIsland()

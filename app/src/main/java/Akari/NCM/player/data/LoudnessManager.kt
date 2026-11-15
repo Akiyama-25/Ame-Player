@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.abs
 
 /**
  * 管理与缓存所有在线与本地曲目的 EBU R128 / ITU-R BS.1770 全曲综合响度特征
@@ -34,6 +35,9 @@ class LoudnessManager @Inject constructor(
     // 内存高速缓存 (songId / mediaUri -> LoudnessData)
     private val memoryCache = ConcurrentHashMap<String, LoudnessData>()
 
+    // NCM 本地文件 id -> 网易云 musicId 映射缓存
+    private val ncmMusicIdCache = ConcurrentHashMap<String, String>()
+
     init {
         loadPersistedCache()
     }
@@ -50,7 +54,13 @@ class LoudnessManager @Inject constructor(
                         val srcName = parts[2]
                         val src = runCatching { LoudnessSource.valueOf(srcName) }.getOrDefault(LoudnessSource.BS1770_SCAN)
                         if (lufs != null && peak != null) {
-                            memoryCache[key] = LoudnessData(lufs, peak, src)
+                            // 过滤早期版本由网易云占位零值 gain=0.0 写入的无效缓存项，允许重新精准测算
+                            val isLegacyZeroPlaceholder = src == LoudnessSource.NETEASE_ONLINE &&
+                                abs(lufs + 14.0f) < 0.01f &&
+                                abs(peak - 1.0f) < 0.001f
+                            if (!isLegacyZeroPlaceholder && src.isKnownValid) {
+                                memoryCache[key] = LoudnessData(lufs, peak, src)
+                            }
                         }
                     }
                 }
@@ -62,9 +72,30 @@ class LoudnessManager @Inject constructor(
     }
 
     /**
-     * 保存并持久化曲目全曲综合响度数据
+     * 同步高速读取内存中已有的曲目响度缓存（用于切歌瞬间的零延迟增益预置）
+     */
+    fun getCachedLoudnessSync(media: PlayableMedia): LoudnessData? {
+        memoryCache[media.id]?.takeIf { it.source.isKnownValid }?.let { return it }
+        if (media is PlayableMedia.LocalNcm && media.isNcm) {
+            val mappedMusicId = ncmMusicIdCache[media.id]
+            if (mappedMusicId != null) {
+                memoryCache[mappedMusicId]?.takeIf { it.source.isKnownValid }?.let { return it }
+            }
+        }
+        return null
+    }
+
+    /**
+     * 保存并持久化曲目综合响度数据（避免用临时初判覆盖已完成的全曲精确锁定数据）
      */
     fun saveLoudness(mediaId: String, data: LoudnessData) {
+        if (!data.source.isKnownValid || data.source == LoudnessSource.QUEUE_AVERAGE) return
+
+        val existing = memoryCache[mediaId]
+        if (existing != null && existing.source.isFinalLocked && !data.source.isFinalLocked) {
+            return
+        }
+
         memoryCache[mediaId] = data
         try {
             val encoded = "${data.integratedLufs},${data.truePeak},${data.source.name}"
@@ -76,31 +107,53 @@ class LoudnessManager @Inject constructor(
     }
 
     /**
-     * 注册随在线音频链接解析一并返回的云端全曲综合响度与峰值特征
+     * 注册随在线音频链接解析一并返回的云端全曲综合响度与峰值特征。
+     * 过滤缺失与 0.0 无效占位默认值，仅当为有效非零增益时才采纳。
      */
-    fun registerOnlineLoudness(songId: String, gainDb: Float?, peak: Float?) {
-        if (gainDb != null) {
-            // 网易云音乐云端 gain 设定基准为 -14.0 LUFS
-            val integrated = -14.0f - gainDb
-            val data = LoudnessData(
-                integratedLufs = integrated,
-                truePeak = peak ?: 1.0f,
-                source = LoudnessSource.NETEASE_ONLINE
-            )
-            saveLoudness(songId, data)
+    fun registerOnlineLoudness(songId: String, gainDb: Float?, peak: Float?): LoudnessData? {
+        if (gainDb == null || abs(gainDb) < 0.01f) {
+            AppLogger.d(TAG, "Ignoring missing or zero placeholder online gain ($gainDb) for songId=$songId")
+            return null
         }
+
+        val existing = memoryCache[songId]
+        if (existing != null && existing.source == LoudnessSource.BS1770_SCAN) {
+            return existing
+        }
+
+        // 网易云音乐云端 gain 设定基准为 -14.0 LUFS
+        val integrated = (-14.0f - gainDb).coerceIn(-70.0f, 0.0f)
+        val safePeak = peak?.takeIf { it > 0.0001f } ?: 1.0f
+        val data = LoudnessData(
+            integratedLufs = integrated,
+            truePeak = safePeak,
+            source = LoudnessSource.NETEASE_ONLINE
+        )
+        saveLoudness(songId, data)
+        return data
     }
 
     /**
-     * 异步获取曲目的综合响度数据；若尚未测算或无内嵌标签则返回 null，由全曲扫描器进行后台分析
+     * 计算未来队列曲目的平均响度（LUFS）与已就绪数量
+     */
+    fun computeUpcomingAverageLoudness(upcomingTracks: List<PlayableMedia>): Pair<Float?, Int> {
+        if (upcomingTracks.isEmpty()) return null to 0
+        val readyLufs = upcomingTracks.mapNotNull { track ->
+            getCachedLoudnessSync(track)?.integratedLufs
+        }
+        val avg = if (readyLufs.isNotEmpty()) readyLufs.average().toFloat() else null
+        return avg to readyLufs.size
+    }
+
+    /**
+     * 异步获取曲目的已知响度数据（缓存、云端特征或本地文件内嵌标签）；
+     * 若尚未测算或无内嵌标签则返回 null，由快速抽样与全曲扫描器分析。
      */
     suspend fun getLoudness(media: PlayableMedia): LoudnessData? = withContext(Dispatchers.IO) {
-        val cached = memoryCache[media.id]
-        if (cached != null) return@withContext cached
+        getCachedLoudnessSync(media)?.let { return@withContext it }
 
         when (media) {
             is PlayableMedia.Online -> {
-                // 检查持久化磁盘缓存
                 val persisted = prefs.getString(media.id, null)
                 if (persisted != null) {
                     val parts = persisted.split(",")
@@ -108,10 +161,15 @@ class LoudnessManager @Inject constructor(
                         val lufs = parts[0].toFloatOrNull()
                         val peak = parts[1].toFloatOrNull()
                         val src = runCatching { LoudnessSource.valueOf(parts[2]) }.getOrDefault(LoudnessSource.BS1770_SCAN)
-                        if (lufs != null && peak != null) {
-                            val data = LoudnessData(lufs, peak, src)
-                            memoryCache[media.id] = data
-                            return@withContext data
+                        if (lufs != null && peak != null && src.isKnownValid) {
+                            val isLegacyZero = src == LoudnessSource.NETEASE_ONLINE &&
+                                abs(lufs + 14.0f) < 0.01f &&
+                                abs(peak - 1.0f) < 0.001f
+                            if (!isLegacyZero) {
+                                val data = LoudnessData(lufs, peak, src)
+                                memoryCache[media.id] = data
+                                return@withContext data
+                            }
                         }
                     }
                 }
@@ -120,14 +178,17 @@ class LoudnessManager @Inject constructor(
             is PlayableMedia.LocalNcm -> {
                 val uri = Uri.parse(media.uri)
 
-                // 1. 若为 NCM 且包含有效网易云 musicId，优先查找是否已有云端特征缓存
+                // 1. 若为 NCM 且包含有效网易云 musicId，优先查找是否已有云端或扫描特征缓存
                 if (media.isNcm) {
                     val ncmMeta = NcmDataSource.scanMetadata(context.contentResolver, uri)
-                    val musicId = ncmMeta?.first?.musicId?.toString()
-                    if (musicId != null && memoryCache.containsKey(musicId)) {
-                        val data = memoryCache[musicId]!!
-                        saveLoudness(media.id, data)
-                        return@withContext data
+                    val musicId = ncmMeta?.first?.musicId?.toString()?.takeIf { it != "0" && it.isNotBlank() }
+                    if (musicId != null) {
+                        ncmMusicIdCache[media.id] = musicId
+                        val matched = memoryCache[musicId]?.takeIf { it.source.isKnownValid }
+                        if (matched != null) {
+                            saveLoudness(media.id, matched)
+                            return@withContext matched
+                        }
                     }
                 }
 

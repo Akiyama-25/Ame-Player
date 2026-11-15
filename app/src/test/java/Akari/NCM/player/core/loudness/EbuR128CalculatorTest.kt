@@ -175,4 +175,30 @@ class EbuR128CalculatorTest {
         )
         assertTrue(peakLimitedState.statusSummary.contains("防过载压制"))
     }
+
+    @Test
+    fun `测试双阶段响度来源标识与曲间等候状态文本`() {
+        assertFalse(LoudnessSource.DEFAULT_FALLBACK.isKnownValid)
+        assertTrue(LoudnessSource.FAST_PREVIEW_SCAN.isKnownValid)
+        assertFalse(LoudnessSource.FAST_PREVIEW_SCAN.isFinalLocked)
+        assertFalse(LoudnessSource.QUEUE_AVERAGE.isFinalLocked)
+        assertTrue(LoudnessSource.NETEASE_ONLINE.isFinalLocked)
+        assertTrue(LoudnessSource.BS1770_SCAN.isFinalLocked)
+
+        val waitingState = LoudnessNormalizationState(
+            isEnabled = true,
+            sourceLoudnessLufs = -10.5f,
+            isInterTrackWaiting = true
+        )
+        assertTrue(waitingState.statusSummary.contains("曲间等候 (1s)"))
+        assertTrue(waitingState.statusSummary.contains("-10.5 LUFS"))
+
+        val previewState = LoudnessNormalizationState(
+            isEnabled = true,
+            sourceLoudnessLufs = -11.0f,
+            appliedGainDb = -3.0f,
+            source = LoudnessSource.FAST_PREVIEW_SCAN
+        )
+        assertTrue(previewState.statusSummary.contains("初判"))
+    }
 }

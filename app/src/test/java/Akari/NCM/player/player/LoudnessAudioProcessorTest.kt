@@ -257,4 +257,130 @@ class LoudnessAudioProcessorTest {
         // 最终确认增益绝对未发生向下衰减漂移
         assertEquals(targetMult, processor.currentMultiplier, 0.001f)
     }
+
+    @Test
+    fun `支持PCM 24-bit打包格式读写与响度衰减`() {
+        val processor = LoudnessAudioProcessor()
+        processor.isEnabled = true
+        processor.targetLufs = -14.0f
+
+        val format = AudioFormat(48000, 2, C.ENCODING_PCM_24BIT)
+        val configured = processor.configure(format)
+        assertEquals(C.ENCODING_PCM_24BIT, configured.encoding)
+        processor.flush()
+
+        val knownLoudness = LoudnessData(-8.0f, 1.0f, LoudnessSource.REPLAYGAIN_TAG)
+        processor.resetForTrack("pcm24_test", knownLoudness)
+
+        // 构造 24-bit LE 样本，幅度 4_000_000 (约 0.4768)
+        val rawSample = 4_000_000
+        val frameCount = 12000
+        val input = ByteBuffer.allocateDirect(frameCount * 6).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until frameCount) {
+            for (ch in 0 until 2) {
+                val v = if (ch == 0) rawSample else -rawSample
+                input.put((v and 0xFF).toByte())
+                input.put(((v ushr 8) and 0xFF).toByte())
+                input.put(((v ushr 16) and 0xFF).toByte())
+            }
+        }
+        input.flip()
+
+        processor.queueInput(input)
+        val output = processor.output
+        output.position((frameCount - 10) * 6)
+
+        val b0 = output.get().toInt() and 0xFF
+        val b1 = output.get().toInt() and 0xFF
+        val b2 = output.get().toInt()
+        val outL = (b2 shl 16) or (b1 shl 8) or b0
+        // 4_000_000 * 0.501187 ≈ 2_004_748
+        assertTrue("24-bit 输出应精确衰减至 ~2,004,748，实际: $outL", outL in 1_950_000..2_060_000)
+    }
+
+    @Test
+    fun `AudioSink采样率重建触发reset时不丢失当前曲目响度增益`() {
+        val processor = LoudnessAudioProcessor()
+        processor.isEnabled = true
+        processor.targetLufs = -14.0f
+
+        processor.configure(AudioFormat(44100, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        processor.resetForTrack("hires_song", LoudnessData(-8.0f, 1.0f, LoudnessSource.NETEASE_ONLINE))
+
+        val expectedGain = processor.staticGainDb
+        val expectedMult = processor.currentMultiplier
+        assertNotNull(expectedGain)
+        assertTrue(processor.isFinalLocked)
+
+        // 模拟 ExoPlayer DefaultAudioSink 在切采样率/重配输出管线时调用 reset() + configure() + flush()
+        processor.reset()
+        processor.configure(AudioFormat(96000, 2, C.ENCODING_PCM_FLOAT))
+        processor.flush()
+
+        assertEquals("hires_song", processor.currentMediaId)
+        assertEquals(expectedGain!!, processor.staticGainDb!!, 0.001f)
+        assertEquals(expectedMult, processor.currentMultiplier, 0.001f)
+        assertTrue(processor.isFinalLocked)
+    }
+
+    @Test
+    fun `在线流媒体缺失增益时在播放解码流1秒内触发Stage1初判并在持续播放后锁定Stage2`() {
+        val processor = LoudnessAudioProcessor()
+        processor.isEnabled = true
+        processor.targetLufs = -14.0f
+        processor.peakLimitEnabled = true
+
+        val sr = 48000
+        processor.configure(AudioFormat(sr, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+
+        var previewData: LoudnessData? = null
+        var finalData: LoudnessData? = null
+        processor.onPreviewLoudnessMeasured = { id, data ->
+            if (id == "online_missing_gain") previewData = data
+        }
+        processor.onLoudnessMeasured = { id, data ->
+            if (id == "online_missing_gain") finalData = data
+        }
+
+        processor.resetForTrack("online_missing_gain", null)
+        assertFalse(processor.isFinalLocked)
+
+        // 喂入 1.0 秒 1kHz 正弦波 (幅值 0.5 -> ~-6.06 LUFS)，足以触发 2 个 400ms 活跃块 (0.8s)
+        val amp = 16384.0
+        val oneSecFrames = sr
+        val chunk1 = ByteBuffer.allocateDirect(oneSecFrames * 4).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until oneSecFrames) {
+            val s = (amp * kotlin.math.sin(2.0 * kotlin.math.PI * 1000.0 * i / sr)).toInt().toShort()
+            chunk1.putShort(s)
+            chunk1.putShort(s)
+        }
+        chunk1.flip()
+        processor.queueInput(chunk1)
+
+        assertNotNull("1 秒播放流内应触发 Stage 1 极速初判", previewData)
+        assertEquals(LoudnessSource.FAST_PREVIEW_SCAN, previewData!!.source)
+        assertEquals(-6.06f, previewData!!.integratedLufs, 0.6f)
+        assertNotNull(processor.staticGainDb)
+        assertFalse(processor.isFinalLocked)
+
+        // 继续喂入 18 秒流式音频以触发 Stage 2 全曲锁定 (45 * 400ms = 18s)
+        val batchFrames = sr * 3
+        repeat(6) {
+            val batch = ByteBuffer.allocateDirect(batchFrames * 4).order(ByteOrder.LITTLE_ENDIAN)
+            for (i in 0 until batchFrames) {
+                val s = (amp * kotlin.math.sin(2.0 * kotlin.math.PI * 1000.0 * i / sr)).toInt().toShort()
+                batch.putShort(s)
+                batch.putShort(s)
+            }
+            batch.flip()
+            processor.queueInput(batch)
+        }
+
+        assertNotNull("累计达到锁定窗口后应触发 Stage 2 锁定", finalData)
+        assertEquals(LoudnessSource.BS1770_SCAN, finalData!!.source)
+        assertEquals(-6.06f, finalData!!.integratedLufs, 0.5f)
+        assertTrue(processor.isFinalLocked)
+    }
 }

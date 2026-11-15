@@ -2,6 +2,9 @@ package Akari.NCM.player.ui.screen
 
 import Akari.NCM.player.core.AppLogger
 import Akari.NCM.player.core.LogLevel
+import Akari.NCM.player.ui.component.AdaptiveButtonGroup
+import Akari.NCM.player.ui.component.AdaptiveButtonSpec
+import Akari.NCM.player.ui.component.ExpressiveButtonStyle
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -51,7 +54,6 @@ fun LogScreen(
     var showExportMenu by remember { mutableStateOf(false) }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
 
-    // 进入页面时从最底部开始查看（定位至最新日志行）
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) {
             listState.scrollToItem(lines.lastIndex)
@@ -86,6 +88,7 @@ fun LogScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
@@ -113,8 +116,10 @@ fun LogScreen(
                         )
                     }
                 },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                ),
                 actions = {
-                    // 刷新
                     IconButton(
                         onClick = {
                             logText = AppLogger.getLogContent()
@@ -128,7 +133,6 @@ fun LogScreen(
                         )
                     }
 
-                    // 设置与清空
                     IconButton(
                         onClick = { showLogLevelDialog = true },
                         modifier = Modifier.testTag("btn_log_settings")
@@ -139,7 +143,6 @@ fun LogScreen(
                         )
                     }
 
-                    // 导出菜单
                     Box {
                         IconButton(
                             onClick = { showExportMenu = true },
@@ -209,7 +212,7 @@ fun LogScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(MaterialTheme.colorScheme.surface)
+                .background(MaterialTheme.colorScheme.background)
         ) {
             if (lines.isEmpty()) {
                 Column(
@@ -263,7 +266,6 @@ fun LogScreen(
                     }
                 }
 
-                // 快速跳到底部浮动按钮
                 val isAtBottom by remember {
                     derivedStateOf {
                         val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -335,17 +337,23 @@ fun LogScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    showLogLevelDialog = false
-                    showLogSizeDialog = true
-                }) {
-                    Text("调整大小上限")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogLevelDialog = false }) {
-                    Text("关闭")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "调整大小上限",
+                            onClick = {
+                                showLogLevelDialog = false
+                                showLogSizeDialog = true
+                            },
+                            style = ExpressiveButtonStyle.FILLED
+                        ),
+                        AdaptiveButtonSpec(
+                            text = "关闭",
+                            onClick = { showLogLevelDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
             }
         )
     }
@@ -375,7 +383,12 @@ fun LogScreen(
                                 FilterChip(
                                     selected = isSelected,
                                     onClick = { selectedSizeKb = size },
-                                    label = { Text(if (size == 1024L) "1 MB (默认)" else if (size >= 1024L) "${size / 1024} MB" else "$size KB", fontSize = 11.sp) },
+                                    label = {
+                                        Text(
+                                            if (size == 1024L) "1 MB (默认)" else if (size >= 1024L) "${size / 1024} MB" else "$size KB",
+                                            fontSize = 11.sp
+                                        )
+                                    },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -385,21 +398,25 @@ fun LogScreen(
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        AppLogger.setMaxFileSizeKb(context, selectedSizeKb)
-                        maxFileSizeKb = selectedSizeKb
-                        Toast.makeText(context, "日志上限已设为 $selectedSizeKb KB", Toast.LENGTH_SHORT).show()
-                        showLogSizeDialog = false
-                    }
-                ) {
-                    Text("保存")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogSizeDialog = false }) {
-                    Text("取消")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "保存",
+                            onClick = {
+                                AppLogger.setMaxFileSizeKb(context, selectedSizeKb)
+                                maxFileSizeKb = selectedSizeKb
+                                Toast.makeText(context, "日志上限已设为 $selectedSizeKb KB", Toast.LENGTH_SHORT).show()
+                                showLogSizeDialog = false
+                            },
+                            style = ExpressiveButtonStyle.FILLED
+                        ),
+                        AdaptiveButtonSpec(
+                            text = "取消",
+                            onClick = { showLogSizeDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
             }
         )
     }
@@ -411,21 +428,27 @@ fun LogScreen(
             title = { Text("清空日志", fontWeight = FontWeight.Bold) },
             text = { Text("确定要清空当前的全部运行日志吗？该操作不可撤销。") },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        AppLogger.clearLogs()
-                        logText = AppLogger.getLogContent()
-                        showClearConfirmDialog = false
-                        Toast.makeText(context, "日志已清空", Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Text("清空", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirmDialog = false }) {
-                    Text("取消")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "清空",
+                            onClick = {
+                                AppLogger.clearLogs()
+                                logText = AppLogger.getLogContent()
+                                showClearConfirmDialog = false
+                                Toast.makeText(context, "日志已清空", Toast.LENGTH_SHORT).show()
+                            },
+                            style = ExpressiveButtonStyle.FILLED,
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError
+                        ),
+                        AdaptiveButtonSpec(
+                            text = "取消",
+                            onClick = { showClearConfirmDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
             }
         )
     }

@@ -11,6 +11,10 @@ object ThemePrefs {
     private const val NAME = "ame_theme_prefs"
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_USE_MONET_COLORS = "use_monet_colors"
+    private const val KEY_COLOR_VARIANT = "color_variant"
+    private const val KEY_CONTRAST_LEVEL = "contrast_level"
+    private const val KEY_USE_MATERIAL_BG = "use_material_bg"
+    private const val KEY_PLAYER_BLUR_COVER_BG = "player_blur_cover_bg"
     private const val KEY_CUSTOM_ACCENT_COLOR = "custom_accent_color"
     private const val KEY_CUSTOM_LIGHT_BG_COLOR = "custom_light_bg_color"
     private const val KEY_CUSTOM_DARK_BG_COLOR = "custom_dark_bg_color"
@@ -49,6 +53,18 @@ object ThemePrefs {
 
     private val _monetFlow = MutableStateFlow(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
     val monetFlow: StateFlow<Boolean> = _monetFlow.asStateFlow()
+
+    private val _colorVariantFlow = MutableStateFlow(ColorVariant.EXPRESSIVE)
+    val colorVariantFlow: StateFlow<ColorVariant> = _colorVariantFlow.asStateFlow()
+
+    private val _contrastLevelFlow = MutableStateFlow(ContrastLevel.STANDARD)
+    val contrastLevelFlow: StateFlow<ContrastLevel> = _contrastLevelFlow.asStateFlow()
+
+    private val _useMaterialBgFlow = MutableStateFlow(true)
+    val useMaterialBgFlow: StateFlow<Boolean> = _useMaterialBgFlow.asStateFlow()
+
+    private val _playerBlurCoverBgFlow = MutableStateFlow(true)
+    val playerBlurCoverBgFlow: StateFlow<Boolean> = _playerBlurCoverBgFlow.asStateFlow()
 
     private val _accentColorFlow = MutableStateFlow(DEFAULT_ACCENT_COLOR)
     val accentColorFlow: StateFlow<Long> = _accentColorFlow.asStateFlow()
@@ -114,6 +130,10 @@ object ThemePrefs {
         prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
         _themeFlow.value = themeMode
         _monetFlow.value = useMonetColors
+        _colorVariantFlow.value = colorVariant
+        _contrastLevelFlow.value = contrastLevel
+        _useMaterialBgFlow.value = useMaterialBackground
+        _playerBlurCoverBgFlow.value = playerBlurCoverBackground
         _accentColorFlow.value = customAccentColor
         _lightBgColorFlow.value = customLightBgColor
         _darkBgColorFlow.value = customDarkBgColor
@@ -137,93 +157,159 @@ object ThemePrefs {
     }
 
     var themeMode: String
-        get() = prefs.getString(KEY_THEME_MODE, THEME_SYSTEM) ?: THEME_SYSTEM
+        get() = if (::prefs.isInitialized) prefs.getString(KEY_THEME_MODE, THEME_SYSTEM) ?: THEME_SYSTEM else _themeFlow.value
         set(value) {
-            prefs.edit().putString(KEY_THEME_MODE, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putString(KEY_THEME_MODE, value).apply()
+            }
             _themeFlow.value = value
         }
 
     var useMonetColors: Boolean
-        get() = prefs.getBoolean(KEY_USE_MONET_COLORS, Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_USE_MONET_COLORS, Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) else _monetFlow.value
         set(value) {
-            prefs.edit().putBoolean(KEY_USE_MONET_COLORS, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_USE_MONET_COLORS, value).apply()
+            }
             _monetFlow.value = value
         }
 
-    var customAccentColor: Long
-        get() = prefs.getLong(KEY_CUSTOM_ACCENT_COLOR, DEFAULT_ACCENT_COLOR)
+    var colorVariant: ColorVariant
+        get() = if (::prefs.isInitialized) {
+            ColorVariant.fromKey(prefs.getString(KEY_COLOR_VARIANT, ColorVariant.EXPRESSIVE.key) ?: ColorVariant.EXPRESSIVE.key)
+        } else _colorVariantFlow.value
         set(value) {
-            prefs.edit().putLong(KEY_CUSTOM_ACCENT_COLOR, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putString(KEY_COLOR_VARIANT, value.key).apply()
+            }
+            _colorVariantFlow.value = value
+        }
+
+    var contrastLevel: ContrastLevel
+        get() = if (::prefs.isInitialized) {
+            ContrastLevel.fromKey(prefs.getString(KEY_CONTRAST_LEVEL, ContrastLevel.STANDARD.key) ?: ContrastLevel.STANDARD.key)
+        } else _contrastLevelFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putString(KEY_CONTRAST_LEVEL, value.key).apply()
+            }
+            _contrastLevelFlow.value = value
+        }
+
+    var useMaterialBackground: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_USE_MATERIAL_BG, true) else _useMaterialBgFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_USE_MATERIAL_BG, value).apply()
+            }
+            _useMaterialBgFlow.value = value
+        }
+
+    var playerBlurCoverBackground: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_PLAYER_BLUR_COVER_BG, true) else _playerBlurCoverBgFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_PLAYER_BLUR_COVER_BG, value).apply()
+            }
+            _playerBlurCoverBgFlow.value = value
+        }
+
+    var customAccentColor: Long
+        get() = if (::prefs.isInitialized) prefs.getLong(KEY_CUSTOM_ACCENT_COLOR, DEFAULT_ACCENT_COLOR) else _accentColorFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putLong(KEY_CUSTOM_ACCENT_COLOR, value).apply()
+            }
             _accentColorFlow.value = value
         }
 
     var customLightBgColor: Long
-        get() = prefs.getLong(KEY_CUSTOM_LIGHT_BG_COLOR, DEFAULT_LIGHT_BG_COLOR)
+        get() = if (::prefs.isInitialized) prefs.getLong(KEY_CUSTOM_LIGHT_BG_COLOR, DEFAULT_LIGHT_BG_COLOR) else _lightBgColorFlow.value
         set(value) {
-            prefs.edit().putLong(KEY_CUSTOM_LIGHT_BG_COLOR, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putLong(KEY_CUSTOM_LIGHT_BG_COLOR, value).apply()
+            }
             _lightBgColorFlow.value = value
         }
 
     var customDarkBgColor: Long
-        get() = prefs.getLong(KEY_CUSTOM_DARK_BG_COLOR, DEFAULT_DARK_BG_COLOR)
+        get() = if (::prefs.isInitialized) prefs.getLong(KEY_CUSTOM_DARK_BG_COLOR, DEFAULT_DARK_BG_COLOR) else _darkBgColorFlow.value
         set(value) {
-            prefs.edit().putLong(KEY_CUSTOM_DARK_BG_COLOR, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putLong(KEY_CUSTOM_DARK_BG_COLOR, value).apply()
+            }
             _darkBgColorFlow.value = value
         }
 
     var customAccentH: Float
-        get() = prefs.getFloat(KEY_CUSTOM_ACCENT_H, 256f)
+        get() = if (::prefs.isInitialized) prefs.getFloat(KEY_CUSTOM_ACCENT_H, 256f) else _accentHFlow.value
         set(value) {
-            prefs.edit().putFloat(KEY_CUSTOM_ACCENT_H, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putFloat(KEY_CUSTOM_ACCENT_H, value).apply()
+            }
             _accentHFlow.value = value
         }
 
     var customAccentS: Float
-        get() = prefs.getFloat(KEY_CUSTOM_ACCENT_S, 34f)
+        get() = if (::prefs.isInitialized) prefs.getFloat(KEY_CUSTOM_ACCENT_S, 34f) else _accentSFlow.value
         set(value) {
-            prefs.edit().putFloat(KEY_CUSTOM_ACCENT_S, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putFloat(KEY_CUSTOM_ACCENT_S, value).apply()
+            }
             _accentSFlow.value = value
         }
 
     var customAccentL: Float
-        get() = prefs.getFloat(KEY_CUSTOM_ACCENT_L, 48f)
+        get() = if (::prefs.isInitialized) prefs.getFloat(KEY_CUSTOM_ACCENT_L, 48f) else _accentLFlow.value
         set(value) {
-            prefs.edit().putFloat(KEY_CUSTOM_ACCENT_L, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putFloat(KEY_CUSTOM_ACCENT_L, value).apply()
+            }
             _accentLFlow.value = value
         }
 
     var customBgH: Float
-        get() = prefs.getFloat(KEY_CUSTOM_BG_H, 0f)
+        get() = if (::prefs.isInitialized) prefs.getFloat(KEY_CUSTOM_BG_H, 0f) else _bgHFlow.value
         set(value) {
-            prefs.edit().putFloat(KEY_CUSTOM_BG_H, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putFloat(KEY_CUSTOM_BG_H, value).apply()
+            }
             _bgHFlow.value = value
         }
 
     var customBgS: Float
-        get() = prefs.getFloat(KEY_CUSTOM_BG_S, 0f)
+        get() = if (::prefs.isInitialized) prefs.getFloat(KEY_CUSTOM_BG_S, 0f) else _bgSFlow.value
         set(value) {
-            prefs.edit().putFloat(KEY_CUSTOM_BG_S, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putFloat(KEY_CUSTOM_BG_S, value).apply()
+            }
             _bgSFlow.value = value
         }
 
     var customBgL: Float
-        get() = prefs.getFloat(KEY_CUSTOM_BG_L, 98f)
+        get() = if (::prefs.isInitialized) prefs.getFloat(KEY_CUSTOM_BG_L, 98f) else _bgLFlow.value
         set(value) {
-            prefs.edit().putFloat(KEY_CUSTOM_BG_L, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putFloat(KEY_CUSTOM_BG_L, value).apply()
+            }
             _bgLFlow.value = value
         }
 
     var gridColumns: Int
-        get() = prefs.getInt(KEY_GRID_COLUMNS, 2)
+        get() = if (::prefs.isInitialized) prefs.getInt(KEY_GRID_COLUMNS, 2) else _gridColumnsFlow.value
         set(value) {
-            prefs.edit().putInt(KEY_GRID_COLUMNS, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putInt(KEY_GRID_COLUMNS, value).apply()
+            }
             _gridColumnsFlow.value = value
         }
 
     var showMatchStatus: Boolean
-        get() = prefs.getBoolean(KEY_SHOW_MATCH_STATUS, false)
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_SHOW_MATCH_STATUS, false) else _showMatchStatusFlow.value
         set(value) {
-            prefs.edit().putBoolean(KEY_SHOW_MATCH_STATUS, value).apply()
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_SHOW_MATCH_STATUS, value).apply()
+            }
             _showMatchStatusFlow.value = value
         }
 
@@ -325,6 +411,68 @@ object ThemePrefs {
             }
             _updateChannelFlow.value = value
         }
+}
+
+enum class ColorVariant(
+    val key: String,
+    val label: String,
+    val description: String
+) {
+    EXPRESSIVE("expressive", "表现力 (Expressive)", "M3 Expressive 多色相灵动撞色与高表现力强调色"),
+    TONAL_SPOT("tonal_spot", "色调聚光 (Tonal Spot)", "经典 Material You 温和和谐主色调"),
+    VIBRANT("vibrant", "活力高饱和 (Vibrant)", "高纯度色彩与鲜活次级容器"),
+    FIDELITY("fidelity", "忠实还原 (Fidelity)", "精准贴合壁纸或歌曲封面的原始主色"),
+    CONTENT("content", "内容自适应 (Content)", "围绕源色彩构建深邃内敛的同色系层次"),
+    NEUTRAL("neutral", "柔和中性 (Neutral)", "低饱和度雅致灰调，突出内容本身"),
+    MONOCHROME("monochrome", "纯粹单色 (Monochrome)", "极简无彩色黑白灰高反差视觉");
+
+    companion object {
+        fun fromKey(key: String): ColorVariant =
+            entries.find { it.key.equals(key, ignoreCase = true) } ?: EXPRESSIVE
+    }
+}
+
+enum class ContrastLevel(
+    val key: String,
+    val label: String,
+    val shortLabel: String,
+    val description: String,
+    val levelValue: Float,
+    val minTextContrast: Float,
+    val minControlContrast: Float
+) {
+    STANDARD(
+        key = "standard",
+        label = "标准对比度 (0.0)",
+        shortLabel = "标准",
+        description = "平衡柔和的色阶过渡，符合 WCAG AA 阅读标准",
+        levelValue = 0.0f,
+        minTextContrast = 4.5f,
+        minControlContrast = 3.0f
+    ),
+    MEDIUM(
+        key = "medium",
+        label = "中等对比度 (+0.5)",
+        shortLabel = "中等",
+        description = "增强按钮容器与背景的明暗反差，提升户外与歌词辨识度",
+        levelValue = 0.5f,
+        minTextContrast = 6.0f,
+        minControlContrast = 3.8f
+    ),
+    HIGH(
+        key = "high",
+        label = "高对比度 (+1.0)",
+        shortLabel = "高对比",
+        description = "最大化前景与背景的对比度（WCAG AAA 级），轮廓鲜明锐利",
+        levelValue = 1.0f,
+        minTextContrast = 7.5f,
+        minControlContrast = 4.5f
+    );
+
+    companion object {
+        fun fromKey(key: String): ContrastLevel =
+            entries.find { it.key.equals(key, ignoreCase = true) } ?: STANDARD
+    }
 }
 
 enum class UpdateChannel(val key: String, val label: String) {

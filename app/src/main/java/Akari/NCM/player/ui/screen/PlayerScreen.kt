@@ -9,13 +9,25 @@ import Akari.NCM.player.core.PlayerState
 import Akari.NCM.player.core.RepeatMode
 import Akari.NCM.player.data.LyricResult
 import Akari.NCM.player.data.LyricsManager
+import Akari.NCM.player.data.ThemePrefs
+import Akari.NCM.player.ui.component.AdaptiveButtonGroup
+import Akari.NCM.player.ui.component.AdaptiveButtonSpec
+import Akari.NCM.player.ui.component.ExpressiveButtonStyle
 import Akari.NCM.player.ui.component.PredictiveBackEasing
 import Akari.NCM.player.ui.component.WordByWordLyricView
 import Akari.NCM.player.ui.component.predictiveBackForeground
 import Akari.NCM.player.ui.component.rememberPredictiveBackState
 import Akari.NCM.player.ui.component.rememberSmoothPosition
+import Akari.NCM.player.ui.theme.PlayerExpressivePalette
+import Akari.NCM.player.ui.theme.buildPlayerExpressivePalette
+import Akari.NCM.player.ui.theme.ensureContrast
+import Akari.NCM.player.ui.theme.extractAverageColorFromBitmap
+import Akari.NCM.player.ui.theme.extractSeedColorFromBitmap
+import Akari.NCM.player.ui.theme.rememberIsDarkTheme
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.res.Configuration
+import android.graphics.drawable.BitmapDrawable
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -30,8 +42,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
@@ -39,15 +53,6 @@ import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
-
-import androidx.compose.ui.platform.LocalConfiguration
-import android.content.res.Configuration
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
-
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -63,8 +68,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -73,18 +81,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
 import coil.size.Size
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
 // 插值工具
@@ -97,7 +106,7 @@ private val EaseInOut = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 fun PlayerScreen(
     playerState: PlayerState,
     playerController: PlayerController,
-    ncmApi: Akari.NCM.player.api.NcmApi,
+    ncmApi: NcmApi,
     onBackClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit,
     onToggleQueueClick: () -> Unit
@@ -106,46 +115,109 @@ fun PlayerScreen(
     val density = LocalDensity.current
     val rawTrack by playerState.currentMedia.collectAsState()
 
-    // 播放页面为沉浸式全屏深色背景，强制状态栏与导航栏图标为亮色（白色），退出时恢复
+    val isDarkTheme = rememberIsDarkTheme()
+    val colorVariant by ThemePrefs.colorVariantFlow.collectAsState()
+    val contrastLevel by ThemePrefs.contrastLevelFlow.collectAsState()
+    val useMaterialBg by ThemePrefs.useMaterialBgFlow.collectAsState()
+    val blurCoverBg by ThemePrefs.playerBlurCoverBgFlow.collectAsState()
+    val fallbackAccentInt by ThemePrefs.accentColorFlow.collectAsState()
+    val defaultSeedColor = remember(fallbackAccentInt) { Color(fallbackAccentInt.toInt()) }
+
+    // 缓存当前渲染曲目与封面取色结果
+    var displayedTrack by remember { mutableStateOf(rawTrack) }
+    var extractedSeedColor by remember { mutableStateOf(defaultSeedColor) }
+    var extractedAvgColor by remember { mutableStateOf<Color?>(null) }
+
+    LaunchedEffect(rawTrack, defaultSeedColor) {
+        val target = rawTrack
+        if (target == null) {
+            displayedTrack = null
+            extractedSeedColor = defaultSeedColor
+            extractedAvgColor = null
+        } else {
+            val url = target.coverUrl
+            if (!url.isNullOrEmpty()) {
+                val pair = withTimeoutOrNull(650) {
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            val request = ImageRequest.Builder(context)
+                                .data(url)
+                                .allowHardware(false)
+                                .size(128, 128)
+                                .build()
+                            val result = context.imageLoader.execute(request)
+                            val bmp = (result.drawable as? BitmapDrawable)?.bitmap
+                            if (bmp != null) {
+                                val seed = extractSeedColorFromBitmap(bmp, defaultSeedColor)
+                                val avg = extractAverageColorFromBitmap(bmp, Color(0xFF16161D))
+                                seed to avg
+                            } else null
+                        }.getOrNull()
+                    }
+                }
+                if (pair != null) {
+                    extractedSeedColor = pair.first
+                    extractedAvgColor = pair.second
+                } else {
+                    extractedSeedColor = defaultSeedColor
+                    extractedAvgColor = null
+                }
+            } else {
+                extractedSeedColor = defaultSeedColor
+                extractedAvgColor = null
+            }
+            displayedTrack = target
+        }
+    }
+
+    val animatedSeedColor by animateColorAsState(
+        targetValue = extractedSeedColor,
+        animationSpec = tween(480, easing = FastOutSlowInEasing),
+        label = "PlayerCoverSeedColor"
+    )
+    val animatedAvgColor by animateColorAsState(
+        targetValue = extractedAvgColor ?: Color(0xFF16161D),
+        animationSpec = tween(480, easing = FastOutSlowInEasing),
+        label = "PlayerCoverAvgColor"
+    )
+
+    val palette = remember(
+        animatedSeedColor,
+        animatedAvgColor,
+        extractedAvgColor,
+        isDarkTheme,
+        colorVariant,
+        contrastLevel,
+        blurCoverBg,
+        useMaterialBg
+    ) {
+        buildPlayerExpressivePalette(
+            coverSeedColor = animatedSeedColor,
+            coverAverageColor = if (extractedAvgColor != null) animatedAvgColor else null,
+            darkTheme = isDarkTheme,
+            variant = colorVariant,
+            contrastLevel = contrastLevel,
+            blurCoverBackground = blurCoverBg,
+            useMaterialBackground = useMaterialBg
+        )
+    }
+
+    // 根据播放页面当前背景明暗动态调整状态栏与导航栏图标颜色，退出时恢复
     val view = LocalView.current
     if (!view.isInEditMode) {
-        DisposableEffect(view) {
+        DisposableEffect(view, palette.isLightBackground) {
             val window = (view.context as? Activity)?.window
             val insetsController = window?.let { WindowCompat.getInsetsController(it, view) }
             val originalLightStatusBars = insetsController?.isAppearanceLightStatusBars ?: false
             val originalLightNavBars = insetsController?.isAppearanceLightNavigationBars ?: false
 
-            insetsController?.isAppearanceLightStatusBars = false
-            insetsController?.isAppearanceLightNavigationBars = false
+            insetsController?.isAppearanceLightStatusBars = palette.isLightBackground
+            insetsController?.isAppearanceLightNavigationBars = palette.isLightBackground
 
             onDispose {
                 insetsController?.isAppearanceLightStatusBars = originalLightStatusBars
                 insetsController?.isAppearanceLightNavigationBars = originalLightNavBars
             }
-        }
-    }
-
-    // 缓存缓冲当前渲染曲目：网络/磁盘封面图片加载完成前不切换曲目信息与画面，防切歌空白
-    var displayedTrack by remember { mutableStateOf(rawTrack) }
-
-    LaunchedEffect(rawTrack) {
-        val target = rawTrack
-        if (target == null) {
-            displayedTrack = null
-        } else if (displayedTrack == null || displayedTrack?.id != target.id || displayedTrack?.coverUrl != target.coverUrl) {
-            val url = target.coverUrl
-            if (!url.isNullOrEmpty()) {
-                withTimeoutOrNull(450) {
-                    val request = ImageRequest.Builder(context)
-                        .data(url)
-                        .size(Size.ORIGINAL)
-                        .build()
-                    context.imageLoader.execute(request)
-                }
-            }
-            displayedTrack = target
-        } else {
-            displayedTrack = target
         }
     }
 
@@ -155,7 +227,8 @@ fun PlayerScreen(
     var showPlayQueuePage by remember { mutableStateOf(false) }
 
     val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE || configuration.screenWidthDp > configuration.screenHeightDp
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+        configuration.screenWidthDp > configuration.screenHeightDp
 
     val queueProgress by animateFloatAsState(
         targetValue = if (showPlayQueuePage && !isLandscape) 1f else 0f,
@@ -174,35 +247,20 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F172A))
+            .background(palette.effectiveBackgroundColor)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null
             ) {}
     ) {
-        // ── 1. 全局沉浸式高斯模糊背景 (Salt Player 风格：鲜艳高饱和、无重度灰黑遮罩) ──
-        if (coverUrl != null) {
-            AsyncImage(
-                model            = coverUrl,
-                contentDescription = null,
-                modifier         = Modifier.fillMaxSize().blur(70.dp),
-                contentScale     = ContentScale.Crop,
-                alpha            = 0.85f
-            )
-        }
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0x66000000),
-                        Color(0x80000000),
-                        Color(0xB3000000)
-                    )
-                )
-            )
+        // ── 1. 全局背景层：根据开关选择模糊歌曲封面或纯色/Material取色背景 ──
+        PlayerBackgroundLayer(
+            coverUrl = coverUrl,
+            blurCoverBg = blurCoverBg,
+            palette = palette
         )
 
-        // ── 2. 主播放界面（带有 3D 视差推退与微缩放效果，随预见性返回手势实时还原）────────
+        // ── 2. 主播放界面（带有 3D 视差推退与微缩放效果）────────
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -223,6 +281,8 @@ fun PlayerScreen(
                 playerController = playerController,
                 displayedTrack = activeTrack,
                 ncmApi = ncmApi,
+                palette = palette,
+                blurCoverBg = blurCoverBg,
                 isQueueOpen = showPlayQueuePage,
                 onBackClick = onBackClick,
                 onAddToPlaylistClick = onAddToPlaylistClick,
@@ -237,10 +297,11 @@ fun PlayerScreen(
             val isPlaying by playerState.isPlaying.collectAsState()
             val infinitePlayMode by playerState.infinitePlayMode.collectAsState()
             val isFetchingRecommendations by playerState.isFetchingRecommendations.collectAsState()
-            
-            @OptIn(ExperimentalMaterial3Api::class)
-            androidx.compose.material3.ModalBottomSheet(
-                onDismissRequest = { showPlayQueuePage = false }
+
+            ModalBottomSheet(
+                onDismissRequest = { showPlayQueuePage = false },
+                containerColor = palette.cardSurfaceColor,
+                contentColor = palette.primaryTextColor
             ) {
                 Column(
                     modifier = Modifier
@@ -258,12 +319,13 @@ fun PlayerScreen(
                         Text(
                             "播放队列 (${playlist.size})",
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = palette.primaryTextColor
                         )
                         if (infinitePlayMode.isActive) {
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.primaryContainer
+                                color = palette.secondaryButtonContainer
                             ) {
                                 Row(
                                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
@@ -272,7 +334,7 @@ fun PlayerScreen(
                                     Text(
                                         text = "∞ ${infinitePlayMode.label}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        color = palette.onSecondaryButton,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -281,14 +343,14 @@ fun PlayerScreen(
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(12.dp),
                                             strokeWidth = 1.5.dp,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            color = palette.onSecondaryButton
                                         )
                                     }
                                     Spacer(Modifier.width(6.dp))
                                     Icon(
                                         imageVector = Icons.Rounded.Close,
                                         contentDescription = "退出无限推荐",
-                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        tint = palette.onSecondaryButton,
                                         modifier = Modifier
                                             .size(14.dp)
                                             .clickable { playerController.disableInfinitePlayback() }
@@ -299,12 +361,14 @@ fun PlayerScreen(
                     }
                     if (playlist.isEmpty()) {
                         Box(
-                            modifier = Modifier.fillMaxWidth().height(200.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 if (isFetchingRecommendations) "正在加载推荐曲目..." else "队列为空",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = palette.secondaryTextColor
                             )
                         }
                     } else {
@@ -313,7 +377,7 @@ fun PlayerScreen(
                             contentPadding = PaddingValues(vertical = 8.dp)
                         ) {
                             itemsIndexed(playlist) { index, media ->
-                                Akari.NCM.player.ui.screen.SongItem(
+                                SongItem(
                                     media = media,
                                     isCurrentTrack = index == currentIndex,
                                     isPlaying = isPlaying && index == currentIndex,
@@ -352,9 +416,50 @@ fun PlayerScreen(
                     playerState = playerState,
                     playerController = playerController,
                     displayedTrack = activeTrack,
+                    palette = palette,
+                    blurCoverBg = blurCoverBg,
                     onDismiss = { showPlayQueuePage = false }
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun PlayerBackgroundLayer(
+    coverUrl: String?,
+    blurCoverBg: Boolean,
+    palette: PlayerExpressivePalette
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(palette.effectiveBackgroundColor)
+    ) {
+        if (blurCoverBg && coverUrl != null) {
+            AsyncImage(
+                model = coverUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(72.dp),
+                contentScale = ContentScale.Crop,
+                alpha = 0.82f
+            )
+            // 保护前景对比度的渐变遮罩层
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color(0x4D06060A),
+                                Color(0x7306060A),
+                                Color(0x9E06060A)
+                            )
+                        )
+                    )
+            )
         }
     }
 }
@@ -366,7 +471,9 @@ private fun PlayerMainContentView(
     playerState: PlayerState,
     playerController: PlayerController,
     displayedTrack: PlayableMedia?,
-    ncmApi: Akari.NCM.player.api.NcmApi,
+    ncmApi: NcmApi,
+    palette: PlayerExpressivePalette,
+    blurCoverBg: Boolean,
     isQueueOpen: Boolean = false,
     onBackClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit,
@@ -391,11 +498,16 @@ private fun PlayerMainContentView(
             usbDeviceName = connectedUsbDeviceName,
             uacVersion = usbUacVersion,
             loudnessState = loudnessState,
+            blurCoverBg = blurCoverBg,
+            palette = palette,
             onDismiss = { showQuickFunctionsDialog = false },
             onShowStatusClick = { showPlaybackStatusDialog = true },
             onShowUsbExclusiveClick = { showUsbExclusiveDialog = true },
             onToggleLoudness = {
                 playerController.setVolumeNormalizationEnabled(!loudnessState.isEnabled)
+            },
+            onToggleBlurCoverBg = {
+                ThemePrefs.playerBlurCoverBackground = !blurCoverBg
             },
             onAddToPlaylistClick = onAddToPlaylistClick
         )
@@ -407,6 +519,7 @@ private fun PlayerMainContentView(
             usbDeviceName = connectedUsbDeviceName,
             uacVersion = usbUacVersion,
             deviceDetails = usbDeviceDetails,
+            palette = palette,
             onToggleExclusive = { enabled ->
                 playerController.setUsbExclusiveMode(enabled)
             },
@@ -423,6 +536,7 @@ private fun PlayerMainContentView(
             usbDeviceName = connectedUsbDeviceName,
             uacVersion = usbUacVersion,
             loudnessState = loudnessState,
+            palette = palette,
             onDismiss = { showPlaybackStatusDialog = false }
         )
     }
@@ -432,22 +546,22 @@ private fun PlayerMainContentView(
     val density = LocalDensity.current
 
     // ── 播放状态 ───────────────────────────────────────────────────────────────
-    val isPlaying      by playerState.isPlaying.collectAsState()
-    val positionMs     by playerState.currentPositionMs.collectAsState()
-    val durationMs     by playerState.durationMs.collectAsState()
-    val repeatMode     by playerState.repeatMode.collectAsState()
+    val isPlaying by playerState.isPlaying.collectAsState()
+    val positionMs by playerState.currentPositionMs.collectAsState()
+    val durationMs by playerState.durationMs.collectAsState()
+    val repeatMode by playerState.repeatMode.collectAsState()
     val shuffleEnabled by playerState.shuffleEnabled.collectAsState()
     val infinitePlayMode by playerState.infinitePlayMode.collectAsState()
     val smoothPositionMs by rememberSmoothPosition(positionMs, isPlaying, durationMs)
 
     // ── 歌词 ───────────────────────────────────────────────────────────────────
-    val lyricsManager   = remember { Akari.NCM.player.data.LyricsManager(context, ncmApi) }
-    var lyricResult     by remember { mutableStateOf(Akari.NCM.player.data.LyricResult(emptyList(), Akari.NCM.player.core.LyricSource.NONE)) }
+    val lyricsManager = remember { LyricsManager(context, ncmApi) }
+    var lyricResult by remember { mutableStateOf(LyricResult(emptyList(), LyricSource.NONE)) }
     var showTranslation by remember { mutableStateOf(true) }
 
     LaunchedEffect(currentTrack?.id) {
         lyricResult = currentTrack?.let { lyricsManager.loadLyrics(it) }
-            ?: Akari.NCM.player.data.LyricResult(emptyList(), Akari.NCM.player.core.LyricSource.NONE)
+            ?: LyricResult(emptyList(), LyricSource.NONE)
     }
 
     val currentLineIndex = remember(lyricResult.lines, smoothPositionMs) {
@@ -456,16 +570,15 @@ private fun PlayerMainContentView(
         else lines.indexOfLast { it.timeMs <= smoothPositionMs }.let { if (it == -1) 0 else it }
     }
 
-    // 当前播放歌词行
     val currentLyricLine = lyricResult.lines.getOrNull(currentLineIndex)
+    val nextLyricLineTimeMs = lyricResult.lines.getOrNull(currentLineIndex + 1)?.timeMs
 
     // ── 进度条拖拽 ─────────────────────────────────────────────────────────────
-    var isDragging     by remember { mutableStateOf(false) }
+    var isDragging by remember { mutableStateOf(false) }
     var dragPositionMs by remember { mutableStateOf(0L) }
 
     // ── 动画 ───────────────────────────────────────────────────────────────────
-    // progress = 0 → 封面大图模式   progress = 1 → 歌词全屏模式
-    val progress    = remember { Animatable(0f) }
+    val progress = remember { Animatable(0f) }
     var isLyricsMode by remember { mutableStateOf(false) }
     var lyricsBackDragProgress by remember { mutableFloatStateOf(0f) }
     var isLyricsBackDragging by remember { mutableStateOf(false) }
@@ -499,29 +612,27 @@ private fun PlayerMainContentView(
 
     // ── 位置量测：封面大图 ─────────────────────────────────────────────────────
     var largeCoverTopLeft by remember { mutableStateOf(Offset.Zero) }
-    var largeCoverSizePx  by remember { mutableStateOf(0f) }
+    var largeCoverSizePx by remember { mutableStateOf(0f) }
 
     // ── 位置量测：迷你封面目标 ─────────────────────────────────────────────────
     val miniCoverSizePx = with(density) { 52.dp.toPx() }
     var miniCoverTopLeft by remember { mutableStateOf(Offset.Zero) }
 
     // ── 动画插值：封面覆层 ─────────────────────────────────────────────────────
-    val coverX      = lerpF(largeCoverTopLeft.x, miniCoverTopLeft.x, p)
-    val coverY      = lerpF(largeCoverTopLeft.y, miniCoverTopLeft.y, p)
-    val coverW      = lerpF(largeCoverSizePx,    miniCoverSizePx,    p)
-    val cornerDp    = with(density) { lerpF(24f, 8f, p).toDp() }
-    val shadowDp    = with(density) { lerpF(20f, 2f, p).toDp() }
+    val coverX = lerpF(largeCoverTopLeft.x, miniCoverTopLeft.x, p)
+    val coverY = lerpF(largeCoverTopLeft.y, miniCoverTopLeft.y, p)
+    val coverW = lerpF(largeCoverSizePx, miniCoverSizePx, p)
+    val cornerDp = with(density) { lerpF(28f, 12f, p).toDp() }
+    val shadowDp = with(density) { lerpF(22f, 2f, p).toDp() }
 
     val coverUrl = currentTrack?.coverUrl
-
-    val prevLyricAlpha     = lerpF(1f, 0f, p)
+    val prevLyricAlpha = lerpF(1f, 0f, p)
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val isLandscape = maxWidth > maxHeight || maxWidth >= 550.dp
         val isShortLandscape = isLandscape && maxHeight < 500.dp
         val supportsLyricsToggle = !isLandscape || isShortLandscape
 
-        // 全屏歌词模式下的 AOSP 预见性返回手势：实时跟手插值封面与歌词透明度，退回封面大图视图
         PredictiveBackHandler(enabled = isLyricsMode && supportsLyricsToggle && !isQueueOpen) { backEvents ->
             jobRef.job?.cancel()
             try {
@@ -554,47 +665,32 @@ private fun PlayerMainContentView(
             }
         }
 
-        // ── 氛围背景 (Salt Player 风格：鲜艳高饱和、无重度灰黑遮罩) ───────────
-        Box(Modifier.fillMaxSize().background(Color(0xFF0F172A)))
-        if (coverUrl != null) {
-            AsyncImage(
-                model            = coverUrl,
-                contentDescription = null,
-                modifier         = Modifier.fillMaxSize().blur(70.dp),
-                contentScale     = ContentScale.Crop,
-                alpha            = 0.85f
-            )
-        }
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    listOf(
-                        Color(0x20000000),
-                        Color(0x40000000),
-                        Color(0x70000000)
-                    )
-                )
-            )
+        // ── 播放页背景层 ──
+        PlayerBackgroundLayer(
+            coverUrl = coverUrl,
+            blurCoverBg = blurCoverBg,
+            palette = palette
         )
 
         val TitleAndArtistBlock: @Composable (Modifier) -> Unit = { modifier ->
             Column(modifier = modifier) {
                 Text(
-                    text       = currentTrack?.title ?: "未在播放",
-                    fontSize   = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color      = Color.White,
-                    maxLines   = 1,
-                    overflow   = TextOverflow.Ellipsis
+                    text = currentTrack?.title ?: "未在播放",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = palette.primaryTextColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.height(2.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    text     = buildString {
+                    text = buildString {
                         append(currentTrack?.artist ?: "未知歌手")
-                        if (!currentTrack?.album.isNullOrBlank()) append(" / ${currentTrack?.album}")
+                        if (!currentTrack?.album.isNullOrBlank()) append(" · ${currentTrack?.album}")
                     },
                     fontSize = 14.sp,
-                    color    = Color.White.copy(alpha = 0.7f),
+                    fontWeight = FontWeight.Medium,
+                    color = palette.secondaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -603,10 +699,16 @@ private fun PlayerMainContentView(
 
         val CurrentLyricBlock: @Composable (Alignment.Horizontal) -> Unit = { align ->
             Box(
-                modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 64.dp),
                 contentAlignment = if (align == Alignment.CenterHorizontally) Alignment.Center else Alignment.CenterStart
             ) {
                 if (currentLyricLine != null) {
+                    val fallbackDur = if (nextLyricLineTimeMs != null && nextLyricLineTimeMs > currentLyricLine.timeMs) {
+                        (nextLyricLineTimeMs - currentLyricLine.timeMs).coerceIn(800L, 10000L)
+                    } else 3600L
+
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalAlignment = align,
@@ -616,26 +718,27 @@ private fun PlayerMainContentView(
                             line = currentLyricLine,
                             currentPositionMs = smoothPositionMs,
                             fontSize = 22.sp,
-                            lineHeight = 28.sp,
-                            activeColor = Color.White,
-                            inactiveColor = Color.White.copy(alpha = 0.4f),
+                            lineHeight = 30.sp,
+                            activeColor = palette.playedLyricColor,
+                            inactiveColor = palette.unplayedLyricColor,
                             horizontalAlignment = align,
-                            hasWordTimestamps = lyricResult.hasWordTimestamps
+                            hasWordTimestamps = lyricResult.hasWordTimestamps,
+                            fallbackLineDurationMs = fallbackDur
                         )
                         AnimatedVisibility(
                             visible = showTranslation && !currentLyricLine.translation.isNullOrBlank(),
-                            enter = fadeIn(animationSpec = tween(550, easing = FastOutSlowInEasing)) +
-                                    expandVertically(
-                                        animationSpec = tween(550, easing = FastOutSlowInEasing),
-                                        clip = false,
-                                        expandFrom = Alignment.Top
-                                    ),
-                            exit = fadeOut(animationSpec = tween(550, easing = FastOutSlowInEasing)) +
-                                    shrinkVertically(
-                                        animationSpec = tween(550, easing = FastOutSlowInEasing),
-                                        clip = false,
-                                        shrinkTowards = Alignment.Top
-                                    )
+                            enter = fadeIn(animationSpec = tween(450, easing = FastOutSlowInEasing)) +
+                                expandVertically(
+                                    animationSpec = tween(450, easing = FastOutSlowInEasing),
+                                    clip = false,
+                                    expandFrom = Alignment.Top
+                                ),
+                            exit = fadeOut(animationSpec = tween(450, easing = FastOutSlowInEasing)) +
+                                shrinkVertically(
+                                    animationSpec = tween(450, easing = FastOutSlowInEasing),
+                                    clip = false,
+                                    shrinkTowards = Alignment.Top
+                                )
                         ) {
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
@@ -643,12 +746,13 @@ private fun PlayerMainContentView(
                             ) {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    text       = currentLyricLine.translation?.trim().orEmpty(),
-                                    fontSize   = 16.sp,
-                                    color      = Color.White.copy(alpha = 0.75f),
-                                    textAlign  = if (align == Alignment.CenterHorizontally) TextAlign.Center else TextAlign.Start,
-                                    maxLines   = 1,
-                                    overflow   = TextOverflow.Ellipsis
+                                    text = currentLyricLine.translation?.trim().orEmpty(),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = palette.playedLyricColor,
+                                    textAlign = if (align == Alignment.CenterHorizontally) TextAlign.Center else TextAlign.Start,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -656,8 +760,9 @@ private fun PlayerMainContentView(
                 } else {
                     Text(
                         "暂无歌词 / 纯音乐",
-                        fontSize  = 16.sp,
-                        color     = Color.White.copy(alpha = 0.5f),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = palette.unplayedLyricColor,
                         textAlign = if (align == Alignment.CenterHorizontally) TextAlign.Center else TextAlign.Start
                     )
                 }
@@ -672,9 +777,9 @@ private fun PlayerMainContentView(
 
             Column(modifier = Modifier.fillMaxWidth()) {
                 Slider(
-                    value               = sliderProgress,
-                    onValueChange       = { pct ->
-                        isDragging     = true
+                    value = sliderProgress,
+                    onValueChange = { pct ->
+                        isDragging = true
                         dragPositionMs = (pct * durationMs).toLong()
                     },
                     onValueChangeFinished = {
@@ -683,120 +788,225 @@ private fun PlayerMainContentView(
                     },
                     thumb = {
                         Surface(
-                            shape           = CircleShape,
-                            color           = Color.White,
+                            shape = RoundedCornerShape(10.dp),
+                            color = palette.sliderActiveColor,
                             shadowElevation = 4.dp,
-                            modifier        = Modifier.size(16.dp)
+                            modifier = Modifier.size(width = 18.dp, height = 22.dp)
                         ) {}
                     },
                     track = { sliderState ->
                         SliderDefaults.Track(
-                            sliderState           = sliderState,
-                            colors                = SliderDefaults.colors(
-                                activeTrackColor   = Color.White,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+                            sliderState = sliderState,
+                            colors = SliderDefaults.colors(
+                                activeTrackColor = palette.sliderActiveColor,
+                                inactiveTrackColor = palette.sliderInactiveColor
                             ),
-                            drawStopIndicator     = null,
-                            thumbTrackGapSize     = 0.dp,
-                            trackInsideCornerSize = 0.dp
+                            drawStopIndicator = null,
+                            thumbTrackGapSize = 2.dp,
+                            trackInsideCornerSize = 6.dp
                         )
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Row(
-                    modifier              = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(formatTime(effectivePosition), fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f))
-                    Text(formatTime(durationMs),        fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f))
+                    Text(
+                        formatTime(effectivePosition),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = palette.playedLyricColor
+                    )
+                    Text(
+                        formatTime(durationMs),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = palette.secondaryTextColor
+                    )
                 }
             }
         }
 
         val ControlsBlock: @Composable () -> Unit = {
-            val skipSize = 48.dp
-            val skipIconSize = 36.dp
-            val playBgSize = 64.dp
-            val playIconSize = 36.dp
-            
+            val playCorner by animateDpAsState(
+                targetValue = if (isPlaying) 22.dp else 36.dp,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                ),
+                label = "ExpressivePlayCorner"
+            )
+
             Row(
-                modifier              = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment     = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { playerController.skipToPrevious() }, modifier = Modifier.size(skipSize)) {
-                    Icon(Icons.Rounded.SkipPrevious, "上一首", tint = Color.White, modifier = Modifier.size(skipIconSize))
-                }
                 Surface(
-                    onClick  = { playerController.togglePlayPause() },
-                    shape    = CircleShape,
-                    color    = Color.White,
-                    modifier = Modifier.size(playBgSize)
+                    onClick = { playerController.skipToPrevious() },
+                    shape = RoundedCornerShape(22.dp),
+                    color = palette.secondaryButtonContainer,
+                    border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.35f)),
+                    modifier = Modifier.size(width = 64.dp, height = 54.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.SkipPrevious,
+                            contentDescription = "上一首",
+                            tint = palette.onSecondaryButton,
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                }
+
+                Surface(
+                    onClick = { playerController.togglePlayPause() },
+                    shape = RoundedCornerShape(playCorner),
+                    color = palette.primaryButtonContainer,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.size(width = 88.dp, height = 68.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             contentDescription = "播放/暂停",
-                            tint               = Color(0xFF0F172A),
-                            modifier           = Modifier.size(playIconSize)
+                            tint = palette.onPrimaryButton,
+                            modifier = Modifier.size(38.dp)
                         )
                     }
                 }
-                IconButton(onClick = { playerController.skipToNext() }, modifier = Modifier.size(skipSize)) {
-                    Icon(Icons.Rounded.SkipNext, "下一首", tint = Color.White, modifier = Modifier.size(skipIconSize))
+
+                Surface(
+                    onClick = { playerController.skipToNext() },
+                    shape = RoundedCornerShape(22.dp),
+                    color = palette.secondaryButtonContainer,
+                    border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.35f)),
+                    modifier = Modifier.size(width = 64.dp, height = 54.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.SkipNext,
+                            contentDescription = "下一首",
+                            tint = palette.onSecondaryButton,
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
                 }
             }
         }
 
         val ToolbarBlock: @Composable () -> Unit = {
             val btnSize = 48.dp
-            val iconSize = 24.dp
+            val iconSize = 22.dp
             Row(
-                modifier              = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment     = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = {
-                    if (infinitePlayMode.isActive) {
-                        android.widget.Toast.makeText(context, "无限模式", android.widget.Toast.LENGTH_SHORT).show()
-                    } else if (shuffleEnabled) {
-                        playerController.toggleShuffle()
-                        playerController.setRepeatMode(RepeatMode.OFF)
-                    } else when (repeatMode) {
-                        RepeatMode.OFF -> playerController.setRepeatMode(RepeatMode.ONE)
-                        RepeatMode.ONE -> { playerController.setRepeatMode(RepeatMode.OFF); playerController.toggleShuffle() }
-                        else           -> playerController.setRepeatMode(RepeatMode.OFF)
-                    }
-                }, modifier = Modifier.size(btnSize)) {
-                    if (infinitePlayMode.isActive) {
-                        Text(
-                            text = "∞",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF60A5FA),
-                            modifier = Modifier.semantics {
-                                contentDescription = "无限模式"
+                val isModeHighlighted = infinitePlayMode.isActive || repeatMode == RepeatMode.ONE || shuffleEnabled
+                Surface(
+                    onClick = {
+                        if (infinitePlayMode.isActive) {
+                            android.widget.Toast.makeText(context, "无限模式", android.widget.Toast.LENGTH_SHORT).show()
+                        } else if (shuffleEnabled) {
+                            playerController.toggleShuffle()
+                            playerController.setRepeatMode(RepeatMode.OFF)
+                        } else when (repeatMode) {
+                            RepeatMode.OFF -> playerController.setRepeatMode(RepeatMode.ONE)
+                            RepeatMode.ONE -> {
+                                playerController.setRepeatMode(RepeatMode.OFF)
+                                playerController.toggleShuffle()
                             }
-                        )
-                    } else {
-                        val (modeIcon, modeDesc) = when {
-                            shuffleEnabled           -> Pair(Icons.Rounded.Shuffle,                   "随机播放")
-                            repeatMode == RepeatMode.ONE -> Pair(Icons.Rounded.RepeatOne,             "单曲循环")
-                            else                     -> Pair(Icons.AutoMirrored.Rounded.ArrowForward, "顺序播放")
+                            else -> playerController.setRepeatMode(RepeatMode.OFF)
                         }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (isModeHighlighted) palette.secondaryButtonContainer else Color.Transparent,
+                    modifier = Modifier.size(btnSize)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        if (infinitePlayMode.isActive) {
+                            Text(
+                                text = "∞",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isModeHighlighted) palette.onSecondaryButton else palette.playedLyricColor,
+                                modifier = Modifier.semantics {
+                                    contentDescription = "无限模式"
+                                }
+                            )
+                        } else {
+                            val (modeIcon, modeDesc) = when {
+                                shuffleEnabled -> Pair(Icons.Rounded.Shuffle, "随机播放")
+                                repeatMode == RepeatMode.ONE -> Pair(Icons.Rounded.RepeatOne, "单曲循环")
+                                else -> Pair(Icons.AutoMirrored.Rounded.ArrowForward, "顺序播放")
+                            }
+                            Icon(
+                                modeIcon,
+                                modeDesc,
+                                tint = if (isModeHighlighted) palette.onSecondaryButton else palette.primaryTextColor,
+                                modifier = Modifier.size(iconSize)
+                            )
+                        }
+                    }
+                }
+
+                // 封面模糊背景快速切换按钮
+                Surface(
+                    onClick = { ThemePrefs.playerBlurCoverBackground = !blurCoverBg },
+                    shape = RoundedCornerShape(16.dp),
+                    color = if (blurCoverBg) palette.secondaryButtonContainer else Color.Transparent,
+                    modifier = Modifier
+                        .size(btnSize)
+                        .testTag("btn_toggle_player_blur_bg")
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Icon(
-                            modeIcon, modeDesc,
-                            tint     = if (repeatMode == RepeatMode.ONE || shuffleEnabled) Color(0xFF60A5FA)
-                                       else Color.White.copy(alpha = 0.75f),
+                            imageVector = if (blurCoverBg) Icons.Rounded.BlurOn else Icons.Rounded.BlurOff,
+                            contentDescription = if (blurCoverBg) "关闭模糊封面背景" else "开启模糊封面背景",
+                            tint = if (blurCoverBg) palette.onSecondaryButton else palette.primaryTextColor,
                             modifier = Modifier.size(iconSize)
                         )
                     }
                 }
-                IconButton(onClick = onOpenQueueClick, modifier = Modifier.size(btnSize)) {
-                    Icon(Icons.AutoMirrored.Rounded.QueueMusic, "播放队列", tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(iconSize))
+
+                Surface(
+                    onClick = onOpenQueueClick,
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.Transparent,
+                    modifier = Modifier.size(btnSize)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.AutoMirrored.Rounded.QueueMusic,
+                            "播放队列",
+                            tint = palette.primaryTextColor,
+                            modifier = Modifier.size(iconSize)
+                        )
+                    }
                 }
-                IconButton(onClick = { showQuickFunctionsDialog = true }, modifier = Modifier.size(btnSize)) {
-                    Icon(Icons.Rounded.MoreHoriz, "快捷功能", tint = Color.White.copy(alpha = 0.75f), modifier = Modifier.size(iconSize))
+
+                Surface(
+                    onClick = { showQuickFunctionsDialog = true },
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.Transparent,
+                    modifier = Modifier.size(btnSize)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.MoreHoriz,
+                            "快捷功能",
+                            tint = palette.primaryTextColor,
+                            modifier = Modifier.size(iconSize)
+                        )
+                    }
                 }
             }
         }
@@ -808,17 +1018,18 @@ private fun PlayerMainContentView(
             if (isLandscape) {
                 val isShortLandscape = containerHeight < 500.dp
                 Row(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 16.dp)
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 32.dp, vertical = 16.dp)
                 ) {
                     if (isShortLandscape) {
-                        // Left Side: Title and Cover Art
                         BoxWithConstraints(
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                             contentAlignment = Alignment.Center
                         ) {
                             val titleHeight = 72.dp
                             val maxCoverSize = minOf(maxWidth, maxHeight - titleHeight) * 0.9f
-                            
+
                             Column(
                                 modifier = Modifier.width(maxCoverSize),
                                 horizontalAlignment = Alignment.Start,
@@ -829,12 +1040,12 @@ private fun PlayerMainContentView(
                                         .fillMaxWidth()
                                         .padding(bottom = 16.dp)
                                 )
-                                
+
                                 Box(
                                     modifier = Modifier
                                         .size(maxCoverSize)
-                                        .shadow(16.dp, RoundedCornerShape(16.dp))
-                                        .clip(RoundedCornerShape(16.dp))
+                                        .shadow(16.dp, RoundedCornerShape(24.dp))
+                                        .clip(RoundedCornerShape(24.dp))
                                         .clickable {
                                             if (isLyricsMode) goToCover() else goToLyrics()
                                         }
@@ -847,11 +1058,16 @@ private fun PlayerMainContentView(
                                             contentScale = ContentScale.Crop
                                         )
                                     } else {
-                                        Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
+                                        Box(
+                                            Modifier
+                                                .fillMaxSize()
+                                                .background(palette.secondaryButtonContainer),
+                                            contentAlignment = Alignment.Center
+                                        ) {
                                             Icon(
                                                 painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                                                 contentDescription = null,
-                                                tint = Color.White.copy(alpha = 0.45f),
+                                                tint = palette.onSecondaryButton,
                                                 modifier = Modifier.size(maxCoverSize * 0.45f)
                                             )
                                         }
@@ -862,7 +1078,6 @@ private fun PlayerMainContentView(
 
                         Spacer(Modifier.width(48.dp))
 
-                        // Right Side: Content
                         BoxWithConstraints(
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                             contentAlignment = Alignment.Center
@@ -875,12 +1090,13 @@ private fun PlayerMainContentView(
                                     currentIndex = currentLineIndex,
                                     currentPositionMs = smoothPositionMs,
                                     showTranslation = showTranslation,
+                                    palette = palette,
                                     listState = lyricsListState,
                                     onToggleTranslation = { showTranslation = !showTranslation },
                                     onLyricClick = { playerController.seekTo(it) }
                                 )
                             }
-                            
+
                             if (p < 1f) {
                                 Column(
                                     modifier = Modifier
@@ -889,30 +1105,26 @@ private fun PlayerMainContentView(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
-                                    Box(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), contentAlignment = Alignment.CenterEnd) {
-                                        val translateAlpha by animateFloatAsState(
-                                            targetValue = if (showTranslation) 1f else 0.45f,
-                                            animationSpec = tween(550, easing = FastOutSlowInEasing),
-                                            label = "LandscapeTranslateAlpha"
-                                        )
-                                        val translateBg by animateColorAsState(
-                                            targetValue = if (showTranslation) Color.White.copy(alpha = 0.15f) else Color.Transparent,
-                                            animationSpec = tween(550, easing = FastOutSlowInEasing),
-                                            label = "LandscapeTranslateBg"
-                                        )
-                                        IconButton(
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                                        contentAlignment = Alignment.CenterEnd
+                                    ) {
+                                        Surface(
                                             onClick = { showTranslation = !showTranslation },
-                                            modifier = Modifier.clip(CircleShape).background(translateBg)
+                                            shape = CircleShape,
+                                            color = if (showTranslation) palette.secondaryButtonContainer else Color.Transparent,
+                                            modifier = Modifier.size(48.dp)
                                         ) {
-                                            Icon(
-                                                Icons.Rounded.Translate,
-                                                contentDescription = "翻译开关",
-                                                tint = Color.White.copy(alpha = translateAlpha)
-                                            )
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    Icons.Rounded.Translate,
+                                                    contentDescription = "翻译开关",
+                                                    tint = if (showTranslation) palette.onSecondaryButton else palette.secondaryTextColor
+                                                )
+                                            }
                                         }
                                     }
 
-                                    // Account for translation button (56dp), spacers (32dp), progress (20dp), controls (64dp), toolbar (48dp)
                                     val controlsHeight = 220.dp
                                     val availableHeight = rightMaxHeight - controlsHeight
                                     val fixedLineHeight = 64.dp
@@ -934,7 +1146,11 @@ private fun PlayerMainContentView(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         if (lyricResult.lines.isEmpty()) {
-                                            Text("暂无歌词 / 纯音乐", fontSize = 16.sp, color = Color.White.copy(alpha = 0.5f))
+                                            Text(
+                                                "暂无歌词 / 纯音乐",
+                                                fontSize = 16.sp,
+                                                color = palette.unplayedLyricColor
+                                            )
                                         } else {
                                             val actualCurrent = maxOf(0, currentLineIndex)
                                             val start = maxOf(0, actualCurrent - (maxLinesCount - 1) / 2)
@@ -947,31 +1163,56 @@ private fun PlayerMainContentView(
                                                 horizontalAlignment = Alignment.CenterHorizontally
                                             ) {
                                                 linesToShow.forEachIndexed { i, line ->
-                                                    val isSelected = (adjStart + i) == actualCurrent
+                                                    val lineGlobalIndex = adjStart + i
+                                                    val isSelected = lineGlobalIndex == actualCurrent
+                                                    val isPlayedLine = lineGlobalIndex < actualCurrent
+                                                    val lineColor = when {
+                                                        isPlayedLine -> palette.playedLyricColor
+                                                        else -> palette.unplayedLyricColor
+                                                    }
+
                                                     Column(
-                                                        modifier = Modifier.fillMaxWidth().height(fixedLineHeight),
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .height(fixedLineHeight),
                                                         horizontalAlignment = Alignment.CenterHorizontally,
                                                         verticalArrangement = Arrangement.Center
                                                     ) {
-                                                        Text(
-                                                            text = if (line.text.isBlank()) "..." else line.text.trim(),
-                                                            fontSize = if (isSelected) 22.sp else 18.sp,
-                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                            color = Color.White.copy(alpha = if (isSelected) 1f else 0.4f),
-                                                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                                                        )
-                                                        if (showTranslation) {
-                                                            Spacer(Modifier.height(4.dp))
-                                                            if (!line.translation.isNullOrBlank()) {
-                                                                Text(
-                                                                    text = line.translation.trim(),
-                                                                    fontSize = if (isSelected) 16.sp else 14.sp,
-                                                                    color = Color.White.copy(alpha = if (isSelected) 0.75f else 0.3f),
-                                                                    maxLines = 1, overflow = TextOverflow.Ellipsis
-                                                                )
-                                                            } else {
-                                                                Text(" ", fontSize = if (isSelected) 16.sp else 14.sp)
-                                                            }
+                                                        if (isSelected) {
+                                                            val nextLineMs = lyricResult.lines.getOrNull(lineGlobalIndex + 1)?.timeMs
+                                                            val fallbackDur = if (nextLineMs != null && nextLineMs > line.timeMs) {
+                                                                (nextLineMs - line.timeMs).coerceIn(800L, 10000L)
+                                                            } else 3600L
+                                                            WordByWordLyricView(
+                                                                line = line,
+                                                                currentPositionMs = smoothPositionMs,
+                                                                fontSize = 21.sp,
+                                                                lineHeight = 27.sp,
+                                                                activeColor = palette.playedLyricColor,
+                                                                inactiveColor = palette.unplayedLyricColor,
+                                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                                hasWordTimestamps = lyricResult.hasWordTimestamps,
+                                                                fallbackLineDurationMs = fallbackDur
+                                                            )
+                                                        } else {
+                                                            Text(
+                                                                text = if (line.text.isBlank()) "..." else line.text.trim(),
+                                                                fontSize = 18.sp,
+                                                                fontWeight = if (isPlayedLine) FontWeight.SemiBold else FontWeight.Medium,
+                                                                color = lineColor,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
+                                                        if (showTranslation && !line.translation.isNullOrBlank()) {
+                                                            Spacer(Modifier.height(2.dp))
+                                                            Text(
+                                                                text = line.translation.trim(),
+                                                                fontSize = if (isSelected) 15.sp else 13.sp,
+                                                                color = if (isSelected || isPlayedLine) palette.playedLyricColor else palette.unplayedLyricColor,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
                                                         }
                                                     }
                                                 }
@@ -989,94 +1230,101 @@ private fun PlayerMainContentView(
                             }
                         }
                     } else {
-                        // Left Side: Player Controls & Info
-                    BoxWithConstraints(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        val controlsHeight = 150.dp
-                        val topPadding = 48.dp
-                        val availableHeightForCover = maxHeight - controlsHeight - topPadding - 16.dp
-                        val maxCoverSize = minOf(maxWidth * 0.85f, availableHeightForCover)
-                        
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(top = topPadding),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.SpaceBetween
+                        // Wide Landscape: Left Side Cover + Controls, Right Side Full Lyrics
+                        BoxWithConstraints(
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            // Cover
-                            Box(
-                                modifier = Modifier
-                                    .size(maxCoverSize)
-                                    .shadow(24.dp, RoundedCornerShape(16.dp))
-                                    .clip(RoundedCornerShape(16.dp))
+                            val controlsHeight = 160.dp
+                            val topPadding = 48.dp
+                            val availableHeightForCover = maxHeight - controlsHeight - topPadding - 16.dp
+                            val maxCoverSize = minOf(maxWidth * 0.85f, availableHeightForCover)
+
+                            Column(
+                                modifier = Modifier.fillMaxWidth().padding(top = topPadding),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.SpaceBetween
                             ) {
-                                if (coverUrl != null) {
-                                    AsyncImage(
-                                        model = coverUrl,
-                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxSize(),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = 0.08f)), contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
+                                Box(
+                                    modifier = Modifier
+                                        .size(maxCoverSize)
+                                        .shadow(24.dp, RoundedCornerShape(24.dp))
+                                        .clip(RoundedCornerShape(24.dp))
+                                ) {
+                                    if (coverUrl != null) {
+                                        AsyncImage(
+                                            model = coverUrl,
                                             contentDescription = null,
-                                            tint = Color.White.copy(alpha = 0.45f),
-                                            modifier = Modifier.size(maxCoverSize * 0.45f)
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
                                         )
+                                    } else {
+                                        Box(
+                                            Modifier
+                                                .fillMaxSize()
+                                                .background(palette.secondaryButtonContainer),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
+                                                contentDescription = null,
+                                                tint = palette.onSecondaryButton,
+                                                modifier = Modifier.size(maxCoverSize * 0.45f)
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                            
-                            Spacer(Modifier.height(24.dp))
-                            
-                            // Info & Controls Area
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                TitleAndArtistBlock(Modifier.fillMaxWidth(0.9f))
-                                Spacer(Modifier.height(16.dp))
-                                ProgressBarBlock()
-                                Spacer(Modifier.height(8.dp))
-                                ControlsBlock()
-                                Spacer(Modifier.height(8.dp))
-                                ToolbarBlock()
+
+                                Spacer(Modifier.height(20.dp))
+
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    TitleAndArtistBlock(Modifier.fillMaxWidth(0.92f))
+                                    Spacer(Modifier.height(14.dp))
+                                    ProgressBarBlock()
+                                    Spacer(Modifier.height(8.dp))
+                                    ControlsBlock()
+                                    Spacer(Modifier.height(8.dp))
+                                    ToolbarBlock()
+                                }
                             }
                         }
-                    }
 
-                    Spacer(Modifier.width(32.dp))
+                        Spacer(Modifier.width(32.dp))
 
-                    // Right Side: Full Screen Lyrics Always Visible
-                    Box(
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        SaltFullLyricsView(
-                            modifier = Modifier.fillMaxSize(),
-                            lyricResult = lyricResult,
-                            currentIndex = currentLineIndex,
-                            currentPositionMs = smoothPositionMs,
-                            showTranslation = showTranslation,
-                            listState = lyricsListState,
-                            onToggleTranslation = { showTranslation = !showTranslation },
-                            onLyricClick = { playerController.seekTo(it) }
-                        )
-                    }
+                        Box(
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            SaltFullLyricsView(
+                                modifier = Modifier.fillMaxSize(),
+                                lyricResult = lyricResult,
+                                currentIndex = currentLineIndex,
+                                currentPositionMs = smoothPositionMs,
+                                showTranslation = showTranslation,
+                                palette = palette,
+                                listState = lyricsListState,
+                                onToggleTranslation = { showTranslation = !showTranslation },
+                                onLyricClick = { playerController.seekTo(it) }
+                            )
+                        }
                     }
                 }
-                
-                // Back Button Absolute Top Left
+
                 Box(modifier = Modifier.fillMaxSize()) {
                     IconButton(onClick = onBackClick, modifier = Modifier.padding(16.dp)) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "返回", tint = Color.White, modifier = Modifier.size(28.dp))
+                        Icon(
+                            Icons.AutoMirrored.Rounded.ArrowBack,
+                            "返回",
+                            tint = palette.primaryTextColor,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                 }
             } else {
-                // Portrait Layout (Original)
+                // Portrait Layout
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -1084,34 +1332,46 @@ private fun PlayerMainContentView(
                 ) {
                     // ── 顶部栏 ────────────────────────────
                     Row(
-                        modifier           = Modifier.fillMaxWidth().height(64.dp),
+                        modifier = Modifier.fillMaxWidth().height(64.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment  = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = onBackClick) {
-                            Icon(Icons.AutoMirrored.Rounded.ArrowBack, "返回", tint = Color.White)
-                        }
-                        
-                        val topTranslateAlpha by animateFloatAsState(
-                            targetValue = if (showTranslation) 1f else 0.45f,
-                            animationSpec = tween(550, easing = FastOutSlowInEasing),
-                            label = "TopTranslateAlpha"
-                        )
-                        IconButton(
-                            onClick = { showTranslation = !showTranslation },
-                            modifier = Modifier.graphicsLayer { alpha = 1f - p }
+                        Surface(
+                            onClick = onBackClick,
+                            shape = CircleShape,
+                            color = palette.secondaryButtonContainer.copy(alpha = 0.72f),
+                            modifier = Modifier.size(48.dp)
                         ) {
-                            Icon(
-                                Icons.Rounded.Translate,
-                                contentDescription = "翻译开关",
-                                tint = Color.White.copy(alpha = topTranslateAlpha)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.AutoMirrored.Rounded.ArrowBack,
+                                    "返回",
+                                    tint = palette.onSecondaryButton
+                                )
+                            }
+                        }
+
+                        Surface(
+                            onClick = { showTranslation = !showTranslation },
+                            shape = CircleShape,
+                            color = if (showTranslation) palette.secondaryButtonContainer else Color.Transparent,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .graphicsLayer { alpha = 1f - p }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Rounded.Translate,
+                                    contentDescription = "翻译开关",
+                                    tint = if (showTranslation) palette.onSecondaryButton else palette.secondaryTextColor
+                                )
+                            }
                         }
                     }
 
                     // ── 标题行 ────────────────────────────────────────────────────────
                     Row(
-                        modifier          = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Spacer(Modifier.width((52.dp + 12.dp) * p))
@@ -1121,7 +1381,7 @@ private fun PlayerMainContentView(
                                 .weight(1f)
                                 .onGloballyPositioned { coords ->
                                     val colPos = coords.positionInRoot()
-                                    val colH   = coords.size.height.toFloat()
+                                    val colH = coords.size.height.toFloat()
                                     val mx = colPos.x - with(density) { (52.dp + 12.dp).toPx() }
                                     val my = colPos.y + (colH - miniCoverSizePx) / 2f
                                     if ((miniCoverTopLeft - Offset(mx, my)).getDistanceSquared() > 1f) {
@@ -1131,17 +1391,14 @@ private fun PlayerMainContentView(
                         )
                     }
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(14.dp))
 
                     // ── 内容区 ────────────────────────────────────────────────────────
                     BoxWithConstraints(
-                        modifier          = Modifier.weight(1f).fillMaxWidth(),
-                        contentAlignment  = Alignment.Center
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        val containerWidth = maxWidth
-                        val containerHeight = maxHeight
-                        
-                        val maxCoverSize = minOf(containerWidth * 0.82f, containerHeight * 0.75f)
+                        val maxCoverSize = minOf(maxWidth * 0.82f, maxHeight * 0.75f)
 
                         if (p < 1f) {
                             Column(
@@ -1155,7 +1412,7 @@ private fun PlayerMainContentView(
                                         .graphicsLayer { alpha = 0f }
                                         .onGloballyPositioned { coords ->
                                             largeCoverTopLeft = coords.positionInRoot()
-                                            largeCoverSizePx  = coords.size.width.toFloat()
+                                            largeCoverSizePx = coords.size.width.toFloat()
                                         }
                                 )
 
@@ -1169,7 +1426,7 @@ private fun PlayerMainContentView(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .graphicsLayer {
-                                                alpha        = prevLyricAlpha
+                                                alpha = prevLyricAlpha
                                             },
                                         contentAlignment = Alignment.Center
                                     ) {
@@ -1181,21 +1438,22 @@ private fun PlayerMainContentView(
 
                         if (isLyricsMode) {
                             SaltFullLyricsView(
-                                modifier             = Modifier.fillMaxSize().graphicsLayer { alpha = p },
-                                lyricResult          = lyricResult,
-                                currentIndex         = currentLineIndex,
-                                currentPositionMs    = smoothPositionMs,
-                                showTranslation      = showTranslation,
-                                listState            = lyricsListState,
-                                onToggleTranslation  = { showTranslation = !showTranslation },
-                                onLyricClick         = { playerController.seekTo(it) }
+                                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = p },
+                                lyricResult = lyricResult,
+                                currentIndex = currentLineIndex,
+                                currentPositionMs = smoothPositionMs,
+                                showTranslation = showTranslation,
+                                palette = palette,
+                                listState = lyricsListState,
+                                onToggleTranslation = { showTranslation = !showTranslation },
+                                onLyricClick = { playerController.seekTo(it) }
                             )
                         }
                     }
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(14.dp))
                     ProgressBarBlock()
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(10.dp))
                     ControlsBlock()
                     Spacer(Modifier.height(8.dp))
                     ToolbarBlock()
@@ -1213,36 +1471,35 @@ private fun PlayerMainContentView(
                     .size(with(density) { coverW.toDp() })
                     .shadow(shadowDp, RoundedCornerShape(cornerDp))
                     .clip(RoundedCornerShape(cornerDp))
-                    .background(Color.White.copy(alpha = 0.08f))
+                    .background(palette.secondaryButtonContainer)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        indication        = null
+                        indication = null
                     ) {
                         if (p < 0.5f) goToLyrics() else goToCover()
                     }
             ) {
                 if (coverUrl != null) {
                     AsyncImage(
-                        model              = coverUrl,
+                        model = coverUrl,
                         contentDescription = null,
-                        modifier           = Modifier.fillMaxSize(),
-                        contentScale       = ContentScale.Crop
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
                 } else {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Icon(
-                            painter            = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
+                            painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                             contentDescription = null,
-                            tint               = Color.White.copy(alpha = 0.45f),
-                            modifier           = Modifier.size(with(density) { (coverW * 0.45f).toDp() })
+                            tint = palette.onSecondaryButton,
+                            modifier = Modifier.size(with(density) { (coverW * 0.45f).toDp() })
                         )
                     }
                 }
             }
         }
-}
     }
-
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 独立播放队列视图 (PLAY QUEUE)
@@ -1252,35 +1509,26 @@ private fun SaltPlayQueueView(
     playerState: PlayerState,
     playerController: PlayerController,
     displayedTrack: PlayableMedia?,
+    palette: PlayerExpressivePalette,
+    blurCoverBg: Boolean,
     onDismiss: () -> Unit
 ) {
-    val currentTrack   = displayedTrack
-    val isPlaying      by playerState.isPlaying.collectAsState()
-    val playlist       by playerState.playlist.collectAsState()
-    val currentIndex   by playerState.currentIndex.collectAsState()
-    val repeatMode     by playerState.repeatMode.collectAsState()
+    val currentTrack = displayedTrack
+    val isPlaying by playerState.isPlaying.collectAsState()
+    val playlist by playerState.playlist.collectAsState()
+    val currentIndex by playerState.currentIndex.collectAsState()
+    val repeatMode by playerState.repeatMode.collectAsState()
     val shuffleEnabled by playerState.shuffleEnabled.collectAsState()
     val infinitePlayMode by playerState.infinitePlayMode.collectAsState()
     val isFetchingRecommendations by playerState.isFetchingRecommendations.collectAsState()
 
     val coverUrl = currentTrack?.coverUrl
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0F172A))) {
-        if (coverUrl != null) {
-            AsyncImage(
-                model            = coverUrl,
-                contentDescription = null,
-                modifier         = Modifier.fillMaxSize().blur(70.dp),
-                contentScale     = ContentScale.Crop,
-                alpha            = 0.85f
-            )
-        }
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    listOf(Color(0xB30F172A), Color(0xE60F172A), Color(0xFF0F172A))
-                )
-            )
+    Box(modifier = Modifier.fillMaxSize().background(palette.effectiveBackgroundColor)) {
+        PlayerBackgroundLayer(
+            coverUrl = coverUrl,
+            blurCoverBg = blurCoverBg,
+            palette = palette
         )
 
         Column(
@@ -1309,13 +1557,13 @@ private fun SaltPlayQueueView(
                             .width(36.dp)
                             .height(4.dp)
                             .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.4f))
+                            .background(palette.secondaryTextColor.copy(alpha = 0.5f))
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
                         text = "下滑此处返回播放界面",
                         fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.6f),
+                        color = palette.secondaryTextColor,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -1325,9 +1573,9 @@ private fun SaltPlayQueueView(
 
             // ── 顶部当前播放 Mini 卡片 ─────────────────────────────────────────
             Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color.White.copy(alpha = 0.12f),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                shape = RoundedCornerShape(20.dp),
+                color = palette.cardSurfaceColor.copy(alpha = 0.90f),
+                border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.35f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -1339,8 +1587,8 @@ private fun SaltPlayQueueView(
                     Box(
                         modifier = Modifier
                             .size(48.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color.White.copy(alpha = 0.1f)),
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(palette.secondaryButtonContainer),
                         contentAlignment = Alignment.Center
                     ) {
                         if (coverUrl != null) {
@@ -1354,7 +1602,7 @@ private fun SaltPlayQueueView(
                             Icon(
                                 painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
                                 contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.65f),
+                                tint = palette.onSecondaryButton,
                                 modifier = Modifier.size(28.dp)
                             )
                         }
@@ -1367,7 +1615,7 @@ private fun SaltPlayQueueView(
                             text = currentTrack?.title ?: "未在播放",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = palette.primaryTextColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1378,7 +1626,7 @@ private fun SaltPlayQueueView(
                                 if (!currentTrack?.album.isNullOrBlank()) append(" - ${currentTrack?.album}")
                             },
                             fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.65f),
+                            color = palette.secondaryTextColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1387,23 +1635,23 @@ private fun SaltPlayQueueView(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
                             onClick = { playerController.togglePlayPause() },
-                            modifier = Modifier.size(40.dp)
+                            modifier = Modifier.size(48.dp)
                         ) {
                             Icon(
                                 if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                 contentDescription = "播放/暂停",
-                                tint = Color.White,
+                                tint = palette.playedLyricColor,
                                 modifier = Modifier.size(28.dp)
                             )
                         }
                         IconButton(
                             onClick = { playerController.skipToNext() },
-                            modifier = Modifier.size(40.dp)
+                            modifier = Modifier.size(48.dp)
                         ) {
                             Icon(
                                 Icons.Rounded.SkipNext,
                                 contentDescription = "下一首",
-                                tint = Color.White,
+                                tint = palette.primaryTextColor,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
@@ -1424,7 +1672,7 @@ private fun SaltPlayQueueView(
                     text = "${if (playlist.isNotEmpty()) currentIndex + 1 else 0} / ${playlist.size}",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White.copy(alpha = 0.7f)
+                    color = palette.secondaryTextColor
                 )
 
                 Spacer(Modifier.weight(1f))
@@ -1433,7 +1681,7 @@ private fun SaltPlayQueueView(
                     text = if (infinitePlayMode.isActive) "∞ ${infinitePlayMode.label}" else "播放队列",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = palette.primaryTextColor,
                     letterSpacing = 0.5.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1445,7 +1693,7 @@ private fun SaltPlayQueueView(
                     CircularProgressIndicator(
                         modifier = Modifier.size(12.dp),
                         strokeWidth = 1.5.dp,
-                        color = Color.White.copy(alpha = 0.8f)
+                        color = palette.playedLyricColor
                     )
                 }
 
@@ -1459,18 +1707,19 @@ private fun SaltPlayQueueView(
                         Text(
                             text = "退出漫游",
                             fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.75f)
+                            fontWeight = FontWeight.Bold,
+                            color = palette.playedLyricColor
                         )
                     }
                 } else {
                     TextButton(
-                        onClick = { /* Clear or reset queue */ },
+                        onClick = { /* Keep queue */ },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                     ) {
                         Text(
-                            text = "清空",
+                            text = "队列",
                             fontSize = 12.sp,
-                            color = Color.White.copy(alpha = 0.5f)
+                            color = palette.secondaryTextColor
                         )
                     }
                 }
@@ -1489,7 +1738,7 @@ private fun SaltPlayQueueView(
                     Text(
                         "播放队列为空",
                         fontSize = 14.sp,
-                        color = Color.White.copy(alpha = 0.5f)
+                        color = palette.secondaryTextColor
                     )
                 }
             } else {
@@ -1503,9 +1752,9 @@ private fun SaltPlayQueueView(
                     itemsIndexed(playlist) { index, media ->
                         val isSelected = index == currentIndex
                         Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = if (isSelected) Color.White.copy(alpha = 0.16f) else Color.Transparent,
-                            border = if (isSelected) BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)) else null,
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isSelected) palette.secondaryButtonContainer else Color.Transparent,
+                            border = if (isSelected) BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.5f)) else null,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { playerController.skipToIndex(index) }
@@ -1521,7 +1770,7 @@ private fun SaltPlayQueueView(
                                         text = media.title,
                                         fontSize = 15.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.85f),
+                                        color = if (isSelected) palette.onSecondaryButton else palette.primaryTextColor,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -1532,7 +1781,7 @@ private fun SaltPlayQueueView(
                                             if (media.album.isNotBlank()) append(" - ${media.album}")
                                         },
                                         fontSize = 12.sp,
-                                        color = Color.White.copy(alpha = 0.55f),
+                                        color = if (isSelected) palette.onSecondaryButton.copy(alpha = 0.8f) else palette.secondaryTextColor,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -1542,7 +1791,7 @@ private fun SaltPlayQueueView(
                                     Icon(
                                         Icons.Rounded.Equalizer,
                                         contentDescription = "正在播放",
-                                        tint = Color(0xFF60A5FA),
+                                        tint = palette.onSecondaryButton,
                                         modifier = Modifier.size(20.dp)
                                     )
                                 }
@@ -1585,12 +1834,12 @@ private fun SaltPlayQueueView(
                             }
                         }
                     },
-                    shape = RoundedCornerShape(20.dp),
-                    color = Color.White.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
+                    shape = RoundedCornerShape(22.dp),
+                    color = palette.secondaryButtonContainer,
+                    border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.4f))
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (isInfinite) {
@@ -1598,7 +1847,7 @@ private fun SaltPlayQueueView(
                                 text = "∞",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White.copy(alpha = 0.85f),
+                                color = palette.onSecondaryButton,
                                 modifier = Modifier.semantics {
                                     contentDescription = "无限模式"
                                 }
@@ -1612,16 +1861,16 @@ private fun SaltPlayQueueView(
                             Icon(
                                 modeIcon,
                                 contentDescription = modeText,
-                                tint = Color.White.copy(alpha = 0.85f),
-                                modifier = Modifier.size(16.dp)
+                                tint = palette.onSecondaryButton,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = modeText,
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White.copy(alpha = 0.9f)
+                            fontWeight = FontWeight.Bold,
+                            color = palette.onSecondaryButton
                         )
                     }
                 }
@@ -1631,7 +1880,9 @@ private fun SaltPlayQueueView(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 全屏歌词视图
+// 全屏歌词视图：
+// - 已播放歌词（前序歌词行 index < currentIndex 与当前行已播放部分）使用强调色 palette.playedLyricColor
+// - 未播放歌词（后续歌词行 index > currentIndex 与当前行未播放部分）使用纯黑或纯白 palette.unplayedLyricColor
 // ─────────────────────────────────────────────────────────────────────────────
 @Composable
 private fun SaltFullLyricsView(
@@ -1640,6 +1891,7 @@ private fun SaltFullLyricsView(
     currentIndex: Int,
     currentPositionMs: Long,
     showTranslation: Boolean,
+    palette: PlayerExpressivePalette,
     listState: androidx.compose.foundation.lazy.LazyListState,
     onToggleTranslation: () -> Unit,
     onLyricClick: (Long) -> Unit
@@ -1656,7 +1908,6 @@ private fun SaltFullLyricsView(
 
         if (isDragged) return@LaunchedEffect
 
-        // 若用户刚刚拖拽完松手（且播放行未变），给予 2.5 秒阅读时间后再平滑居中回滚
         if (!isInitialScroll && currentIndex == lastScrolledIndex) {
             delay(2500)
         }
@@ -1676,7 +1927,6 @@ private fun SaltFullLyricsView(
             }
 
             if (target != null && viewportHeight > 0) {
-                // LazyListItemInfo.offset 不包含 beforeContentPadding，需加上 beforeContentPadding 换算为视口真实 Y 坐标
                 val itemTopInViewport = target.offset + layoutInfo.beforeContentPadding
                 val itemCenterInViewport = itemTopInViewport + (target.size / 2f)
                 val viewportCenter = viewportHeight / 2f
@@ -1710,11 +1960,16 @@ private fun SaltFullLyricsView(
             val halfHeight = maxHeight / 2
             if (lyricResult.lines.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂无歌词", fontSize = 18.sp, color = Color.White.copy(alpha = 0.5f))
+                    Text(
+                        "暂无歌词",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = palette.unplayedLyricColor
+                    )
                 }
             } else {
                 LazyColumn(
-                    state    = listState,
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
@@ -1723,82 +1978,88 @@ private fun SaltFullLyricsView(
                         }
                         .drawWithContent {
                             drawContent()
-                            val fadePx = 120.dp.toPx()
+                            val fadePx = 96.dp.toPx()
                             drawRect(
-                                brush     = Brush.verticalGradient(
+                                brush = Brush.verticalGradient(
                                     listOf(Color.Black, Color.Transparent),
                                     startY = 0f, endY = fadePx
                                 ),
                                 blendMode = BlendMode.DstOut
                             )
                             drawRect(
-                                brush     = Brush.verticalGradient(
+                                brush = Brush.verticalGradient(
                                     listOf(Color.Transparent, Color.Black),
                                     startY = size.height - fadePx, endY = size.height
                                 ),
                                 blendMode = BlendMode.DstOut
                             )
                         },
-                    contentPadding      = PaddingValues(top = halfHeight, bottom = halfHeight),
+                    contentPadding = PaddingValues(top = halfHeight, bottom = halfHeight),
                     verticalArrangement = Arrangement.spacedBy(20.dp)
                 ) {
                     itemsIndexed(lyricResult.lines) { index, line ->
                         val isSelected = index == currentIndex
+                        val isPlayedLine = index < currentIndex
 
-                        val lineAlpha by animateFloatAsState(
-                            targetValue = if (isSelected) 1.0f else 0.35f,
-                            animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
-                            label = "lineAlpha_$index"
-                        )
+                        // 已播放的前序歌词使用强调色，未播放的后续歌词使用纯黑或纯白
+                        val nonSelectedLineColor = if (isPlayedLine) {
+                            palette.playedLyricColor
+                        } else {
+                            palette.unplayedLyricColor
+                        }
 
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onLyricClick(line.timeMs) }
-                                .padding(vertical = 4.dp)
-                                .graphicsLayer {
-                                    alpha = lineAlpha
-                                },
+                                .padding(vertical = 4.dp, horizontal = 8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 if (isSelected) {
+                                    val nextLineMs = lyricResult.lines.getOrNull(index + 1)?.timeMs
+                                    val fallbackDur = if (nextLineMs != null && nextLineMs > line.timeMs) {
+                                        (nextLineMs - line.timeMs).coerceIn(800L, 10000L)
+                                    } else 3600L
+
                                     WordByWordLyricView(
                                         line = line,
                                         currentPositionMs = currentPositionMs,
-                                        fontSize = 20.sp,
-                                        lineHeight = 28.sp,
-                                        activeColor = Color.White,
-                                        inactiveColor = Color.White.copy(alpha = 0.4f),
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        lineHeight = 30.sp,
+                                        activeColor = palette.playedLyricColor,
+                                        inactiveColor = palette.unplayedLyricColor,
                                         horizontalAlignment = Alignment.CenterHorizontally,
-                                        hasWordTimestamps = hasWordTimestamps
+                                        hasWordTimestamps = hasWordTimestamps,
+                                        fallbackLineDurationMs = fallbackDur
                                     )
                                 } else {
                                     Text(
-                                        text       = line.text.trim(),
-                                        fontSize   = 20.sp,
-                                        fontWeight = FontWeight.Normal,
-                                        color      = Color.White,
-                                        lineHeight = 28.sp,
-                                        textAlign  = TextAlign.Center
+                                        text = line.text.trim(),
+                                        fontSize = 18.sp,
+                                        fontWeight = if (isPlayedLine) FontWeight.SemiBold else FontWeight.Medium,
+                                        color = nonSelectedLineColor,
+                                        lineHeight = 26.sp,
+                                        textAlign = TextAlign.Center
                                     )
                                 }
                             }
 
                             AnimatedVisibility(
                                 visible = showTranslation && !line.translation.isNullOrBlank(),
-                                enter = fadeIn(animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing)) +
-                                        expandVertically(
-                                            animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
-                                            clip = false,
-                                            expandFrom = Alignment.Top
-                                        ),
-                                exit = fadeOut(animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing)) +
-                                        shrinkVertically(
-                                            animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
-                                            clip = false,
-                                            shrinkTowards = Alignment.Top
-                                        )
+                                enter = fadeIn(animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)) +
+                                    expandVertically(
+                                        animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                                        clip = false,
+                                        expandFrom = Alignment.Top
+                                    ),
+                                exit = fadeOut(animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing)) +
+                                    shrinkVertically(
+                                        animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+                                        clip = false,
+                                        shrinkTowards = Alignment.Top
+                                    )
                             ) {
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1807,12 +2068,12 @@ private fun SaltFullLyricsView(
                                     Spacer(Modifier.height(4.dp))
                                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                                         Text(
-                                            text       = line.translation?.trim().orEmpty(),
-                                            fontSize   = 14.sp,
-                                            fontWeight = FontWeight.Normal,
-                                            color      = Color.White.copy(alpha = if (isSelected) 0.85f else 0.75f),
-                                            lineHeight = 22.sp,
-                                            textAlign  = TextAlign.Center
+                                            text = line.translation?.trim().orEmpty(),
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isSelected || isPlayedLine) palette.playedLyricColor else palette.unplayedLyricColor,
+                                            lineHeight = 20.sp,
+                                            textAlign = TextAlign.Center
                                         )
                                     }
                                 }
@@ -1842,38 +2103,35 @@ private fun SaltFullLyricsView(
                 LyricSource.NONE -> ""
             }
             if (badgeText.isNotEmpty()) {
-                Text(
-                    text = badgeText,
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.45f),
-                    fontWeight = FontWeight.Medium
-                )
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = palette.secondaryButtonContainer
+                ) {
+                    Text(
+                        text = badgeText,
+                        fontSize = 11.sp,
+                        color = palette.onSecondaryButton,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
             } else {
                 Spacer(Modifier.width(1.dp))
             }
 
-            val translateAlpha by animateFloatAsState(
-                targetValue = if (showTranslation) 1f else 0.45f,
-                animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
-                label = "FullLyricsTranslateAlpha"
-            )
-            val translateBg by animateColorAsState(
-                targetValue = if (showTranslation) Color.White.copy(alpha = 0.15f) else Color.Transparent,
-                animationSpec = tween(durationMillis = 550, easing = FastOutSlowInEasing),
-                label = "FullLyricsTranslateBg"
-            )
-
-            IconButton(
+            Surface(
                 onClick = onToggleTranslation,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(translateBg)
+                shape = CircleShape,
+                color = if (showTranslation) palette.secondaryButtonContainer else Color.Transparent,
+                modifier = Modifier.size(48.dp)
             ) {
-                Icon(
-                    Icons.Rounded.Translate,
-                    contentDescription = "翻译开关",
-                    tint = Color.White.copy(alpha = translateAlpha)
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Rounded.Translate,
+                        contentDescription = "翻译开关",
+                        tint = if (showTranslation) palette.onSecondaryButton else palette.secondaryTextColor
+                    )
+                }
             }
         }
     }
@@ -1891,56 +2149,100 @@ private fun QuickFunctionsDialog(
     usbDeviceName: String?,
     uacVersion: String? = null,
     loudnessState: Akari.NCM.player.core.loudness.LoudnessNormalizationState,
+    blurCoverBg: Boolean,
+    palette: PlayerExpressivePalette,
     onDismiss: () -> Unit,
     onShowStatusClick: () -> Unit,
     onShowUsbExclusiveClick: () -> Unit,
     onToggleLoudness: () -> Unit,
+    onToggleBlurCoverBg: () -> Unit,
     onAddToPlaylistClick: () -> Unit
 ) {
+    val cardText = ensureContrast(palette.primaryTextColor, palette.cardSurfaceColor, 4.5f)
+    val cardSubText = ensureContrast(palette.secondaryTextColor, palette.cardSurfaceColor, 3.8f)
+
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = Color(0xFF1E293B),
+            shape = RoundedCornerShape(28.dp),
+            color = palette.cardSurfaceColor,
+            border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.4f)),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
-                modifier = Modifier.padding(24.dp)
+                modifier = Modifier.padding(22.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("快捷功能", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("快捷功能与外观", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = cardText)
                     IconButton(onClick = onDismiss, modifier = Modifier.offset(x = 8.dp)) {
-                        Icon(Icons.Rounded.Close, contentDescription = "关闭", tint = Color.White.copy(alpha = 0.7f))
+                        Icon(Icons.Rounded.Close, contentDescription = "关闭", tint = cardSubText)
                     }
                 }
-                
-                Spacer(Modifier.height(16.dp))
+
+                Spacer(Modifier.height(14.dp))
 
                 Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.verticalScroll(rememberScrollState())
                 ) {
+                    // ── 播放页模糊封面背景切换开关 ──
+                    Surface(
+                        onClick = onToggleBlurCoverBg,
+                        shape = RoundedCornerShape(16.dp),
+                        color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("quick_toggle_blur_cover_bg")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (blurCoverBg) Icons.Rounded.BlurOn else Icons.Rounded.BlurOff,
+                                contentDescription = null,
+                                tint = palette.playedLyricColor,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("模糊歌曲封面背景", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                                Text(
+                                    if (blurCoverBg) "已开启 · 使用高斯模糊歌曲封面作为播放页背景"
+                                    else "已关闭 · 使用当前应用背景色（取色背景或纯黑/纯白）",
+                                    fontSize = 12.sp,
+                                    color = cardSubText
+                                )
+                            }
+                            Switch(
+                                checked = blurCoverBg,
+                                onCheckedChange = { onToggleBlurCoverBg() },
+                                modifier = Modifier.testTag("switch_player_blur_cover_bg")
+                            )
+                        }
+                    }
+
                     Surface(
                         onClick = {
                             onDismiss()
                             onShowStatusClick()
                         },
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.White.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(16.dp),
+                        color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = Color(0xFF60A5FA), modifier = Modifier.size(24.dp))
+                            Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(12.dp))
                             Column {
-                                Text("播放状态", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                                Text("查看实际比特率、采样率、位深及存储信息", fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f))
+                                Text("播放状态", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                                Text("查看实际比特率、采样率、位深及存储信息", fontSize = 12.sp, color = cardSubText)
                             }
                         }
                     }
@@ -1950,26 +2252,32 @@ private fun QuickFunctionsDialog(
                             onDismiss()
                             onShowUsbExclusiveClick()
                         },
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.White.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(16.dp),
+                        color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Rounded.Usb, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(24.dp))
+                            Icon(Icons.Rounded.Usb, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("独占 USB 通道", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                    Text("独占 USB 通道", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
                                     if (isUsbExclusive && !usbDeviceName.isNullOrBlank()) {
                                         Spacer(Modifier.width(6.dp))
                                         Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = Color(0xFF10B981).copy(alpha = 0.2f)
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = palette.primaryButtonContainer
                                         ) {
-                                            Text("ON", fontSize = 10.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            Text(
+                                                "ON",
+                                                fontSize = 10.sp,
+                                                color = palette.onPrimaryButton,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                            )
                                         }
                                     }
                                 }
@@ -1979,40 +2287,46 @@ private fun QuickFunctionsDialog(
                                     !usbDeviceName.isNullOrBlank() -> "已检测到: $usbDeviceName$uacTag (点击配置)"
                                     else -> "基于方案三实现硬件接口排他独占与直通"
                                 }
-                                Text(subText, fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(subText, fontSize = 12.sp, color = cardSubText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
                     }
 
                     Surface(
                         onClick = onToggleLoudness,
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.White.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(16.dp),
+                        color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(24.dp))
+                            Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("音量均衡 (EBU R128)", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                    Text("音量均衡 (EBU R128)", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
                                     if (loudnessState.isEnabled) {
                                         Spacer(Modifier.width(6.dp))
                                         Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = Color(0xFF10B981).copy(alpha = 0.2f)
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = palette.primaryButtonContainer
                                         ) {
-                                            Text("ON", fontSize = 10.sp, color = Color(0xFF34D399), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            Text(
+                                                "ON",
+                                                fontSize = 10.sp,
+                                                color = palette.onPrimaryButton,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                            )
                                         }
                                     }
                                 }
                                 Text(
                                     loudnessState.statusSummary,
                                     fontSize = 12.sp,
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = cardSubText,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -2025,19 +2339,19 @@ private fun QuickFunctionsDialog(
                             onDismiss()
                             onAddToPlaylistClick()
                         },
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color.White.copy(alpha = 0.08f),
+                        shape = RoundedCornerShape(16.dp),
+                        color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(24.dp))
+                            Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
                             Spacer(Modifier.width(12.dp))
                             Column {
-                                Text("添加到歌单", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                                Text("将当前歌曲添加至自定义本地或云端歌单", fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f))
+                                Text("添加到歌单", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                                Text("将当前歌曲添加至自定义本地或云端歌单", fontSize = 12.sp, color = cardSubText)
                             }
                         }
                     }
@@ -2053,33 +2367,44 @@ private fun UsbExclusiveDialog(
     usbDeviceName: String?,
     uacVersion: String?,
     deviceDetails: Akari.NCM.player.core.UsbDeviceDetails?,
+    palette: PlayerExpressivePalette,
     onToggleExclusive: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val hasDevice = !usbDeviceName.isNullOrBlank()
     val isUac2 = uacVersion?.contains("2.0") == true
     val isUac3 = uacVersion?.contains("3.0") == true
-    val isClaimed = deviceDetails?.isExclusiveClaimed == true
+    val cardText = ensureContrast(palette.primaryTextColor, palette.cardSurfaceColor, 4.5f)
+    val cardSubText = ensureContrast(palette.secondaryTextColor, palette.cardSurfaceColor, 3.8f)
 
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("完成", color = Color(0xFF60A5FA))
-            }
+            AdaptiveButtonGroup(
+                buttons = listOf(
+                    AdaptiveButtonSpec(
+                        text = "完成",
+                        onClick = onDismiss,
+                        style = ExpressiveButtonStyle.FILLED,
+                        containerColor = palette.primaryButtonContainer,
+                        contentColor = palette.onPrimaryButton
+                    )
+                ),
+                backgroundForContrast = palette.cardSurfaceColor
+            )
         },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Usb, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(24.dp))
+                Icon(Icons.Rounded.Usb, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("USB 硬件独占直通", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("USB 硬件独占直通", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = cardText)
             }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color.White.copy(alpha = 0.06f),
+                    shape = RoundedCornerShape(16.dp),
+                    color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -2088,13 +2413,13 @@ private fun UsbExclusiveDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("启用 USB 硬件独占", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                            Text("启用 USB 硬件独占", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = cardText)
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 if (hasDevice) "基于 USB Host 接口抢占 · 绕过 AudioFlinger 混音"
                                 else "未检测到 USB Audio 连入设备",
                                 fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.55f)
+                                color = cardSubText
                             )
                         }
                         Switch(
@@ -2106,9 +2431,9 @@ private fun UsbExclusiveDialog(
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (hasDevice) Color(0xFF10B981).copy(alpha = 0.10f) else Color(0xFFEF4444).copy(alpha = 0.10f),
-                    border = BorderStroke(1.dp, if (hasDevice) Color(0xFF10B981).copy(alpha = 0.35f) else Color(0xFFEF4444).copy(alpha = 0.35f)),
+                    shape = RoundedCornerShape(16.dp),
+                    color = palette.secondaryButtonContainer.copy(alpha = 0.30f),
+                    border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.45f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2116,7 +2441,7 @@ private fun UsbExclusiveDialog(
                             Icon(
                                 if (hasDevice) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
                                 contentDescription = null,
-                                tint = if (hasDevice) Color(0xFF34D399) else Color(0xFFF87171),
+                                tint = palette.playedLyricColor,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(Modifier.width(10.dp))
@@ -2125,7 +2450,7 @@ private fun UsbExclusiveDialog(
                                     if (hasDevice) "已识别 USB 音频硬件" else "尚未接入 USB 声卡",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color.White
+                                    color = cardText
                                 )
                                 Text(
                                     if (hasDevice) {
@@ -2133,41 +2458,28 @@ private fun UsbExclusiveDialog(
                                         if (mfg != null) "$mfg · $usbDeviceName" else (usbDeviceName ?: "未知 USB 音频设备")
                                     } else "请插紧 USB 耳放/小尾巴或检查 Type-C 连接",
                                     fontSize = 12.sp,
-                                    color = Color.White.copy(alpha = 0.75f)
+                                    color = cardSubText
                                 )
                             }
                         }
 
                         if (hasDevice) {
-                            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                            HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = when {
-                                        isUac2 -> Color(0xFF059669).copy(alpha = 0.25f)
-                                        isUac3 -> Color(0xFF7C3AED).copy(alpha = 0.25f)
-                                        else -> Color(0xFF2563EB).copy(alpha = 0.25f)
-                                    },
-                                    border = BorderStroke(1.dp, when {
-                                        isUac2 -> Color(0xFF10B981)
-                                        isUac3 -> Color(0xFFA78BFA)
-                                        else -> Color(0xFF3B82F6)
-                                    })
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = palette.primaryButtonContainer
                                 ) {
                                     Text(
                                         text = uacVersion ?: "UAC 1.0 / 2.0",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = when {
-                                            isUac2 -> Color(0xFF34D399)
-                                            isUac3 -> Color(0xFFC4B5FD)
-                                            else -> Color(0xFF93C5FD)
-                                        },
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        color = palette.onPrimaryButton,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                     )
                                 }
                                 Spacer(Modifier.width(8.dp))
@@ -2178,7 +2490,7 @@ private fun UsbExclusiveDialog(
                                         else -> "标准音频模式 (最高 96kHz / 24-bit)"
                                     },
                                     fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.8f)
+                                    color = cardSubText
                                 )
                             }
 
@@ -2187,7 +2499,7 @@ private fun UsbExclusiveDialog(
                                     Text(
                                         "硬件标识: ${deviceDetails.formattedVidPid}",
                                         fontSize = 11.sp,
-                                        color = Color.White.copy(alpha = 0.55f)
+                                        color = cardSubText
                                     )
                                 }
                                 val statusText = when {
@@ -2198,27 +2510,17 @@ private fun UsbExclusiveDialog(
                                 Text(
                                     statusText,
                                     fontSize = 11.sp,
-                                    color = if (isExclusive && hasDevice) Color(0xFF34D399) else Color.White.copy(alpha = 0.6f)
+                                    color = if (isExclusive && hasDevice) palette.playedLyricColor else cardSubText
                                 )
                             }
                         }
                     }
                 }
-
-                Column(modifier = Modifier.padding(horizontal = 4.dp)) {
-                    Text("💡 USB 独占直通架构说明：", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.8f))
-                    Spacer(Modifier.height(4.dp))
-                    Text("1. UAC 协议自动识别：读取 USB 设备描述符，精准识别 UAC 1.0 / 2.0 通道协议与传输特性。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
-                    Spacer(Modifier.height(2.dp))
-                    Text("2. 硬件专属通道锁定：锁定音频专属直通路由与无损采样率输出，规避系统通知音与混音干扰。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
-                    Spacer(Modifier.height(2.dp))
-                    Text("3. 拔出防爆音保护：耳放意外拔出时自动触发安全暂停，避免杂音与爆音保护听力安全。", fontSize = 11.sp, color = Color.White.copy(alpha = 0.55f))
-                }
             }
         },
-        containerColor = Color(0xFF1E293B),
-        titleContentColor = Color.White,
-        textContentColor = Color.White.copy(alpha = 0.9f)
+        containerColor = palette.cardSurfaceColor,
+        titleContentColor = cardText,
+        textContentColor = cardText
     )
 }
 
@@ -2231,10 +2533,14 @@ private fun PlaybackStatusDialog(
     usbDeviceName: String? = null,
     uacVersion: String? = null,
     loudnessState: Akari.NCM.player.core.loudness.LoudnessNormalizationState,
+    palette: PlayerExpressivePalette,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     if (media == null) return
+
+    val cardText = ensureContrast(palette.primaryTextColor, palette.cardSurfaceColor, 4.5f)
+    val cardSubText = ensureContrast(palette.secondaryTextColor, palette.cardSurfaceColor, 3.8f)
 
     val isLocal = media.isLocal
     val sourceText = if (isLocal) {
@@ -2246,7 +2552,7 @@ private fun PlaybackStatusDialog(
 
     val fileSizeText = remember(media, audioFormatInfo.fileSizeBytes) {
         val bytes = if (media is PlayableMedia.LocalNcm) {
-            val fileBytes = runCatching {
+            runCatching {
                 val uri = android.net.Uri.parse(media.uri)
                 if (uri.scheme == "content") {
                     context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
@@ -2254,7 +2560,6 @@ private fun PlaybackStatusDialog(
                     java.io.File(uri.path ?: "").length()
                 }
             }.getOrDefault(0L)
-            fileBytes
         } else {
             audioFormatInfo.fileSizeBytes
         }
@@ -2279,64 +2584,92 @@ private fun PlaybackStatusDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("确定", color = Color(0xFF60A5FA))
-            }
+            AdaptiveButtonGroup(
+                buttons = listOf(
+                    AdaptiveButtonSpec(
+                        text = "确定",
+                        onClick = onDismiss,
+                        style = ExpressiveButtonStyle.FILLED,
+                        containerColor = palette.primaryButtonContainer,
+                        contentColor = palette.onPrimaryButton
+                    )
+                ),
+                backgroundForContrast = palette.cardSurfaceColor
+            )
         },
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = Color(0xFF60A5FA), modifier = Modifier.size(24.dp))
+                Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("播放状态与音频信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("播放状态与音频信息", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = cardText)
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                InfoRow("歌曲名称", media.title)
-                InfoRow("艺术家", media.artist)
-                InfoRow("专辑名称", media.album)
-                HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
-                InfoRow("音频来源", sourceText)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
+                InfoRow("歌曲名称", media.title, cardSubText, cardText)
+                InfoRow("艺术家", media.artist, cardSubText, cardText)
+                InfoRow("专辑名称", media.album, cardSubText, cardText)
+                HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
+                InfoRow("音频来源", sourceText, cardSubText, cardText)
                 if (fileSizeText != null) {
                     val sizeLabel = if (isLocal) "本地文件大小" else "音频文件大小"
-                    InfoRow(sizeLabel, fileSizeText)
+                    InfoRow(sizeLabel, fileSizeText, cardSubText, cardText)
                 }
                 if (isUsbExclusive && !usbDeviceName.isNullOrBlank()) {
                     val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""
-                    InfoRow("输出通道", "USB 硬件独占直通 · $usbDeviceName$uacTag")
+                    InfoRow("输出通道", "USB 硬件独占直通 · $usbDeviceName$uacTag", cardSubText, cardText)
                 }
-                HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
-                InfoRow("实时比特率", bitrateText)
-                InfoRow("采样率 / 位深", "$sampleRateText  ·  $bitDepthText")
+                HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
+                InfoRow("实时比特率", bitrateText, cardSubText, cardText)
+                InfoRow("采样率 / 位深", "$sampleRateText  ·  $bitDepthText", cardSubText, cardText)
                 if (!audioFormatInfo.mimeType.isNullOrBlank()) {
-                    InfoRow("音频编码格式", audioFormatInfo.mimeType)
+                    InfoRow("音频编码格式", audioFormatInfo.mimeType, cardSubText, cardText)
                 }
-                HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
                 val normStatus = if (loudnessState.isEnabled) {
                     val gainStr = if (loudnessState.appliedGainDb >= 0) "+${String.format("%.1f", loudnessState.appliedGainDb)}" else String.format("%.1f", loudnessState.appliedGainDb)
                     val peakStr = if (loudnessState.isPeakLimited) " (触发 -1.0 dBTP 防过载压制)" else ""
-                    "已生效 · 增益: $gainStr dB (基准: ${loudnessState.targetLufs} LUFS)$peakStr"
+                    val waitStr = if (loudnessState.isInterTrackWaiting) " [1s 曲间校准等候中]" else ""
+                    "已生效 (${loudnessState.source.label}) · 增益: $gainStr dB (基准: ${loudnessState.targetLufs} LUFS)$peakStr$waitStr"
                 } else "未开启"
-                InfoRow("音量均衡状态 (EBU R128)", normStatus)
+                InfoRow("音量均衡状态 (EBU R128)", normStatus, cardSubText, cardText)
                 if (loudnessState.sourceLoudnessLufs != null) {
                     val peakText = if (loudnessState.sourcePeakDb != null) String.format(" · 峰值: %.1f dBFS", loudnessState.sourcePeakDb) else ""
                     val srcText = loudnessState.source.label
-                    InfoRow("曲目综合响度", String.format("%.1f LUFS%s (%s)", loudnessState.sourceLoudnessLufs, peakText, srcText))
+                    InfoRow("曲目综合响度", String.format("%.1f LUFS%s (%s)", loudnessState.sourceLoudnessLufs, peakText, srcText), cardSubText, cardText)
+                }
+                if (loudnessState.isEnabled && loudnessState.prefetchedTotalCount > 0) {
+                    val avgText = loudnessState.upcomingAverageLufs?.let {
+                        String.format(" · 平均 %.1f LUFS", it)
+                    } ?: ""
+                    InfoRow(
+                        "未来队列预计算 (最多 3 首)",
+                        "已缓存 ${loudnessState.prefetchedCount}/${loudnessState.prefetchedTotalCount} 首$avgText",
+                        cardSubText,
+                        cardText
+                    )
                 }
             }
         },
-        containerColor = Color(0xFF1E293B),
-        titleContentColor = Color.White,
-        textContentColor = Color.White.copy(alpha = 0.9f)
+        containerColor = palette.cardSurfaceColor,
+        titleContentColor = cardText,
+        textContentColor = cardText
     )
 }
 
 @Composable
-private fun InfoRow(label: String, value: String) {
+private fun InfoRow(
+    label: String,
+    value: String,
+    labelColor: Color,
+    valueColor: Color
+) {
     Column {
-        Text(label, fontSize = 12.sp, color = Color.White.copy(alpha = 0.55f))
+        Text(label, fontSize = 12.sp, color = labelColor)
         Spacer(Modifier.height(2.dp))
-        Text(value, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color.White)
+        Text(value, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = valueColor)
     }
 }
-

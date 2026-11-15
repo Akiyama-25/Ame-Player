@@ -14,7 +14,10 @@ import Akari.NCM.player.data.SearchHistoryManager
 import Akari.NCM.player.data.ThemePrefs
 import Akari.NCM.player.data.UserSessionManager
 import Akari.NCM.player.player.AmePlayerEngine
+import Akari.NCM.player.ui.component.AdaptiveButtonGroup
+import Akari.NCM.player.ui.component.AdaptiveButtonSpec
 import Akari.NCM.player.ui.component.AddToPlaylistDialog
+import Akari.NCM.player.ui.component.ExpressiveButtonStyle
 import Akari.NCM.player.ui.component.PredictiveBackEasing
 import Akari.NCM.player.ui.component.SongActionBottomSheet
 import Akari.NCM.player.ui.component.predictiveBackBackground
@@ -306,6 +309,7 @@ fun MainScreen(
                 // Material 3 Adaptive Navigation Suite Scaffold
                 NavigationSuiteScaffold(
                     layoutType = customLayoutType,
+                    containerColor = MaterialTheme.colorScheme.background,
                     navigationSuiteItems = {
                         if (hasApi) {
                             item(
@@ -340,6 +344,7 @@ fun MainScreen(
                     }
                 ) {
                     Scaffold(
+                        containerColor = MaterialTheme.colorScheme.background,
                         topBar = {
                             TopAppBar(
                                 title = {},
@@ -371,7 +376,7 @@ fun MainScreen(
                                     }
                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.surface
+                                    containerColor = MaterialTheme.colorScheme.background
                                 )
                             )
                         },
@@ -477,7 +482,7 @@ fun MainScreen(
                                                         modifier = Modifier
                                                             .fillMaxSize()
                                                             .predictiveBackForeground(state = onlinePlaylistBackState, pullDownDp = 12f)
-                                                            .background(MaterialTheme.colorScheme.surface)
+                                                            .background(MaterialTheme.colorScheme.background)
                                                     ) {
                                                         OnlinePlaylistDetailView(
                                                             target = onlineTarget,
@@ -622,7 +627,7 @@ fun MainScreen(
                                                         modifier = Modifier
                                                             .fillMaxSize()
                                                             .predictiveBackForeground(state = playlistDetailBackState, pullDownDp = 12f)
-                                                            .background(MaterialTheme.colorScheme.surface)
+                                                            .background(MaterialTheme.colorScheme.background)
                                                     ) {
                                                         Column(
                                                             modifier = Modifier
@@ -1228,22 +1233,26 @@ fun MainScreen(
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        if (newPlaylistName.isNotBlank()) {
-                            playlistManager.createPlaylist(newPlaylistName)
-                            newPlaylistName = ""
-                            showCreateDialog = false
-                        }
-                    }
-                ) {
-                    Text("创建")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreateDialog = false }) {
-                    Text("取消")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "创建",
+                            style = ExpressiveButtonStyle.FILLED,
+                            onClick = {
+                                if (newPlaylistName.isNotBlank()) {
+                                    playlistManager.createPlaylist(newPlaylistName)
+                                    newPlaylistName = ""
+                                    showCreateDialog = false
+                                }
+                            }
+                        ),
+                        AdaptiveButtonSpec(
+                            text = "取消",
+                            style = ExpressiveButtonStyle.TEXT,
+                            onClick = { showCreateDialog = false }
+                        )
+                    )
+                )
             }
         )
     }
@@ -1534,65 +1543,72 @@ private fun SyncCloudPlaylistsDialog(
             }
         },
         confirmButton = {
-            if (!isLoading && !isImporting) {
-                Button(
-                    enabled = selectedPlaylistIds.isNotEmpty(),
-                    onClick = {
-                        isImporting = true
-                        val targetList = cloudPlaylists.filter { selectedPlaylistIds.contains(it.id) }
-                        totalPlaylistsToSync = targetList.size
+            val buttons = buildList {
+                if (!isLoading && !isImporting) {
+                    add(
+                        AdaptiveButtonSpec(
+                            text = "导入选中的歌单 (${selectedPlaylistIds.size})",
+                            style = ExpressiveButtonStyle.FILLED,
+                            enabled = selectedPlaylistIds.isNotEmpty(),
+                            onClick = {
+                                isImporting = true
+                                val targetList = cloudPlaylists.filter { selectedPlaylistIds.contains(it.id) }
+                                totalPlaylistsToSync = targetList.size
 
-                        appScope.launch(Dispatchers.IO) {
-                            targetList.forEachIndexed { index, ncmPlaylist ->
-                                currentPlaylistIndex = index + 1
-                                currentPlaylistName = ncmPlaylist.name
-                                currentFetchedSongs = 0
-                                currentTotalSongs = ncmPlaylist.trackCount
+                                appScope.launch(Dispatchers.IO) {
+                                    targetList.forEachIndexed { index, ncmPlaylist ->
+                                        currentPlaylistIndex = index + 1
+                                        currentPlaylistName = ncmPlaylist.name
+                                        currentFetchedSongs = 0
+                                        currentTotalSongs = ncmPlaylist.trackCount
 
-                                val tracks = ncmApi.getPlaylistTracks(
-                                    playlistId = ncmPlaylist.id,
-                                    totalCount = ncmPlaylist.trackCount,
-                                    onProgress = { fetched, total ->
-                                        dialogScope.launch {
-                                            val start = currentFetchedSongs
-                                            if (fetched > start) {
-                                                val step = ((fetched - start) / 5).coerceAtLeast(1)
-                                                var curr = start
-                                                while (curr < fetched) {
-                                                    curr = (curr + step).coerceAtMost(fetched)
-                                                    currentFetchedSongs = curr
-                                                    delay(10.milliseconds)
+                                        val tracks = ncmApi.getPlaylistTracks(
+                                            playlistId = ncmPlaylist.id,
+                                            totalCount = ncmPlaylist.trackCount,
+                                            onProgress = { fetched, total ->
+                                                dialogScope.launch {
+                                                    val start = currentFetchedSongs
+                                                    if (fetched > start) {
+                                                        val step = ((fetched - start) / 5).coerceAtLeast(1)
+                                                        var curr = start
+                                                        while (curr < fetched) {
+                                                            curr = (curr + step).coerceAtMost(fetched)
+                                                            currentFetchedSongs = curr
+                                                            delay(10.milliseconds)
+                                                        }
+                                                    } else {
+                                                        currentFetchedSongs = fetched
+                                                    }
+                                                    currentTotalSongs = total
                                                 }
-                                            } else {
-                                                currentFetchedSongs = fetched
                                             }
-                                            currentTotalSongs = total
-                                        }
+                                        )
+                                        playlistManager.saveOrUpdateSyncedPlaylist(
+                                            ncmPlaylistId = ncmPlaylist.id,
+                                            name = ncmPlaylist.name,
+                                            coverImgUrl = ncmPlaylist.coverImgUrl,
+                                            songs = tracks
+                                        )
                                     }
-                                )
-                                playlistManager.saveOrUpdateSyncedPlaylist(
-                                    ncmPlaylistId = ncmPlaylist.id,
-                                    name = ncmPlaylist.name,
-                                    coverImgUrl = ncmPlaylist.coverImgUrl,
-                                    songs = tracks
-                                )
+                                    withContext(Dispatchers.Main) {
+                                        isImporting = false
+                                        onDismiss()
+                                        Toast.makeText(context, "已成功同步 ${targetList.size} 个歌单到本地", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             }
-                            withContext(Dispatchers.Main) {
-                                isImporting = false
-                                onDismiss()
-                                Toast.makeText(context, "已成功同步 ${targetList.size} 个歌单到本地", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    }
-                ) {
-                    Text("导入选中的歌单 (${selectedPlaylistIds.size})")
+                        )
+                    )
                 }
+                add(
+                    AdaptiveButtonSpec(
+                        text = if (isImporting) "后台运行" else "取消",
+                        style = ExpressiveButtonStyle.TEXT,
+                        onClick = onDismiss
+                    )
+                )
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(if (isImporting) "后台运行" else "取消")
-            }
+            AdaptiveButtonGroup(buttons = buttons)
         }
     )
 }

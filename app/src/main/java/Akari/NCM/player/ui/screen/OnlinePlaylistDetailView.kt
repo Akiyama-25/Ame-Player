@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun OnlinePlaylistDetailView(
     target: OnlinePlaylistTarget,
@@ -174,6 +175,7 @@ fun OnlinePlaylistDetailView(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .wrapContentWidth(Alignment.CenterHorizontally)
             .widthIn(max = 840.dp)
     ) {
@@ -222,8 +224,8 @@ fun OnlinePlaylistDetailView(
                         onClick = {
                             Toast.makeText(context, "已在我的歌单中", Toast.LENGTH_SHORT).show()
                         },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(36.dp)
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier.heightIn(min = 36.dp)
                     ) {
                         Icon(
                             Icons.Rounded.Check,
@@ -244,8 +246,8 @@ fun OnlinePlaylistDetailView(
                             )
                             Toast.makeText(context, "已收藏至我的歌单", Toast.LENGTH_SHORT).show()
                         },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(36.dp)
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier.heightIn(min = 36.dp)
                     ) {
                         Icon(
                             Icons.Rounded.FavoriteBorder,

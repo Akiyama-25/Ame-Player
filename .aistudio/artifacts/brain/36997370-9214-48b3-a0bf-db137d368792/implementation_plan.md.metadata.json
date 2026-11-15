@@ -1,6 +1,0 @@
-{
-  "summary":  "Ame Player 无限播放歌单识别与动态推荐队列架构方案，涵盖首页卡片/龙珠多维类型识别、三种网易云推荐接口混用策略及小于2首时的静默预加载缓冲机制。",
-  "updatedAt":  "2026-10-29T16:03:47.822857876Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

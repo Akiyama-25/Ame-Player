@@ -1,79 +1,72 @@
 package Akari.NCM.player.ui.screen
 
+import Akari.NCM.player.BuildConfig
 import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.core.AppLogger
 import Akari.NCM.player.core.LogLevel
-import Akari.NCM.player.core.QualityLevel
 import Akari.NCM.player.core.QrStatus
 import Akari.NCM.player.core.UserProfile
+import Akari.NCM.player.data.AppPackageVariant
+import Akari.NCM.player.data.AppUpdateManager
+import Akari.NCM.player.data.ColorVariant
+import Akari.NCM.player.data.ContrastLevel
+import Akari.NCM.player.data.ThemePrefs
+import Akari.NCM.player.data.UpdateChannel
+import Akari.NCM.player.data.UpdateCheckResult
 import Akari.NCM.player.data.UserSessionManager
+import Akari.NCM.player.ui.component.AdaptiveButtonGroup
+import Akari.NCM.player.ui.component.AdaptiveButtonSpec
+import Akari.NCM.player.ui.component.ExpressiveButtonStyle
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.material3.RadioButton
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.core.tween
-import Akari.NCM.player.data.ThemePrefs
-import Akari.NCM.player.BuildConfig
-import Akari.NCM.player.data.AppPackageVariant
-import Akari.NCM.player.data.AppUpdateManager
-import Akari.NCM.player.data.UpdateChannel
-import Akari.NCM.player.data.UpdateCheckResult
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
-
-
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.FileProvider
 import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
@@ -109,9 +102,9 @@ fun SettingsScreen(
             scope.launch {
                 localFolderManager.addDirectory(uri.toString())
                 folderDirsList = localFolderManager.getDirectories().toList()
-                android.widget.Toast.makeText(context, "已添加文件夹，正在扫描...", android.widget.Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "已添加文件夹，正在扫描...", Toast.LENGTH_SHORT).show()
                 localFolderManager.scanAllFolders()
-                android.widget.Toast.makeText(context, "扫描完成", android.widget.Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "扫描完成", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -119,6 +112,7 @@ fun SettingsScreen(
     var showQrDialog by remember { mutableStateOf(false) }
     var showCustomAccentDialog by remember { mutableStateOf(false) }
     var showThemeModeDialog by remember { mutableStateOf(false) }
+    var showExpressiveStyleDialog by remember { mutableStateOf(false) }
     var showProfileDetailDialog by remember { mutableStateOf(false) }
     var showHomepageModeDialog by remember { mutableStateOf(false) }
     var showFoldersDialog by remember { mutableStateOf(false) }
@@ -136,6 +130,13 @@ fun SettingsScreen(
     val targetLoudnessLufs by ThemePrefs.targetLoudnessFlow.collectAsState()
     val loudnessPeakLimitEnabled by ThemePrefs.loudnessPeakLimitFlow.collectAsState()
     val playbackFadeEnabled by ThemePrefs.playbackFadeEnabledFlow.collectAsState()
+
+    val isMonet by ThemePrefs.monetFlow.collectAsState()
+    val colorVariant by ThemePrefs.colorVariantFlow.collectAsState()
+    val contrastLevel by ThemePrefs.contrastLevelFlow.collectAsState()
+    val useMaterialBg by ThemePrefs.useMaterialBgFlow.collectAsState()
+    val playerBlurCoverBg by ThemePrefs.playerBlurCoverBgFlow.collectAsState()
+    val accentColorLong by ThemePrefs.accentColorFlow.collectAsState()
 
     val currentLogLevel by AppLogger.currentLevel.collectAsState()
     val maxFileSizeKb by AppLogger.maxFileSizeKb.collectAsState()
@@ -166,36 +167,37 @@ fun SettingsScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("设置", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "设置",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = MaterialTheme.colorScheme.background
                 )
             )
         }
     ) { padding ->
-        
-        
-        
-        val isMonet by ThemePrefs.monetFlow.collectAsState()
-        val accentColorLong by ThemePrefs.accentColorFlow.collectAsState()
-        
         val settingsCols = when (androidx.compose.material3.adaptive.currentWindowAdaptiveInfo().windowSizeClass.windowWidthSizeClass) {
             androidx.window.core.layout.WindowWidthSizeClass.COMPACT -> 1
             else -> 2
         }
-            
+
         LazyVerticalGrid(
             columns = GridCells.Fixed(settingsCols),
-
             modifier = Modifier
                 .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
@@ -203,38 +205,113 @@ fun SettingsScreen(
             item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("网易云账号") }
 
             if (hasApi) {
-                // 登录状态卡片 (精简为仅展示头像、名称、VIP 标志与跳转箭头)
-                item(span = { GridItemSpan(maxLineSpan) }) { Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
-                        .clickable {
-                            if (isLoggedIn) {
-                                showProfileDetailDialog = true
-                            } else {
-                                showQrDialog = true
-                            }
-                        },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                    )
-                ) {
-                    Row(
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .clickable {
+                                if (isLoggedIn) {
+                                    showProfileDetailDialog = true
+                                } else {
+                                    showQrDialog = true
+                                }
+                            },
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f))
                     ) {
-                        if (isLoggedIn) {
-                            if (!userProfile?.avatarUrl.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = userProfile?.avatarUrl,
-                                    contentDescription = "用户头像",
-                                    modifier = Modifier
-                                        .size(52.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primaryContainer),
-                                    contentScale = ContentScale.Crop
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isLoggedIn) {
+                                if (!userProfile?.avatarUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = userProfile?.avatarUrl,
+                                        contentDescription = "用户头像",
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primaryContainer),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.primaryContainer),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Rounded.AccountCircle,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(32.dp),
+                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        userProfile?.nickname?.takeIf { it.isNotBlank() } ?: "已登录网易云用户",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if ((userProfile?.vipType ?: 0) > 0) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        SuggestionChip(
+                                            onClick = { showProfileDetailDialog = true },
+                                            label = { Text("VIP", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                            modifier = Modifier.height(24.dp)
+                                        )
+                                    }
+                                }
+                                IconButton(
+                                    onClick = {
+                                        if (!isRefreshingProfile) {
+                                            isRefreshingProfile = true
+                                            scope.launch {
+                                                val profile = ncmApi.getUserProfile()
+                                                if (profile != null) {
+                                                    sessionManager.saveUserProfile(profile)
+                                                    Toast.makeText(context, "用户信息已更新", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(context, "获取用户信息失败", Toast.LENGTH_SHORT).show()
+                                                }
+                                                isRefreshingProfile = false
+                                            }
+                                        }
+                                    }
+                                ) {
+                                    if (isRefreshingProfile) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Rounded.Refresh,
+                                            contentDescription = "重新获取用户信息",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    Icons.Rounded.ChevronRight,
+                                    contentDescription = "查看个人信息",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             } else {
                                 Box(
@@ -251,119 +328,46 @@ fun SettingsScreen(
                                         tint = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                 }
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Row(
-                                modifier = Modifier.weight(1f),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    userProfile?.nickname?.takeIf { it.isNotBlank() } ?: "已登录网易云用户",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                if ((userProfile?.vipType ?: 0) > 0) {
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    SuggestionChip(
-                                        onClick = { showProfileDetailDialog = true },
-                                        label = { Text("VIP", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
-                                        modifier = Modifier.height(24.dp)
+                                Spacer(modifier = Modifier.width(16.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "未登录网易云账号",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "登录后解锁无损/VIP音质及个人歌单",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                            }
-                            IconButton(
-                                onClick = {
-                                    if (!isRefreshingProfile) {
-                                        isRefreshingProfile = true
-                                        scope.launch {
-                                            val profile = ncmApi.getUserProfile()
-                                            if (profile != null) {
-                                                sessionManager.saveUserProfile(profile)
-                                                Toast.makeText(context, "用户信息已更新", Toast.LENGTH_SHORT).show()
-                                            } else {
-                                                Toast.makeText(context, "获取用户信息失败", Toast.LENGTH_SHORT).show()
-                                            }
-                                            isRefreshingProfile = false
-                                        }
-                                    }
+                                Button(
+                                    onClick = { showQrDialog = true },
+                                    shape = RoundedCornerShape(20.dp)
+                                ) {
+                                    Text("扫码登录", fontWeight = FontWeight.Bold)
                                 }
-                            ) {
-                                if (isRefreshingProfile) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(18.dp),
-                                        strokeWidth = 2.dp,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Rounded.Refresh,
-                                        contentDescription = "重新获取用户信息",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                            Icon(
-                                Icons.Rounded.ChevronRight,
-                                contentDescription = "查看个人信息",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Rounded.AccountCircle,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(32.dp),
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "未登录网易云账号",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    "登录后解锁无损/VIP音质及个人歌单",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Button(
-                                onClick = { showQrDialog = true },
-                                shape = RoundedCornerShape(20.dp)
-                            ) {
-                                Text("扫码登录")
                             }
                         }
                     }
                 }
-            }
 
-            item {
-                val modeDesc = when(homepageMode) {
-                    Akari.NCM.player.core.HomepageMode.APP_LIKE -> "类官方 APP 首页体验"
-                    Akari.NCM.player.core.HomepageMode.DAILY_ONLY -> "仅获取每日推荐歌单"
-                    Akari.NCM.player.core.HomepageMode.HIGH_QUALITY_ONLY -> "仅获取精品歌单 / 网友精选碟"
+                item {
+                    val modeDesc = when (homepageMode) {
+                        Akari.NCM.player.core.HomepageMode.APP_LIKE -> "类官方 APP 首页体验"
+                        Akari.NCM.player.core.HomepageMode.DAILY_ONLY -> "仅获取每日推荐歌单"
+                        Akari.NCM.player.core.HomepageMode.HIGH_QUALITY_ONLY -> "仅获取精品歌单 / 网友精选碟"
+                    }
+                    SettingItem(
+                        icon = Icons.Rounded.Home,
+                        title = "首页展示模式",
+                        subtitle = modeDesc,
+                        onClick = { showHomepageModeDialog = true }
+                    )
                 }
-                SettingItem(
-                    icon = Icons.Rounded.Home,
-                    title = "首页展示模式",
-                    subtitle = modeDesc,
-                    onClick = { showHomepageModeDialog = true }
-                )
             }
-            } // End of if (hasApi)
 
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 3.dp)) }
 
             // ── 本地音乐扫描 ──
             item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("本地音乐扫描") }
@@ -384,9 +388,9 @@ fun SettingsScreen(
                     subtitle = "更新本地增删变动，重新匹配网易云信息",
                     onClick = {
                         scope.launch {
-                            android.widget.Toast.makeText(context, "正在重新扫描...", android.widget.Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "正在重新扫描...", Toast.LENGTH_SHORT).show()
                             localFolderManager.scanAllFolders()
-                            android.widget.Toast.makeText(context, "扫描完成", android.widget.Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "扫描完成", Toast.LENGTH_SHORT).show()
                         }
                     }
                 )
@@ -400,99 +404,7 @@ fun SettingsScreen(
                 )
             }
 
-            
-            
-
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
-
-            // ── 关于 (精简纯粹) ──
-            
-            
-            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("主题与外观") }
-            
-            item {
-                val themeMode by ThemePrefs.themeFlow.collectAsState()
-                val themeModeDesc = when(themeMode) {
-                    ThemePrefs.THEME_LIGHT -> "浅色模式"
-                    ThemePrefs.THEME_DARK -> "深色模式"
-                    else -> "跟随系统"
-                }
-                SettingItem(
-                    icon = Icons.Rounded.DarkMode,
-                    title = "应用主题",
-                    subtitle = themeModeDesc,
-                    onClick = { showThemeModeDialog = true }
-                )
-            }
-            
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { ThemePrefs.useMonetColors = !isMonet }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Rounded.ColorLens,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("动态取色 (Material You)", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
-                        Text(if (isMonet) "基于壁纸提取动态颜色" else "使用自定义颜色", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    val currentScheme = MaterialTheme.colorScheme
-    Switch(checked = isMonet, onCheckedChange = { newValue ->
-        if (!newValue) {
-            ThemePrefs.customAccentColor = currentScheme.primary.toArgb().toLong()
-            ThemePrefs.customLightBgColor = currentScheme.surface.toArgb().toLong()
-            ThemePrefs.customDarkBgColor = currentScheme.surface.toArgb().toLong()
-        }
-        ThemePrefs.useMonetColors = newValue
-    })
-                }
-            }
-            
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                AnimatedVisibility(
-                    visible = !isMonet,
-                    enter = fadeIn(tween(300)) + expandVertically(tween(300)),
-                    exit = fadeOut(tween(200)) + shrinkVertically(tween(200))
-                ) {
-                    Column {
-                        Text("强调色", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 56.dp, top = 8.dp, bottom = 4.dp))
-                        
-                        val accentOptions = listOf(
-                            Color(0xFF388E3C), // Green
-                            Color(0xFF1976D2), // Blue
-                            Color(0xFF7B1FA2), // Purple
-                            Color(0xFFD32F2F), // Red
-                            Color(0xFFF57C00), // Orange
-                            Color(0xFF0097A7), // Cyan
-                            Color(0xFFC2185B), // Pink
-                            Color(0xFF303F9F)  // Indigo
-                        )
-                        
-                        ColorPickerRow(
-                            colors = accentOptions,
-                            selectedColor = Color(accentColorLong.toInt()),
-                            onColorSelected = { 
-                                val hsl = Akari.NCM.player.ui.theme.colorToHsl(it)
-                                ThemePrefs.customAccentH = hsl.h
-                                ThemePrefs.customAccentS = hsl.s
-                                ThemePrefs.customAccentL = hsl.l
-                                ThemePrefs.customAccentColor = it.toArgb().toLong()
-                            },
-                            onCustomClick = { showCustomAccentDialog = true }
-                        )
-                    }
-                }
-            }
-            
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 3.dp)) }
 
             // ── 调试功能 ──
             item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("调试功能") }
@@ -507,7 +419,7 @@ fun SettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onOpenLog() }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                         .testTag("setting_log_record"),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -533,10 +445,11 @@ fun SettingsScreen(
                     }
                     FilledTonalButton(
                         onClick = onOpenLog,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                         modifier = Modifier.testTag("btn_open_log_screen")
                     ) {
-                        Text("查看", fontSize = 12.sp)
+                        Text("查看", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -546,7 +459,7 @@ fun SettingsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { ThemePrefs.showMatchStatus = !showMatchStatus }
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                         .testTag("setting_show_match_status"),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -578,7 +491,198 @@ fun SettingsScreen(
                 }
             }
 
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 3.dp)) }
+
+            // ── 主题与外观 (Material 3 Expressive) ──
+            item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("主题与外观 (Material 3 Expressive)") }
+
+            item {
+                val themeMode by ThemePrefs.themeFlow.collectAsState()
+                val themeModeDesc = when (themeMode) {
+                    ThemePrefs.THEME_LIGHT -> "浅色模式"
+                    ThemePrefs.THEME_DARK -> "深色模式"
+                    else -> "跟随系统"
+                }
+                SettingItem(
+                    icon = Icons.Rounded.DarkMode,
+                    title = "应用主题",
+                    subtitle = themeModeDesc,
+                    onClick = { showThemeModeDialog = true }
+                )
+            }
+
+            item {
+                SettingItem(
+                    icon = Icons.Rounded.Palette,
+                    title = "色彩变体与对比度级别",
+                    subtitle = "${colorVariant.label} · ${contrastLevel.label}",
+                    onClick = { showExpressiveStyleDialog = true },
+                    modifier = Modifier.testTag("setting_color_variant_contrast")
+                )
+            }
+
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { ThemePrefs.useMonetColors = !isMonet }
+                        .padding(horizontal = 16.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.ColorLens,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "动态取色 (Material You)",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            if (isMonet) "非播放页使用系统壁纸取色，播放页基于歌曲封面取色"
+                            else "非播放页使用自定义颜色，播放页基于歌曲封面取色",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    val currentScheme = MaterialTheme.colorScheme
+                    Switch(
+                        checked = isMonet,
+                        onCheckedChange = { newValue ->
+                            if (!newValue) {
+                                ThemePrefs.customAccentColor = currentScheme.primary.toArgb().toLong()
+                                ThemePrefs.customLightBgColor = currentScheme.surface.toArgb().toLong()
+                                ThemePrefs.customDarkBgColor = currentScheme.surface.toArgb().toLong()
+                            }
+                            ThemePrefs.useMonetColors = newValue
+                        }
+                    )
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { ThemePrefs.useMaterialBackground = !useMaterialBg }
+                        .padding(horizontal = 16.dp, vertical = 5.dp)
+                        .testTag("setting_use_material_bg"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.FormatPaint,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Material 取色背景色",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            if (useMaterialBg) "已开启 · APP 背景使用 Material 取色的背景色显示"
+                            else "已关闭 · APP 背景色显示为纯黑或纯白色，跟随浅色/深色模式",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = useMaterialBg,
+                        onCheckedChange = { ThemePrefs.useMaterialBackground = it },
+                        modifier = Modifier.testTag("switch_use_material_bg")
+                    )
+                }
+            }
+
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { ThemePrefs.playerBlurCoverBackground = !playerBlurCoverBg }
+                        .padding(horizontal = 16.dp, vertical = 5.dp)
+                        .testTag("setting_player_blur_cover_bg"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        if (playerBlurCoverBg) Icons.Rounded.BlurOn else Icons.Rounded.BlurOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "播放界面模糊封面背景",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            if (playerBlurCoverBg) "已开启 · 播放界面以模糊处理后的歌曲封面作为背景"
+                            else "已关闭 · 播放界面使用应用背景色（取色背景或纯黑/纯白）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = playerBlurCoverBg,
+                        onCheckedChange = { ThemePrefs.playerBlurCoverBackground = it },
+                        modifier = Modifier.testTag("switch_setting_player_blur_cover_bg")
+                    )
+                }
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                AnimatedVisibility(
+                    visible = !isMonet,
+                    enter = fadeIn(tween(300)) + expandVertically(tween(300)),
+                    exit = fadeOut(tween(200)) + shrinkVertically(tween(200))
+                ) {
+                    Column {
+                        Text(
+                            "强调色",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 56.dp, top = 4.dp, bottom = 2.dp)
+                        )
+
+                        val accentOptions = listOf(
+                            Color(0xFF388E3C), // Green
+                            Color(0xFF1976D2), // Blue
+                            Color(0xFF7B1FA2), // Purple
+                            Color(0xFFD32F2F), // Red
+                            Color(0xFFF57C00), // Orange
+                            Color(0xFF0097A7), // Cyan
+                            Color(0xFFC2185B), // Pink
+                            Color(0xFF303F9F)  // Indigo
+                        )
+
+                        ColorPickerRow(
+                            colors = accentOptions,
+                            selectedColor = Color(accentColorLong.toInt()),
+                            onColorSelected = {
+                                val hsl = Akari.NCM.player.ui.theme.colorToHsl(it)
+                                ThemePrefs.customAccentH = hsl.h
+                                ThemePrefs.customAccentS = hsl.s
+                                ThemePrefs.customAccentL = hsl.l
+                                ThemePrefs.customAccentColor = it.toArgb().toLong()
+                            },
+                            onCustomClick = { showCustomAccentDialog = true }
+                        )
+                    }
+                }
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 3.dp)) }
 
             // ── 音频与声音设置 ──
             item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("音频与声音") }
@@ -703,7 +807,7 @@ fun SettingsScreen(
                 }
             }
 
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
 
             // ── 灵动岛与实时播放控制窗 ──
             item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("灵动岛与实时播放控制") }
@@ -819,23 +923,24 @@ fun SettingsScreen(
                     }
                     FilledTonalButton(
                         onClick = { triggerTestIsland() },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                         modifier = Modifier.testTag("btn_check_island_permission")
                     ) {
                         Text(
                             text = if (android.os.Build.VERSION.SDK_INT >= 36 && !canPostPromoted) "去开启" else "发送测试",
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
             }
 
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
 
             // ── 软件更新 ──
             item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader("软件更新") }
 
-            // 1. 更新通道切换
             item {
                 Row(
                     modifier = Modifier
@@ -867,15 +972,15 @@ fun SettingsScreen(
                     }
                     FilledTonalButton(
                         onClick = { showUpdateChannelDialog = true },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                         modifier = Modifier.testTag("btn_switch_update_channel")
                     ) {
-                        Text("切换", fontSize = 12.sp)
+                        Text("切换", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            // 2. 检查更新
             item {
                 val currentPkgVariant = remember { AppPackageVariant.fromContext(context) }
                 val currentVersion = remember {
@@ -937,16 +1042,17 @@ fun SettingsScreen(
                                     showUpdateResultDialog = true
                                 }
                             },
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                             modifier = Modifier.testTag("btn_check_update")
                         ) {
-                            Text("检查", fontSize = 12.sp)
+                            Text("检查", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
 
-            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp)) }
+            item(span = { GridItemSpan(maxLineSpan) }) { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
             item(span = { GridItemSpan(maxLineSpan) }) {
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                 Column(
@@ -964,7 +1070,7 @@ fun SettingsScreen(
                         text = "AmePlayer",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.ExtraBold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -974,8 +1080,127 @@ fun SettingsScreen(
                     )
                 }
             }
-
         }
+    }
+
+    // ── Material 3 Expressive 色彩变体与对比度级别配置弹窗 ──
+    if (showExpressiveStyleDialog) {
+        AlertDialog(
+            onDismissRequest = { showExpressiveStyleDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Rounded.Palette,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "色彩变体与对比度级别",
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "对比度级别 (Contrast Level)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    // 自适应按钮组：在竖屏手机上自动纵向堆叠，避免文字变形
+                    AdaptiveButtonGroup(
+                        buttons = ContrastLevel.entries.map { level ->
+                            val isSelected = contrastLevel == level
+                            AdaptiveButtonSpec(
+                                text = level.label,
+                                onClick = { ThemePrefs.contrastLevel = level },
+                                icon = if (isSelected) Icons.Rounded.CheckCircle else Icons.Rounded.Contrast,
+                                style = if (isSelected) ExpressiveButtonStyle.FILLED else ExpressiveButtonStyle.TONAL,
+                                testTag = "contrast_option_${level.key}"
+                            )
+                        }
+                    )
+
+                    Text(
+                        text = contrastLevel.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text(
+                        text = "Material 3 色彩变体 (Color Variant)",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    ColorVariant.entries.forEach { variant ->
+                        val isSelected = colorVariant == variant
+                        Surface(
+                            onClick = { ThemePrefs.colorVariant = variant },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceContainerLow,
+                            border = if (isSelected) BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
+                            else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("color_variant_${variant.key}")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = { ThemePrefs.colorVariant = variant }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = variant.label,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = variant.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "完成",
+                            onClick = { showExpressiveStyleDialog = false },
+                            style = ExpressiveButtonStyle.FILLED,
+                            testTag = "btn_close_expressive_style_dialog"
+                        )
+                    )
+                )
+            }
+        )
     }
 
     if (showLogLevelDialog) {
@@ -1022,9 +1247,15 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showLogLevelDialog = false }) {
-                    Text("取消")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "取消",
+                            onClick = { showLogLevelDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
             }
         )
     }
@@ -1077,26 +1308,29 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        AppLogger.setMaxFileSizeKb(context, selectedSizeKb)
-                        Toast.makeText(context, "日志上限已设为 ${AppLogger.maxFileSizeKb.value} KB", Toast.LENGTH_SHORT).show()
-                        showLogSizeDialog = false
-                    },
-                    modifier = Modifier.testTag("btn_save_log_size")
-                ) {
-                    Text("保存")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogSizeDialog = false }) {
-                    Text("取消")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "保存",
+                            onClick = {
+                                AppLogger.setMaxFileSizeKb(context, selectedSizeKb)
+                                Toast.makeText(context, "日志上限已设为 ${AppLogger.maxFileSizeKb.value} KB", Toast.LENGTH_SHORT).show()
+                                showLogSizeDialog = false
+                            },
+                            style = ExpressiveButtonStyle.FILLED,
+                            testTag = "btn_save_log_size"
+                        ),
+                        AdaptiveButtonSpec(
+                            text = "取消",
+                            onClick = { showLogSizeDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
             }
         )
     }
 
-    
     if (showLoudnessDialog) {
         AlertDialog(
             onDismissRequest = { showLoudnessDialog = false },
@@ -1115,7 +1349,7 @@ fun SettingsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        text = "基准标准：ITU-R BS.1770-4 综合响度 (Integrated Loudness) 与 EBU R128 规范。根据每首曲目的真实响度自动匹配增益，避免切换歌曲时音量忽大忽小。",
+                        text = "基准标准：ITU-R BS.1770-4 综合响度与 EBU R128 规范。支持渐进式双阶段均衡（秒级初判先行生效，随后平滑锁定全曲增益）、在线播放解码流实时测算，并在曲间保留 1 秒校准等候且自动预计算未来 3 首曲目平均响度与在线特征缓存。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1176,9 +1410,15 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showLoudnessDialog = false }) {
-                    Text("完成")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "完成",
+                            onClick = { showLoudnessDialog = false },
+                            style = ExpressiveButtonStyle.FILLED
+                        )
+                    )
+                )
             }
         )
     }
@@ -1219,9 +1459,15 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showThemeModeDialog = false }) {
-                    Text("取消")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "取消",
+                            onClick = { showThemeModeDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
             }
         )
     }
@@ -1230,7 +1476,7 @@ fun SettingsScreen(
         var sliderH by remember { mutableFloatStateOf(ThemePrefs.customAccentH) }
         var sliderS by remember { mutableFloatStateOf(ThemePrefs.customAccentS) }
         var sliderL by remember { mutableFloatStateOf(ThemePrefs.customAccentL) }
-        
+
         AlertDialog(
             onDismissRequest = { showCustomAccentDialog = false },
             title = { Text("自定义强调色", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
@@ -1244,21 +1490,21 @@ fun SettingsScreen(
                             .clip(CircleShape)
                             .background(Akari.NCM.player.ui.theme.hslToColor(sliderH, sliderS, sliderL))
                     )
-                    
+
                     Text("色相", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Slider(
                         value = sliderH,
                         onValueChange = { sliderH = it },
                         valueRange = 0f..360f
                     )
-                    
+
                     Text("饱和度", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Slider(
                         value = sliderS,
                         onValueChange = { sliderS = it },
                         valueRange = 0f..100f
                     )
-                    
+
                     Text("明度", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Slider(
                         value = sliderL,
@@ -1268,27 +1514,30 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        ThemePrefs.customAccentH = sliderH
-                        ThemePrefs.customAccentS = sliderS
-                        ThemePrefs.customAccentL = sliderL
-                        ThemePrefs.customAccentColor = Akari.NCM.player.ui.theme.hslToArgbLong(sliderH, sliderS, sliderL)
-                        showCustomAccentDialog = false
-                    }
-                ) {
-                    Text("应用")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCustomAccentDialog = false }) {
-                    Text("取消")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "应用",
+                            onClick = {
+                                ThemePrefs.customAccentH = sliderH
+                                ThemePrefs.customAccentS = sliderS
+                                ThemePrefs.customAccentL = sliderL
+                                ThemePrefs.customAccentColor = Akari.NCM.player.ui.theme.hslToArgbLong(sliderH, sliderS, sliderL)
+                                showCustomAccentDialog = false
+                            },
+                            style = ExpressiveButtonStyle.FILLED
+                        ),
+                        AdaptiveButtonSpec(
+                            text = "取消",
+                            onClick = { showCustomAccentDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
             }
         )
     }
 
-    // 独立个人信息页面对话框
     if (showProfileDetailDialog && userProfile != null) {
         UserProfileDetailDialog(
             userProfile = userProfile!!,
@@ -1301,8 +1550,7 @@ fun SettingsScreen(
         )
     }
 
-    // 首页展示模式对话框
-if (showFoldersDialog) {
+    if (showFoldersDialog) {
         AlertDialog(
             onDismissRequest = { showFoldersDialog = false },
             title = { Text("管理本地文件夹", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
@@ -1350,9 +1598,15 @@ if (showFoldersDialog) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showFoldersDialog = false }) {
-                    Text("关闭")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "关闭",
+                            onClick = { showFoldersDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
             }
         )
     }
@@ -1390,14 +1644,19 @@ if (showFoldersDialog) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showHomepageModeDialog = false }) {
-                    Text("取消")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "取消",
+                            onClick = { showHomepageModeDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
             }
         )
     }
 
-    // 扫码登录对话框
     if (showQrDialog) {
         QrLoginDialog(
             ncmApi = ncmApi,
@@ -1455,9 +1714,15 @@ if (showFoldersDialog) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showUpdateChannelDialog = false }) {
-                    Text("完成")
-                }
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "完成",
+                            onClick = { showUpdateChannelDialog = false },
+                            style = ExpressiveButtonStyle.FILLED
+                        )
+                    )
+                )
             }
         )
     }
@@ -1510,7 +1775,7 @@ if (showFoldersDialog) {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(max = 160.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
                                     .padding(8.dp)
                                     .verticalScroll(rememberScrollState())
                             ) {
@@ -1523,40 +1788,42 @@ if (showFoldersDialog) {
                         }
                     },
                     confirmButton = {
-                        FilledTonalButton(
-                            onClick = {
-                                showUpdateResultDialog = false
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.downloadUrl)).apply {
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                    }
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "无法打开浏览器下载: ${e.message}", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        ) {
-                            Text("下载更新")
-                        }
-                    },
-                    dismissButton = {
-                        Row {
-                            TextButton(
-                                onClick = {
-                                    try {
-                                        val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.webUrl)).apply {
-                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        AdaptiveButtonGroup(
+                            buttons = listOf(
+                                AdaptiveButtonSpec(
+                                    text = "下载更新",
+                                    onClick = {
+                                        showUpdateResultDialog = false
+                                        try {
+                                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.downloadUrl)).apply {
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "无法打开浏览器下载: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
-                                        context.startActivity(intent)
-                                    } catch (_: Exception) {}
-                                }
-                            ) {
-                                Text("查看网页")
-                            }
-                            TextButton(onClick = { showUpdateResultDialog = false }) {
-                                Text("稍后")
-                            }
-                        }
+                                    },
+                                    style = ExpressiveButtonStyle.FILLED
+                                ),
+                                AdaptiveButtonSpec(
+                                    text = "查看网页",
+                                    onClick = {
+                                        try {
+                                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.webUrl)).apply {
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (_: Exception) {}
+                                    },
+                                    style = ExpressiveButtonStyle.TONAL
+                                ),
+                                AdaptiveButtonSpec(
+                                    text = "稍后",
+                                    onClick = { showUpdateResultDialog = false },
+                                    style = ExpressiveButtonStyle.TEXT
+                                )
+                            )
+                        )
                     }
                 )
             }
@@ -1577,9 +1844,15 @@ if (showFoldersDialog) {
                         )
                     },
                     confirmButton = {
-                        TextButton(onClick = { showUpdateResultDialog = false }) {
-                            Text("好的")
-                        }
+                        AdaptiveButtonGroup(
+                            buttons = listOf(
+                                AdaptiveButtonSpec(
+                                    text = "好的",
+                                    onClick = { showUpdateResultDialog = false },
+                                    style = ExpressiveButtonStyle.FILLED
+                                )
+                            )
+                        )
                     }
                 )
             }
@@ -1597,9 +1870,15 @@ if (showFoldersDialog) {
                         Text(text = res.message, style = MaterialTheme.typography.bodyMedium)
                     },
                     confirmButton = {
-                        TextButton(onClick = { showUpdateResultDialog = false }) {
-                            Text("确定")
-                        }
+                        AdaptiveButtonGroup(
+                            buttons = listOf(
+                                AdaptiveButtonSpec(
+                                    text = "确定",
+                                    onClick = { showUpdateResultDialog = false },
+                                    style = ExpressiveButtonStyle.FILLED
+                                )
+                            )
+                        )
                     }
                 )
             }
@@ -1613,8 +1892,8 @@ private fun SectionHeader(title: String) {
         text = title,
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+        fontWeight = FontWeight.ExtraBold,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
     )
 }
 
@@ -1623,17 +1902,18 @@ private fun SettingItem(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
         onClick = onClick,
         color = Color.Transparent,
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -1745,24 +2025,25 @@ private fun UserProfileDetailDialog(
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                OutlinedButton(
-                    onClick = onLogout,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Rounded.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("退出登录")
-                }
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("关闭")
-            }
+            AdaptiveButtonGroup(
+                buttons = listOf(
+                    AdaptiveButtonSpec(
+                        text = "退出登录",
+                        onClick = onLogout,
+                        icon = Icons.Rounded.Logout,
+                        style = ExpressiveButtonStyle.OUTLINED,
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    AdaptiveButtonSpec(
+                        text = "关闭",
+                        onClick = onDismiss,
+                        style = ExpressiveButtonStyle.TONAL
+                    )
+                )
+            )
         }
     )
 }
@@ -1838,7 +2119,7 @@ private fun QrLoginDialog(
                 Box(
                     modifier = Modifier
                         .size(200.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(16.dp))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1855,10 +2136,10 @@ private fun QrLoginDialog(
                                     .clickable {
                                         qrLoginUrl?.let { url ->
                                             try {
-                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
                                                 context.startActivity(intent)
                                             } catch (e: Exception) {
-                                                android.widget.Toast.makeText(context, "无法拉起浏览器或应用", android.widget.Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "无法拉起浏览器或应用", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -1877,10 +2158,10 @@ private fun QrLoginDialog(
                                     .clickable {
                                         qrLoginUrl?.let { url ->
                                             try {
-                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
                                                 context.startActivity(intent)
                                             } catch (e: Exception) {
-                                                android.widget.Toast.makeText(context, "无法拉起浏览器或应用", android.widget.Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, "无法拉起浏览器或应用", Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -1916,16 +2197,25 @@ private fun QrLoginDialog(
             }
         },
         confirmButton = {
-            if (qrStatus == QrStatus.EXPIRED) {
-                Button(onClick = { refreshQr() }) {
-                    Text("刷新二维码")
+            val specs = buildList {
+                if (qrStatus == QrStatus.EXPIRED) {
+                    add(
+                        AdaptiveButtonSpec(
+                            text = "刷新二维码",
+                            onClick = { refreshQr() },
+                            style = ExpressiveButtonStyle.FILLED
+                        )
+                    )
                 }
+                add(
+                    AdaptiveButtonSpec(
+                        text = "取消",
+                        onClick = onDismiss,
+                        style = ExpressiveButtonStyle.TONAL
+                    )
+                )
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
+            AdaptiveButtonGroup(buttons = specs)
         }
     )
 }
