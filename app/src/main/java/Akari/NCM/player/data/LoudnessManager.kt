@@ -86,13 +86,13 @@ class LoudnessManager @Inject constructor(
     }
 
     /**
-     * 保存并持久化曲目综合响度数据（避免用临时初判覆盖已完成的全曲精确锁定数据）
+     * 保存并持久化曲目综合响度数据（按置信度分级保护，禁止前奏初判覆盖多点抽样或全曲精确锁定数据）
      */
     fun saveLoudness(mediaId: String, data: LoudnessData) {
         if (!data.source.isKnownValid || data.source == LoudnessSource.QUEUE_AVERAGE) return
 
         val existing = memoryCache[mediaId]
-        if (existing != null && existing.source.isFinalLocked && !data.source.isFinalLocked) {
+        if (existing != null && existing.source.priority > data.source.priority) {
             return
         }
 

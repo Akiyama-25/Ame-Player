@@ -1,0 +1,1635 @@
+[2026-11-04 13:07:28.589] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-04 13:07:28.616] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 13:07:28.617] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-04 13:07:28.626] [DEBUG] [AME_LOUDNESS]: Loaded 2 cached loudness profiles from disk
+[2026-11-04 13:07:28.644] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-04 13:07:29.264] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-04 13:07:29.265] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 13:07:29.269] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-04 13:07:29.294] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-04 13:07:29.295] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:07:29.502] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 13:07:29.504] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 13:07:36.334] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-04 13:08:05.759] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-04 13:08:36.753] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-04 13:08:36.834] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 13:08:36.836] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-04 13:08:36.838] [DEBUG] [AME_LOUDNESS]: Loaded 2 cached loudness profiles from disk
+[2026-11-04 13:08:36.870] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-04 13:08:37.527] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-04 13:08:37.528] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 13:08:37.529] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-04 13:08:37.544] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-04 13:08:37.545] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:08:37.870] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 13:08:37.870] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 13:08:44.549] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1094, startIndex=9, keepInfiniteMode=false
+[2026-11-04 13:08:44.993] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='1466519472', reason=3
+[2026-11-04 13:08:44.997] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:08:44.998] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:08:45.062] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+y91: w93 was cancelled; job=w93{Cancelling}@775db36
+
+[2026-11-04 13:08:45.355] [DEBUG] [AME_LOUDNESS_PROC]: Track '1466519472' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:08:45.356] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for 'レプリカント' (target: -14.0 LUFS)
+[2026-11-04 13:08:45.749] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:08:45.750] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:08:47.574] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for レプリカント
+[2026-11-04 13:08:47.916] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for レプリカント
+[2026-11-04 13:08:52.990] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-04 13:08:52.993] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:09:16.267] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: android.hardware.usb.action.USB_DEVICE_ATTACHED
+[2026-11-04 13:09:16.376] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='null', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=false
+[2026-11-04 13:09:16.812] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (1 devices)
+[2026-11-04 13:09:16.817] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=false
+[2026-11-04 13:09:16.818] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-04 13:09:18.690] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:09:18.861] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:09:20.093] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:09:20.167] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:09:20.686] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:09:20.709] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:09:23.333] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1466519472: -12.59132 LUFS, peak=-0.17808633 dBFS (BS.1770 算法计算)
+[2026-11-04 13:09:23.334] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '1466519472': -12.59132 LUFS, effectiveGain=-1.40868 dB
+[2026-11-04 13:09:28.262] [INFO] [AME_USB_AUDIO]: Exclusive USB Audio mode toggled: enabled=true
+[2026-11-04 13:09:28.458] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=50, type=22)
+[2026-11-04 13:09:28.459] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-04 13:09:28.513] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=50, type=22)
+[2026-11-04 13:09:28.514] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-04 13:09:44.952] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:09:45.009] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:09:45.293] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for レプリカント
+[2026-11-04 13:09:46.663] [DEBUG] [AME_LOUDNESS_PROC]: Track '1466519472' has known loudness: -12.59132 LUFS, applying static gain=-1.40868 dB
+[2026-11-04 13:09:46.665] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='レプリカント', source=-12.59132 LUFS, target=-14.0 LUFS, gain=-1.40868 dB (peakLimited=false)
+[2026-11-04 13:09:49.884] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1466519472: -8.832234 LUFS, peak=-0.08925626 dBFS (BS.1770 算法计算)
+[2026-11-04 13:09:49.885] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '1466519472': -8.832234 LUFS, effectiveGain=-5.1677656 dB
+[2026-11-04 13:09:49.946] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3316094497', reason=2
+[2026-11-04 13:09:50.028] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:09:50.030] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:09:50.194] [DEBUG] [AME_LOUDNESS_PROC]: Track '3316094497' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:09:50.195] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for 'その絵の名前は（其绘名为） (feat. 宵崎奏&朝比奈まふゆ&東雲絵名&暁山瑞希&初音ミク)' (target: -14.0 LUFS)
+[2026-11-04 13:09:50.196] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:09:50.197] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:09:51.408] [DEBUG] [LyricsManager]: Fetched fallback online lyrics from その絵の名前は（其绘名为） (feat. 宵崎奏&朝比奈まふゆ&東雲絵名&暁山瑞希&初音ミク) - ProSEAKIプロセカ
+[2026-11-04 13:09:51.615] [DEBUG] [LyricsManager]: Fetched fallback online lyrics from その絵の名前は（其绘名为） (feat. 宵崎奏&朝比奈まふゆ&東雲絵名&暁山瑞希&初音ミク) - ProSEAKIプロセカ
+[2026-11-04 13:09:52.869] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3316094497: -9.304192 LUFS, peak=-0.09113113 dBFS (BS.1770 算法计算)
+[2026-11-04 13:09:52.871] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '3316094497': -9.304192 LUFS, effectiveGain=-4.6958084 dB
+[2026-11-04 13:10:12.138] [INFO] [AME_USB_AUDIO]: Exclusive USB Audio mode toggled: enabled=false
+[2026-11-04 13:10:12.835] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-04 13:10:12.851] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:10:12.855] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:10:12.946] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-04 13:10:13.000] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:10:13.005] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:10:15.307] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-04 13:10:15.316] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:10:16.507] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:10:16.514] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:10:20.921] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-04 13:10:20.926] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:11:25.005] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-04 13:11:54.701] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1094, startIndex=30, keepInfiniteMode=false
+[2026-11-04 13:11:55.148] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2725300561', reason=3
+[2026-11-04 13:11:55.150] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:11:55.156] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:11:55.342] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+y91: w93 was cancelled; job=w93{Cancelling}@c39a3e7
+
+[2026-11-04 13:11:55.447] [DEBUG] [AME_LOUDNESS_PROC]: Track '2725300561' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:11:55.448] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for 'World's end BLACKBOX' (target: -14.0 LUFS)
+[2026-11-04 13:11:55.614] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:11:55.642] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:11:58.449] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for World's end BLACKBOX
+[2026-11-04 13:11:59.990] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for World's end BLACKBOX
+[2026-11-04 13:12:05.832] [INFO] [AME_USB_AUDIO]: Exclusive USB Audio mode toggled: enabled=true
+[2026-11-04 13:12:05.963] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2725300561: -13.009697 LUFS, peak=-0.47392306 dBFS (BS.1770 算法计算)
+[2026-11-04 13:12:05.972] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '2725300561': -13.009697 LUFS, effectiveGain=-0.99030304 dB
+[2026-11-04 13:12:06.027] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=50, type=22)
+[2026-11-04 13:12:06.028] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-04 13:12:06.100] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=50, type=22)
+[2026-11-04 13:12:06.101] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-04 13:13:20.255] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-04 13:13:20.309] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=true, isExclusive=true
+[2026-11-04 13:13:20.312] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-04 13:13:20.321] [DEBUG] [AME_LOUDNESS]: Loaded 2 cached loudness profiles from disk
+[2026-11-04 13:13:20.362] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-04 13:13:20.693] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 13:13:20.998] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (10 devices)
+[2026-11-04 13:13:20.999] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=true, isExclusive=true
+[2026-11-04 13:13:21.000] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-04 13:13:21.030] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=50, type=22)
+[2026-11-04 13:13:21.030] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-04 13:13:21.031] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:13:21.126] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 13:13:27.229] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1094, startIndex=12, keepInfiniteMode=false
+[2026-11-04 13:13:27.620] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3437568135', reason=3
+[2026-11-04 13:13:27.625] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:13:27.627] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:13:27.664] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+y91: w93 was cancelled; job=w93{Cancelling}@5992ff2
+
+[2026-11-04 13:13:27.800] [DEBUG] [AME_LOUDNESS_PROC]: Track '3437568135' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:13:27.800] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for 'エピソード (feat. 夢ノ結唱 POPY)' (target: -14.0 LUFS)
+[2026-11-04 13:13:28.019] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:13:28.021] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:13:31.139] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3437568135: -21.596844 LUFS, peak=-7.0648823 dBFS (BS.1770 算法计算)
+[2026-11-04 13:13:31.140] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '3437568135': -21.596844 LUFS, effectiveGain=6.0648823 dB
+[2026-11-04 13:13:31.966] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for エピソード (feat. 夢ノ結唱 POPY)
+[2026-11-04 13:13:32.272] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for エピソード (feat. 夢ノ結唱 POPY)
+[2026-11-04 13:13:42.027] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:13:42.053] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:13:44.577] [DEBUG] [AME_LOUDNESS_PROC]: Track '3437568135' has known loudness: -21.596844 LUFS, applying static gain=6.0648823 dB
+[2026-11-04 13:13:44.578] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='エピソード (feat. 夢ノ結唱 POPY)', source=-21.596844 LUFS, target=-14.0 LUFS, gain=6.0648823 dB (peakLimited=true)
+[2026-11-04 13:13:46.986] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:13:46.987] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:13:49.024] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2697990902', reason=2
+[2026-11-04 13:13:49.069] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:13:49.121] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:13:49.123] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:13:49.238] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:13:49.240] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:13:50.472] [DEBUG] [LyricsManager]: Fetched fallback AMLL TTML lyrics from D/N/A【25時、ナイトコードで。 × 鏡音リン】 - 25時、ナイトコードで。/Azari/鏡音リン
+[2026-11-04 13:13:50.726] [DEBUG] [LyricsManager]: Fetched fallback AMLL TTML lyrics from D/N/A【25時、ナイトコードで。 × 鏡音リン】 - 25時、ナイトコードで。/Azari/鏡音リン
+[2026-11-04 13:13:53.021] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-04 13:13:53.033] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:13:58.263] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:13:58.275] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:14:07.643] [DEBUG] [AME_LOUDNESS_PROC]: Track '2697990902' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:14:07.643] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for 'D/N/A【25時、ナイトコードで。 × 鏡音リン】' (target: -14.0 LUFS)
+[2026-11-04 13:14:10.690] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2697990902: -10.611491 LUFS, peak=0.0 dBFS (BS.1770 算法计算)
+[2026-11-04 13:14:10.694] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '2697990902': -10.611491 LUFS, effectiveGain=-3.3885088 dB
+[2026-11-04 13:14:18.193] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2689711466', reason=2
+[2026-11-04 13:14:18.230] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:14:18.231] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:14:18.445] [DEBUG] [AME_LOUDNESS_PROC]: Track '2689711466' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:14:18.446] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for '「TimeLapse」（MyGO!!!!! 1st LIVE「僕たちはここで叫ぶ」）' (target: -14.0 LUFS)
+[2026-11-04 13:14:18.449] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:14:18.453] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:14:20.239] [DEBUG] [LyricsManager]: Fetched fallback online lyrics from 「TimeLapse」（MyGO!!!!! 1st LIVE「僕たちはここで叫ぶ」） - 高松燈
+[2026-11-04 13:14:21.522] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2689711466: -16.889866 LUFS, peak=-5.7538347 dBFS (BS.1770 算法计算)
+[2026-11-04 13:14:21.524] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '2689711466': -16.889866 LUFS, effectiveGain=2.8898659 dB
+[2026-11-04 13:14:23.352] [DEBUG] [LyricsManager]: Fetched fallback online lyrics from 「TimeLapse」（MyGO!!!!! 1st LIVE「僕たちはここで叫ぶ」） - 高松燈
+[2026-11-04 13:15:09.664] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1094, startIndex=30, keepInfiniteMode=false
+[2026-11-04 13:15:10.046] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2725300561', reason=3
+[2026-11-04 13:15:10.107] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:15:10.108] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:15:10.113] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:15:10.185] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+y91: w93 was cancelled; job=w93{Cancelling}@76977b4
+
+[2026-11-04 13:15:10.303] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:15:10.308] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:15:10.404] [DEBUG] [AME_LOUDNESS_PROC]: Track '2725300561' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:15:10.405] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for 'World's end BLACKBOX' (target: -14.0 LUFS)
+[2026-11-04 13:15:11.651] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for World's end BLACKBOX
+[2026-11-04 13:15:13.255] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for World's end BLACKBOX
+[2026-11-04 13:15:13.721] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2725300561: -11.637132 LUFS, peak=-0.47392306 dBFS (BS.1770 算法计算)
+[2026-11-04 13:15:13.723] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '2725300561': -11.637132 LUFS, effectiveGain=-2.3628683 dB
+[2026-11-04 13:15:59.496] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for World's end BLACKBOX
+[2026-11-04 13:16:01.979] [INFO] [AME_USB_AUDIO]: Exclusive USB Audio mode toggled: enabled=false
+[2026-11-04 13:16:02.654] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-04 13:16:02.661] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:16:02.663] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:16:02.756] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-04 13:16:02.766] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:16:02.772] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:16:04.395] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-04 13:16:04.401] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:16:06.901] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:16:06.909] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:16:14.129] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='22770035', reason=2
+[2026-11-04 13:16:14.207] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:16:14.209] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:16:14.321] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:16:14.324] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:16:14.564] [DEBUG] [AME_LOUDNESS_PROC]: Track '22770035' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:16:14.565] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for 'Planetes' (target: -14.0 LUFS)
+[2026-11-04 13:16:15.829] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Planetes
+[2026-11-04 13:16:16.324] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Planetes
+[2026-11-04 13:16:21.056] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='487003522', reason=2
+[2026-11-04 13:16:21.149] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:16:21.151] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:16:21.353] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:16:21.355] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:16:21.536] [DEBUG] [AME_LOUDNESS_PROC]: Track '487003522' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:16:21.537] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for '陽だまりロードナイト' (target: -14.0 LUFS)
+[2026-11-04 13:16:22.291] [DEBUG] [LyricsManager]: Fetched online YRC lyrics by exact ID for 陽だまりロードナイト
+[2026-11-04 13:16:22.420] [DEBUG] [LyricsManager]: Fetched online YRC lyrics by exact ID for 陽だまりロードナイト
+[2026-11-04 13:16:24.370] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-04 13:16:24.375] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:16:29.335] [INFO] [AME_USB_AUDIO]: Exclusive USB Audio mode toggled: enabled=true
+[2026-11-04 13:16:29.515] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=50, type=22)
+[2026-11-04 13:16:29.516] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-04 13:16:29.545] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=50, type=22)
+[2026-11-04 13:16:29.545] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-04 13:16:30.678] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:16:30.684] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:16:32.824] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=487003522: -7.6335773 LUFS, peak=-0.02309196 dBFS (BS.1770 算法计算)
+[2026-11-04 13:16:32.825] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '487003522': -7.6335773 LUFS, effectiveGain=-6.3664227 dB
+[2026-11-04 13:17:00.300] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:17:02.541] [DEBUG] [AME_LOUDNESS_PROC]: Track '487003522' has known loudness: -7.6335773 LUFS, applying static gain=-6.3664227 dB
+[2026-11-04 13:17:02.542] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='陽だまりロードナイト', source=-7.6335773 LUFS, target=-14.0 LUFS, gain=-6.3664227 dB (peakLimited=false)
+[2026-11-04 13:17:05.586] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=487003522: -8.862275 LUFS, peak=-0.023357742 dBFS (BS.1770 算法计算)
+[2026-11-04 13:17:05.587] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '487003522': -8.862275 LUFS, effectiveGain=-5.137725 dB
+[2026-11-04 13:17:07.566] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:17:07.903] [DEBUG] [AME_LOUDNESS_PROC]: Track '487003522' has known loudness: -8.862275 LUFS, applying static gain=-5.137725 dB
+[2026-11-04 13:17:07.904] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='陽だまりロードナイト', source=-8.862275 LUFS, target=-14.0 LUFS, gain=-5.137725 dB (peakLimited=false)
+[2026-11-04 13:17:08.755] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:17:09.853] [DEBUG] [AME_LOUDNESS_PROC]: Track '487003522' has known loudness: -8.862275 LUFS, applying static gain=-5.137725 dB
+[2026-11-04 13:17:09.854] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='陽だまりロードナイト', source=-8.862275 LUFS, target=-14.0 LUFS, gain=-5.137725 dB (peakLimited=false)
+[2026-11-04 13:17:12.896] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=487003522: -7.611249 LUFS, peak=-0.02309196 dBFS (BS.1770 算法计算)
+[2026-11-04 13:17:12.898] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '487003522': -7.611249 LUFS, effectiveGain=-6.388751 dB
+[2026-11-04 13:17:16.308] [DEBUG] [LyricsManager]: Fetched online YRC lyrics by exact ID for 陽だまりロードナイト
+[2026-11-04 13:17:17.126] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:17:17.153] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:17:19.354] [DEBUG] [AME_LOUDNESS_PROC]: Track '487003522' has known loudness: -7.611249 LUFS, applying static gain=-6.388751 dB
+[2026-11-04 13:17:19.355] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='陽だまりロードナイト', source=-7.611249 LUFS, target=-14.0 LUFS, gain=-6.388751 dB (peakLimited=false)
+[2026-11-04 13:17:22.399] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=487003522: -7.4447007 LUFS, peak=-0.02309196 dBFS (BS.1770 算法计算)
+[2026-11-04 13:17:22.400] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '487003522': -7.4447007 LUFS, effectiveGain=-6.5552993 dB
+[2026-11-04 13:17:25.142] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:17:26.584] [DEBUG] [AME_LOUDNESS_PROC]: Track '487003522' has known loudness: -7.4447007 LUFS, applying static gain=-6.5552993 dB
+[2026-11-04 13:17:26.585] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='陽だまりロードナイト', source=-7.4447007 LUFS, target=-14.0 LUFS, gain=-6.5552993 dB (peakLimited=false)
+[2026-11-04 13:17:29.618] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=487003522: -7.490525 LUFS, peak=-0.023357742 dBFS (BS.1770 算法计算)
+[2026-11-04 13:17:29.619] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '487003522': -7.490525 LUFS, effectiveGain=-6.509475 dB
+[2026-11-04 13:17:30.978] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:17:31.377] [DEBUG] [AME_LOUDNESS_PROC]: Track '487003522' has known loudness: -7.490525 LUFS, applying static gain=-6.509475 dB
+[2026-11-04 13:17:31.378] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='陽だまりロードナイト', source=-7.490525 LUFS, target=-14.0 LUFS, gain=-6.509475 dB (peakLimited=false)
+[2026-11-04 13:17:33.721] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:17:33.890] [DEBUG] [AME_LOUDNESS_PROC]: Track '487003522' has known loudness: -7.490525 LUFS, applying static gain=-6.509475 dB
+[2026-11-04 13:17:33.891] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='陽だまりロードナイト', source=-7.490525 LUFS, target=-14.0 LUFS, gain=-6.509475 dB (peakLimited=false)
+[2026-11-04 13:17:34.106] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:17:34.282] [DEBUG] [AME_LOUDNESS_PROC]: Track '487003522' has known loudness: -7.490525 LUFS, applying static gain=-6.509475 dB
+[2026-11-04 13:17:34.282] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='陽だまりロードナイト', source=-7.490525 LUFS, target=-14.0 LUFS, gain=-6.509475 dB (peakLimited=false)
+[2026-11-04 13:17:34.439] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:17:35.608] [DEBUG] [AME_LOUDNESS_PROC]: Track '487003522' has known loudness: -7.490525 LUFS, applying static gain=-6.509475 dB
+[2026-11-04 13:17:35.609] [INFO] [[AME_LOUDNESS]]: Applied EBU R128: track='陽だまりロードナイト', source=-7.490525 LUFS, target=-14.0 LUFS, gain=-6.509475 dB (peakLimited=false)
+[2026-11-04 13:17:38.656] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=487003522: -6.9890075 LUFS, peak=-0.02309196 dBFS (BS.1770 算法计算)
+[2026-11-04 13:17:38.658] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '487003522': -6.9890075 LUFS, effectiveGain=-7.0109925 dB
+[2026-11-04 13:21:15.923] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2755566961', reason=1
+[2026-11-04 13:21:16.056] [DEBUG] [AME_LOUDNESS_PROC]: Track '2755566961' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:21:16.056] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for 'ふたり' (target: -14.0 LUFS)
+[2026-11-04 13:21:17.323] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ふたり
+[2026-11-04 13:21:19.417] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2755566961: -12.643656 LUFS, peak=-0.850361 dBFS (BS.1770 算法计算)
+[2026-11-04 13:21:19.422] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '2755566961': -12.643656 LUFS, effectiveGain=-1.3563442 dB
+[2026-11-04 13:21:24.663] [INFO] [AME_USB_AUDIO]: Exclusive USB Audio mode toggled: enabled=false
+[2026-11-04 13:21:25.343] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-04 13:21:25.349] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:21:25.351] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:21:25.400] [ERROR] [[AME_ONLINE_PLAY]]: >>> ExoPlayer Playback ERROR: errorCode=1004, message=Unexpected runtime error, cause=java.lang.IllegalArgumentException
+kn0: Unexpected runtime error
+	at ho0.handleMessage(r8-map-id-5a9d728d67c06ae5d778f0fc779020342150ece16f913e451b630b523908f466:305)
+	at android.os.Handler.dispatchMessage(Unknown Source:14)
+	at android.os.Looper.loopOnce(Unknown Source:251)
+	at android.os.Looper.loop(Unknown Source:34)
+	at android.os.HandlerThread.run(Unknown Source:28)
+Caused by: java.lang.IllegalArgumentException
+	at d32.p(r8-map-id-5a9d728d67c06ae5d778f0fc779020342150ece16f913e451b630b523908f466:3)
+	at rc1.r(r8-map-id-5a9d728d67c06ae5d778f0fc779020342150ece16f913e451b630b523908f466:4)
+	at s90.handleBuffer(r8-map-id-5a9d728d67c06ae5d778f0fc779020342150ece16f913e451b630b523908f466:21)
+	at fu0.handleBuffer(r8-map-id-5a9d728d67c06ae5d778f0fc779020342150ece16f913e451b630b523908f466:3)
+	at com.decent.usbaudio.UsbAudioSink.handleBuffer(r8-map-id-5a9d728d67c06ae5d778f0fc779020342150ece16f913e451b630b523908f466:252)
+	at ys1.D(r8-map-id-5a9d728d67c06ae5d778f0fc779020342150ece16f913e451b630b523908f466:40)
+	at ys1.g(r8-map-id-5a9d728d67c06ae5d778f0fc779020342150ece16f913e451b630b523908f466:384)
+	at ho0.e(r8-map-id-5a9d728d67c06ae5d778f0fc779020342150ece16f913e451b630b523908f466:1177)
+	at ho0.handleMessage(r8-map-id-5a9d728d67c06ae5d778f0fc779020342150ece16f913e451b630b523908f466:269)
+	... 4 more
+
+[2026-11-04 13:21:25.403] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: IDLE (1)
+[2026-11-04 13:21:25.426] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-04 13:21:26.236] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ふたり
+[2026-11-04 13:21:28.907] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-04 13:21:28.980] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=true, isExclusive=false
+[2026-11-04 13:21:28.990] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-04 13:21:28.996] [DEBUG] [AME_LOUDNESS]: Loaded 2 cached loudness profiles from disk
+[2026-11-04 13:21:29.048] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-04 13:21:29.399] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 13:21:29.617] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (10 devices)
+[2026-11-04 13:21:29.619] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=true, isExclusive=false
+[2026-11-04 13:21:29.621] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-04 13:21:29.640] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-04 13:21:29.641] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:21:29.767] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 13:21:32.668] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1094, startIndex=2, keepInfiniteMode=false
+[2026-11-04 13:21:33.084] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2007044520', reason=3
+[2026-11-04 13:21:33.087] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:21:33.089] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:21:33.170] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+y91: w93 was cancelled; job=w93{Cancelling}@e8e07a5
+
+[2026-11-04 13:21:33.240] [DEBUG] [AME_LOUDNESS_PROC]: Track '2007044520' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 13:21:33.240] [INFO] [[AME_LOUDNESS]]: Started real-time EBU R128 dynamic equalization for '星屑物語' (target: -14.0 LUFS)
+[2026-11-04 13:21:33.478] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:21:33.482] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:21:36.160] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 星屑物語
+[2026-11-04 13:21:36.213] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 星屑物語
+[2026-11-04 13:21:43.543] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-04 13:21:43.545] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 13:21:44.681] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: android.hardware.usb.action.USB_DEVICE_DETACHED
+[2026-11-04 13:21:44.682] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: AudioDeviceInfo detected='USB-Audio - MOONDROP Dawn Pro', but UsbDevice not matched in deviceList
+[2026-11-04 13:21:44.775] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device removed (1 devices)
+[2026-11-04 13:21:44.777] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 13:21:44.778] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-04 13:21:49.299] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: android.hardware.usb.action.USB_DEVICE_ATTACHED
+[2026-11-04 13:21:49.357] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='null', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=false
+[2026-11-04 13:21:49.578] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (1 devices)
+[2026-11-04 13:21:49.580] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=false
+[2026-11-04 13:21:49.580] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-04 13:21:51.012] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 13:21:51.060] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 13:21:51.316] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 13:21:51.318] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 13:21:51.511] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2007044520: -12.677902 LUFS, peak=-0.74575245 dBFS (BS.1770 算法计算)
+[2026-11-04 13:21:51.512] [INFO] [AME_LOUDNESS_PROC]: Completed online BS.1770 scan for '2007044520': -12.677902 LUFS, effectiveGain=-1.3220978 dB
+[2026-11-04 13:25:27.118] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-04 13:25:27.157] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-04 15:19:28.357] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-04 15:19:28.437] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 15:19:28.438] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-04 15:19:28.442] [DEBUG] [AME_LOUDNESS]: Loaded 2 cached loudness profiles from disk
+[2026-11-04 15:19:28.462] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-04 15:19:28.740] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 15:19:28.923] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-04 15:19:28.924] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 15:19:28.925] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-04 15:19:28.946] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-04 15:19:28.946] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 15:19:29.000] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 16:30:57.757] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-04 16:30:57.859] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 16:30:57.862] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-04 16:30:57.881] [DEBUG] [AME_LOUDNESS]: Loaded 2 cached loudness profiles from disk
+[2026-11-04 16:30:57.897] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-04 16:30:58.177] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 16:30:58.346] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-04 16:30:58.347] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 16:30:58.350] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-04 16:30:58.370] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-04 16:30:58.371] [DEBUG] [AME_LOUDNESS_PROC]: Track 'null' loudness unknown, starting real-time EBU R128 measurement (target: -14.0 LUFS)
+[2026-11-04 16:30:58.489] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 16:31:03.174] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-04 16:31:21.510] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-04 16:31:21.603] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 16:31:21.606] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-04 16:31:21.610] [DEBUG] [AME_LOUDNESS]: Loaded 18 cached loudness profiles from disk
+[2026-11-04 16:31:21.632] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-04 16:31:22.320] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-04 16:31:22.321] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 16:31:22.321] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-04 16:31:22.342] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-04 16:31:22.552] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 16:31:22.556] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 20:37:57.357] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-04 20:37:57.389] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 20:37:57.390] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-04 20:37:57.394] [DEBUG] [AME_LOUDNESS]: Loaded 18 cached loudness profiles from disk
+[2026-11-04 20:37:57.417] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-04 20:37:57.798] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 20:37:57.927] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-04 20:37:57.928] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-04 20:37:57.929] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-04 20:37:58.004] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-04 20:37:58.029] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-04 20:40:02.706] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1094, startIndex=453, keepInfiniteMode=false
+[2026-11-04 20:40:03.667] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2112531307', reason=3
+[2026-11-04 20:40:03.675] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-04 20:40:03.678] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-04 20:40:03.726] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+z91: y93 was cancelled; job=y93{Cancelling}@e26c0a
+
+[2026-11-04 20:40:03.994] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '「僕は...」', starting full-track background scan
+[2026-11-04 20:40:04.111] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2F%E3%81%82%E3%81%9F%E3%82%89%E3%82%88%20-%20%E3%80%8C%E5%83%95%E3%81%AF...%E3%80%8D.ncm: Failed to instantiate extractor.
+[2026-11-04 20:40:04.433] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-04 20:40:04.437] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-04 20:40:08.004] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 「僕は...」
+[2026-11-04 20:40:08.048] [DEBUG] [LyricsManager]: Fetched AMLL TTML lyrics by exact ID for 「僕は...」 (id=2112531307)
+[2026-11-04 20:40:09.050] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-04 20:40:09.054] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-05 13:26:23.844] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-07 16:46:42.742] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-07 16:46:42.780] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=false
+[2026-11-07 16:46:42.781] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-07 16:46:42.786] [DEBUG] [AME_LOUDNESS]: Loaded 18 cached loudness profiles from disk
+[2026-11-07 16:46:42.812] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-07 16:46:43.381] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (10 devices)
+[2026-11-07 16:46:43.382] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=false
+[2026-11-07 16:46:43.384] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-07 16:46:43.400] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-07 16:46:43.401] [INFO] [[AME_USB_AUDIO]]: >>> Routing standard AudioTrack to USB device: 'USB-Audio - MOONDROP Dawn Pro'
+[2026-11-07 16:46:43.670] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-07 16:46:44.486] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-07 16:46:52.846] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1094, startIndex=2, keepInfiniteMode=false
+[2026-11-07 16:46:53.369] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2007044520', reason=3
+[2026-11-07 16:46:53.375] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-07 16:46:53.376] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-07 16:46:53.489] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='星屑物語', source=-12.677902 LUFS, target=-14.0 LUFS, gain=-1.3220978 dB (peakLimited=false)
+[2026-11-07 16:46:53.550] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+z91: y93 was cancelled; job=y93{Cancelling}@de9ef03
+
+[2026-11-07 16:46:53.985] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-07 16:46:54.015] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-07 16:46:57.660] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 星屑物語
+[2026-11-07 16:46:59.174] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 星屑物語
+[2026-11-07 16:46:59.389] [INFO] [AME_USB_AUDIO]: Exclusive USB Audio mode toggled: enabled=true
+[2026-11-07 16:46:59.393] [INFO] [AME_USB_AUDIO]: Requesting hardware USB permission for: MOONDROP Dawn Pro
+[2026-11-07 16:46:59.428] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=43, type=22)
+[2026-11-07 16:46:59.429] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-07 16:46:59.566] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=43, type=22)
+[2026-11-07 16:46:59.567] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-07 16:47:00.396] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: Akari.NCM.player.USB_PERMISSION
+[2026-11-07 16:47:00.397] [INFO] [AME_USB_AUDIO]: USB permission broadcast result for device /dev/bus/usb/001/002: granted=true
+[2026-11-07 16:47:00.409] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=true, isExclusive=true
+[2026-11-07 16:47:02.291] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2034851942', reason=2
+[2026-11-07 16:47:02.365] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-07 16:47:02.367] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-07 16:47:02.522] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-07 16:47:02.559] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-07 16:47:02.586] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '数センチメンタル', starting full-track background scan
+[2026-11-07 16:47:02.788] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2F%E3%81%93%E3%81%AF%E3%81%AA%E3%82%89%E3%82%80%20-%20%E6%95%B0%E3%82%BB%E3%83%B3%E3%83%81%E3%83%A1%E3%83%B3%E3%82%BF%E3%83%AB.ncm: Failed to instantiate extractor.
+[2026-11-07 16:47:04.070] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 数センチメンタル
+[2026-11-07 16:47:08.894] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 数センチメンタル
+[2026-11-07 16:49:49.871] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-07 16:51:09.563] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called
+[2026-11-07 16:51:09.567] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-07 16:51:28.790] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2164259993', reason=1
+[2026-11-07 16:51:28.957] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'swim (Cover)', starting full-track background scan
+[2026-11-07 16:51:29.014] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2FMyGO!!!!!%20-%20swim%20(Cover).ncm: Failed to instantiate extractor.
+[2026-11-07 16:51:31.391] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for swim (Cover)
+[2026-11-07 16:51:32.515] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2074725758', reason=2
+[2026-11-07 16:51:32.607] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-07 16:51:32.609] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-07 16:51:32.760] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-07 16:51:32.765] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-07 16:51:32.880] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'ブループラネット', starting full-track background scan
+[2026-11-07 16:51:32.955] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2FDECO%2027%20%E5%88%9D%E9%9F%B3%E3%83%9F%E3%82%AF%20-%20%E3%83%96%E3%83%AB%E3%83%BC%E3%83%97%E3%83%A9%E3%83%8D%E3%83%83%E3%83%88.ncm: Failed to instantiate extractor.
+[2026-11-07 16:51:33.978] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ブループラネット
+[2026-11-07 16:51:35.025] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ブループラネット
+[2026-11-07 16:54:56.916] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device removed (1 devices)
+[2026-11-07 16:54:56.919] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-07 16:54:56.920] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=true, device=null)
+[2026-11-07 16:54:56.920] [WARN] [[AME_USB_AUDIO]]: >>> USB Audio DAC unplugged during exclusive playback! Pausing audio to protect ears/speakers.
+[2026-11-07 16:54:56.921] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-07 16:54:56.923] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-07 16:54:57.197] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: android.hardware.usb.action.USB_DEVICE_DETACHED
+[2026-11-07 16:54:57.202] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-07 16:54:57.553] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: android.hardware.usb.action.USB_DEVICE_ATTACHED
+[2026-11-07 16:54:57.618] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='null', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=true
+[2026-11-07 16:54:57.878] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (1 devices)
+[2026-11-07 16:54:57.884] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=true
+[2026-11-07 16:54:57.892] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=58, type=22)
+[2026-11-07 16:54:57.893] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-07 16:55:06.166] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2003496924', reason=2
+[2026-11-07 16:55:06.224] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-07 16:55:06.306] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '小さな海', starting full-track background scan
+[2026-11-07 16:55:06.335] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-07 16:55:06.337] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-07 16:55:06.367] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2F%E7%B5%90%E6%9D%9F%E3%83%90%E3%83%B3%E3%83%89%20-%20%E5%B0%8F%E3%81%95%E3%81%AA%E6%B5%B7.ncm: Failed to instantiate extractor.
+[2026-11-07 16:55:07.714] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 小さな海
+[2026-11-07 16:55:08.032] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 小さな海
+[2026-11-07 16:58:50.863] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device removed (1 devices)
+[2026-11-07 16:58:50.869] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-07 16:58:50.872] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=true, device=null)
+[2026-11-07 16:58:50.873] [WARN] [[AME_USB_AUDIO]]: >>> USB Audio DAC unplugged during exclusive playback! Pausing audio to protect ears/speakers.
+[2026-11-07 16:58:50.873] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-07 16:58:50.876] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-07 16:58:51.153] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: android.hardware.usb.action.USB_DEVICE_DETACHED
+[2026-11-07 16:58:51.160] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-07 16:58:51.830] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: android.hardware.usb.action.USB_DEVICE_ATTACHED
+[2026-11-07 16:58:51.841] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='null', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=true
+[2026-11-07 16:58:52.430] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (1 devices)
+[2026-11-07 16:58:52.486] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=true
+[2026-11-07 16:58:52.525] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=70, type=22)
+[2026-11-07 16:58:52.527] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-07 16:58:56.631] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='1858165741', reason=2
+[2026-11-07 16:58:56.717] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-07 16:58:56.836] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-07 16:58:56.838] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-07 16:58:56.909] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Sing Alive', starting full-track background scan
+[2026-11-07 16:58:57.047] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2FRoselia%20-%20Sing%20Alive.ncm: Failed to instantiate extractor.
+[2026-11-07 16:58:58.217] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Sing Alive
+[2026-11-07 16:58:58.342] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Sing Alive
+[2026-11-07 16:59:03.078] [INFO] [AME_USB_AUDIO]: Exclusive USB Audio mode toggled: enabled=false
+[2026-11-07 16:59:03.509] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-07 16:59:03.510] [INFO] [[AME_USB_AUDIO]]: >>> Routing standard AudioTrack to USB device: 'USB-Audio - MOONDROP Dawn Pro'
+[2026-11-07 16:59:03.532] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-07 16:59:03.549] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-07 16:59:03.623] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: android.hardware.usb.action.USB_DEVICE_DETACHED
+[2026-11-07 16:59:03.624] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: AudioDeviceInfo detected='USB-Audio - MOONDROP Dawn Pro', but UsbDevice not matched in deviceList
+[2026-11-07 16:59:03.648] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-07 16:59:03.648] [INFO] [[AME_USB_AUDIO]]: >>> Routing standard AudioTrack to USB device: 'USB-Audio - MOONDROP Dawn Pro'
+[2026-11-07 16:59:03.651] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-07 16:59:03.654] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-07 16:59:03.920] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device removed (1 devices)
+[2026-11-07 16:59:03.922] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-07 16:59:03.922] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-07 16:59:04.098] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Sing Alive
+[2026-11-07 16:59:04.831] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: android.hardware.usb.action.USB_DEVICE_ATTACHED
+[2026-11-07 16:59:04.869] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='null', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=false
+[2026-11-07 16:59:05.759] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (1 devices)
+[2026-11-07 16:59:05.766] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=false
+[2026-11-07 16:59:05.854] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-07 16:59:05.854] [INFO] [[AME_USB_AUDIO]]: >>> Routing standard AudioTrack to USB device: 'USB-Audio - MOONDROP Dawn Pro'
+[2026-11-07 16:59:21.358] [INFO] [[AME_ONLINE_PLAY]]: >>> pause() called
+[2026-11-07 16:59:21.370] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-07 17:32:22.699] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-07 20:00:39.222] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-07 20:00:39.253] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-07 20:00:39.255] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-07 20:00:39.260] [DEBUG] [AME_LOUDNESS]: Loaded 18 cached loudness profiles from disk
+[2026-11-07 20:00:39.333] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-07 20:00:39.815] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-07 20:00:40.028] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-07 20:00:40.028] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-07 20:00:40.030] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-07 20:00:40.060] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-07 20:00:40.108] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-07 20:00:47.952] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-07 20:03:32.155] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-07 20:04:17.052] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-07 20:04:17.120] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-07 20:04:17.122] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-07 20:04:17.129] [DEBUG] [AME_LOUDNESS]: Loaded 18 cached loudness profiles from disk
+[2026-11-07 20:04:17.164] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-07 20:04:17.476] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-07 20:04:17.726] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-07 20:04:17.729] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-07 20:04:17.731] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-07 20:04:17.763] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-07 20:04:17.823] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-09 23:29:56.519] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-09 23:29:56.557] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-09 23:29:56.558] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-09 23:29:56.570] [DEBUG] [AME_LOUDNESS]: Loaded 18 cached loudness profiles from disk
+[2026-11-09 23:29:56.586] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-09 23:29:57.072] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-09 23:29:57.166] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (12 devices)
+[2026-11-09 23:29:57.168] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-09 23:29:57.169] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-09 23:29:57.181] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-09 23:29:57.191] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-09 23:30:55.874] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-09 23:30:55.919] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-09 23:30:55.920] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-09 23:30:55.926] [DEBUG] [AME_LOUDNESS]: Loaded 18 cached loudness profiles from disk
+[2026-11-09 23:30:56.001] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-09 23:30:56.406] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-09 23:30:56.482] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (12 devices)
+[2026-11-09 23:30:56.484] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-09 23:30:56.487] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-09 23:30:56.522] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-09 23:30:56.579] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-09 23:32:06.527] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1099, startIndex=1, keepInfiniteMode=false
+[2026-11-09 23:32:06.881] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3444183581', reason=3
+[2026-11-09 23:32:06.886] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-09 23:32:06.897] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-09 23:32:07.027] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+ca1: ca3 was cancelled; job=ca3{Cancelling}@5d85039
+
+[2026-11-09 23:32:07.083] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Message', starting full-track background scan
+[2026-11-09 23:32:07.240] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2F%E3%81%8F%E3%82%8B%E3%81%B6%E3%81%A3%E3%81%93%E3%81%A1%E3%82%83%E3%82%93%20-%20Message.ncm: Failed to instantiate extractor.
+[2026-11-09 23:32:07.477] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-09 23:32:07.485] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-09 23:32:09.598] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Message
+[2026-11-09 23:32:11.159] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Message
+[2026-11-09 23:32:43.437] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Message
+[2026-11-09 23:34:57.614] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2011880152', reason=1
+[2026-11-09 23:34:57.835] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'SIZUMU', starting full-track background scan
+[2026-11-09 23:34:57.873] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2FEssbee%20-%20SIZUMU.ncm: Failed to instantiate extractor.
+[2026-11-09 23:34:58.732] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for SIZUMU
+[2026-11-09 23:39:35.419] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3372872462', reason=1
+[2026-11-09 23:39:35.576] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'ENHANCED FICTION (feat. Srezcat, Matatabi Sound System & Nyankovsky)', starting full-track background scan
+[2026-11-09 23:39:35.634] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2FKobaryo%20Srezcat%20Matatabi%20Sound%20System%20Nyankovsky%20-%20ENHANCED%20FICTION%20(feat.%20Srezcat%2C%20Matatabi%20Sound%20System%20%26%20Nyankovsky).ncm: Failed to instantiate extractor.
+[2026-11-09 23:39:41.334] [DEBUG] [LyricsManager]: Fetched fallback online lyrics from Kumo No Kireme - Kobaryo
+[2026-11-09 23:42:10.657] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-09 23:42:11.402] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3346324534', reason=1
+[2026-11-09 23:42:11.567] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '茜', starting full-track background scan
+[2026-11-09 23:42:11.602] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2F%E3%83%A8%E3%83%AB%E3%82%B7%E3%82%AB%20-%20%E8%8C%9C.ncm: Failed to instantiate extractor.
+[2026-11-09 23:42:12.477] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 茜
+[2026-11-09 23:42:22.868] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-09 23:42:23.517] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-09 23:42:24.616] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-09 23:42:24.622] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-09 23:45:57.778] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2682009360', reason=1
+[2026-11-09 23:45:57.927] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Sing Alive (instrumental)', starting full-track background scan
+[2026-11-09 23:45:57.975] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2FRoselia%20-%20Sing%20Alive%20(instrumental).ncm: Failed to instantiate extractor.
+[2026-11-09 23:45:59.037] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Sing Alive (instrumental)
+[2026-11-09 23:51:13.739] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2679719927', reason=1
+[2026-11-09 23:51:14.093] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Aether Crest: Celestial', starting full-track background scan
+[2026-11-09 23:51:14.415] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2F%E6%B0%B4%E9%87%8E%E5%81%A5%E6%B2%BB%20void%20-%20Aether%20Crest%EF%BC%9A%20Celestial.ncm: Failed to instantiate extractor.
+[2026-11-09 23:51:16.322] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Aether Crest: Celestial
+[2026-11-09 23:53:58.334] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2662882530', reason=1
+[2026-11-09 23:53:58.529] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'エス', starting full-track background scan
+[2026-11-09 23:53:58.570] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2F%E5%86%85%E7%B7%92%E3%81%AE%E3%83%94%E3%82%A2%E3%82%B9%20-%20%E3%82%A8%E3%82%B9.ncm: Failed to instantiate extractor.
+[2026-11-09 23:53:59.388] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for エス
+[2026-11-09 23:57:59.258] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3317577124', reason=1
+[2026-11-09 23:57:59.405] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Sophie', starting full-track background scan
+[2026-11-09 23:57:59.452] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2FAve%20Mujica%20-%20Sophie.ncm: Failed to instantiate extractor.
+[2026-11-09 23:58:00.588] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Sophie
+[2026-11-10 00:01:18.073] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='1990182386', reason=1
+[2026-11-10 00:01:18.415] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '終の祈り', starting full-track background scan
+[2026-11-10 00:01:18.483] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2Frionos%20VISUAL%20ARTS%20%20%20Key%20-%20%E7%B5%82%E3%81%AE%E7%A5%88%E3%82%8A.ncm: Failed to instantiate extractor.
+[2026-11-10 00:01:21.284] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 終の祈り
+[2026-11-10 00:06:08.302] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2737208592', reason=1
+[2026-11-10 00:06:08.534] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '遠雷', starting full-track background scan
+[2026-11-10 00:06:08.601] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2Ftayori%20-%20%E9%81%A0%E9%9B%B7.ncm: Failed to instantiate extractor.
+[2026-11-10 00:06:09.803] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 遠雷
+[2026-11-10 00:09:54.900] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2652661332', reason=1
+[2026-11-10 00:09:55.157] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'SAN値直葬 (feat. 初音ミク)', starting full-track background scan
+[2026-11-10 00:09:55.301] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2FSTEAKA%20%E5%88%9D%E9%9F%B3%E3%83%9F%E3%82%AF%20-%20SAN%E5%80%A4%E7%9B%B4%E8%91%AC%20(feat.%20%E5%88%9D%E9%9F%B3%E3%83%9F%E3%82%AF).ncm: Failed to instantiate extractor.
+[2026-11-10 00:09:56.548] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for SAN値直葬 (feat. 初音ミク)
+[2026-11-10 00:10:03.170] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3362601049', reason=2
+[2026-11-10 00:10:03.253] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-10 00:10:03.255] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-10 00:10:03.282] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-10 00:10:03.454] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-10 00:10:03.455] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-10 00:10:03.528] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '神鳴', starting full-track background scan
+[2026-11-10 00:10:05.195] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2122283432', reason=2
+[2026-11-10 00:10:05.275] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-10 00:10:05.276] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-10 00:10:05.288] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-10 00:10:05.511] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-10 00:10:05.517] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-10 00:10:05.664] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'ロストエンファウンド (feat. 星乃一歌&天馬咲希&望月穂波&日野森志歩&初音ミク)', starting full-track background scan
+[2026-11-10 00:10:05.673] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (27 blocks, peak=0.96936035): -14.454803 LUFS
+[2026-11-10 00:10:05.761] [WARN] [TrackLoudnessScanner]: Full-track loudness scan failed for content://com.android.externalstorage.documents/tree/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic/document/primary%3ADownload%2Fnetease%2Fcloudmusic%2FMusic%2FLeo%20need%20-%20%E3%83%AD%E3%82%B9%E3%83%88%E3%82%A8%E3%83%B3%E3%83%95%E3%82%A1%E3%82%A6%E3%83%B3%E3%83%89%20(feat.%20%E6%98%9F%E4%B9%83%E4%B8%80%E6%AD%8C%26%E5%A4%A9%E9%A6%AC%E5%92%B2%E5%B8%8C%26%E6%9C%9B%E6%9C%88%E7%A9%82%E6%B3%A2%26%E6%97%A5%E9%87%8E%E6%A3%AE%E5%BF%97%E6%AD%A9%26%E5%88%9D%E9%9F%B3%E3%83%9F%E3%82%AF).ncm: Failed to instantiate extractor.
+[2026-11-10 00:10:06.613] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ロストエンファウンド (feat. 星乃一歌&天馬咲希&望月穂波&日野森志歩&初音ミク)
+[2026-11-10 00:11:58.414] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-10 00:11:59.188] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-10 09:36:14.587] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-10 09:36:14.639] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-10 09:36:14.640] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-10 09:36:14.645] [DEBUG] [AME_LOUDNESS]: Loaded 18 cached loudness profiles from disk
+[2026-11-10 09:36:14.667] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-10 09:36:15.398] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-10 09:36:15.433] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-10 09:36:15.434] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-10 09:36:15.435] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-10 09:36:15.463] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-10 09:36:15.513] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-10 09:36:21.019] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-10 09:36:42.483] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-10 09:36:42.527] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-10 09:36:42.529] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-10 09:36:42.532] [DEBUG] [AME_LOUDNESS]: Loaded 18 cached loudness profiles from disk
+[2026-11-10 09:36:42.555] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-10 09:36:43.209] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-10 09:36:43.209] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-10 09:36:43.261] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-10 09:36:43.263] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-10 09:36:43.278] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-10 09:36:43.354] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-10 09:36:49.576] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1099, startIndex=1, keepInfiniteMode=false
+[2026-11-10 09:36:49.918] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3444183581', reason=3
+[2026-11-10 09:36:49.923] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-10 09:36:49.927] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-10 09:36:49.988] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+da1: fa3 was cancelled; job=fa3{Cancelling}@7c2b652
+
+[2026-11-10 09:36:50.160] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Message', starting full-track background scan
+[2026-11-10 09:36:50.438] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-10 09:36:50.439] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-10 09:36:54.131] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Message
+[2026-11-10 09:36:54.415] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Message
+[2026-11-10 09:37:03.221] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-10 09:37:04.131] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-10 09:37:06.737] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (420 blocks, peak=0.9510803): -9.710342 LUFS
+[2026-11-10 09:37:06.743] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3444183581: -9.710342 LUFS, peak=-0.43565607 dBFS (BS.1770 算法计算)
+[2026-11-10 09:37:06.777] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='Message', source=-9.710342 LUFS, target=-14.0 LUFS, gain=-4.2896576 dB (peakLimited=false)
+[2026-11-10 09:56:10.886] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-10 09:56:10.917] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-10 09:56:10.918] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-10 09:56:10.927] [DEBUG] [AME_LOUDNESS]: Loaded 19 cached loudness profiles from disk
+[2026-11-10 09:56:10.950] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-10 09:56:11.553] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-10 09:56:11.554] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-10 09:56:11.554] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-10 09:56:11.593] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-10 09:56:11.609] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-10 09:56:11.727] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-10 09:56:38.639] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1099, startIndex=1, keepInfiniteMode=false
+[2026-11-10 09:56:39.000] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3444183581', reason=3
+[2026-11-10 09:56:39.004] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-10 09:56:39.006] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-10 09:56:39.078] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+da1: fa3 was cancelled; job=fa3{Cancelling}@8691186
+
+[2026-11-10 09:56:39.119] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='Message', source=-9.710342 LUFS, target=-14.0 LUFS, gain=-4.2896576 dB (peakLimited=false)
+[2026-11-10 09:56:39.529] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-10 09:56:39.532] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-10 09:56:39.780] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-10 09:56:40.585] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Message
+[2026-11-10 09:56:40.627] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-10 09:56:40.869] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-10 09:56:40.871] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-10 09:56:41.540] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-10 09:56:42.306] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 16:00:33.204] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-15 16:00:33.247] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 16:00:33.250] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-15 16:00:33.254] [DEBUG] [AME_LOUDNESS]: Loaded 19 cached loudness profiles from disk
+[2026-11-15 16:00:33.289] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-15 16:00:33.855] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (12 devices)
+[2026-11-15 16:00:33.856] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 16:00:33.858] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-15 16:00:33.861] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 16:00:33.890] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-15 16:00:34.070] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 16:00:42.431] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1099, startIndex=0, keepInfiniteMode=false
+[2026-11-15 16:00:42.702] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3443796005', reason=3
+[2026-11-15 16:00:42.705] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 16:00:42.707] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 16:00:42.857] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+da1: fa3 was cancelled; job=fa3{Cancelling}@6e2ba0b
+
+[2026-11-15 16:00:42.969] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Desultory Signals', starting full-track background scan
+[2026-11-15 16:00:43.217] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 16:00:43.220] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 16:00:47.121] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Desultory Signals
+[2026-11-15 16:00:47.843] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Desultory Signals
+[2026-11-15 16:00:51.467] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (376 blocks, peak=1.0): -7.2079444 LUFS
+[2026-11-15 16:00:51.472] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3443796005: -7.2079444 LUFS, peak=0.0 dBFS (BS.1770 算法计算)
+[2026-11-15 16:00:51.524] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='Desultory Signals', source=-7.2079444 LUFS, target=-14.0 LUFS, gain=-6.7920556 dB (peakLimited=false)
+[2026-11-15 16:03:15.882] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='1399847994', reason=1
+[2026-11-15 16:03:16.088] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '雛鳥', starting full-track background scan
+[2026-11-15 16:03:22.217] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 雛鳥
+[2026-11-15 16:03:26.516] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (656 blocks, peak=1.0): -6.7857823 LUFS
+[2026-11-15 16:03:26.520] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1399847994: -6.7857823 LUFS, peak=0.0 dBFS (BS.1770 算法计算)
+[2026-11-15 16:03:26.536] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='雛鳥', source=-6.7857823 LUFS, target=-14.0 LUFS, gain=-7.2142177 dB (peakLimited=false)
+[2026-11-15 16:07:38.879] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='1929065682', reason=1
+[2026-11-15 16:07:39.097] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '10月無口な君を忘れる', starting full-track background scan
+[2026-11-15 16:07:44.073] [DEBUG] [LyricsManager]: Fetched online YRC lyrics by exact ID for 10月無口な君を忘れる
+[2026-11-15 16:07:52.990] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (822 blocks, peak=0.9724426): -6.010183 LUFS
+[2026-11-15 16:07:52.994] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1929065682: -6.010183 LUFS, peak=-0.24272025 dBFS (BS.1770 算法计算)
+[2026-11-15 16:07:53.032] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='10月無口な君を忘れる', source=-6.010183 LUFS, target=-14.0 LUFS, gain=-7.989817 dB (peakLimited=false)
+[2026-11-15 16:10:26.097] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2134851870', reason=2
+[2026-11-15 16:10:26.220] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 16:10:26.232] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 16:10:26.237] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 16:10:26.285] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 16:10:26.286] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 16:10:26.403] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '系ぎて', starting full-track background scan
+[2026-11-15 16:10:34.065] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (428 blocks, peak=1.0): -9.536138 LUFS
+[2026-11-15 16:10:34.070] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2134851870: -9.536138 LUFS, peak=0.0 dBFS (BS.1770 算法计算)
+[2026-11-15 16:10:34.071] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='系ぎて', source=-9.536138 LUFS, target=-14.0 LUFS, gain=-4.4638624 dB (peakLimited=false)
+[2026-11-15 16:13:18.496] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2094351580', reason=1
+[2026-11-15 16:13:18.703] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '運命の人', starting full-track background scan
+[2026-11-15 16:13:19.870] [DEBUG] [LyricsManager]: Fetched online YRC lyrics by exact ID for 運命の人
+[2026-11-15 16:13:27.838] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (489 blocks, peak=1.0): -8.684717 LUFS
+[2026-11-15 16:13:27.842] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2094351580: -8.684717 LUFS, peak=0.0 dBFS (BS.1770 算法计算)
+[2026-11-15 16:13:27.866] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='運命の人', source=-8.684717 LUFS, target=-14.0 LUFS, gain=-5.315283 dB (peakLimited=false)
+[2026-11-15 16:16:34.204] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2614287969', reason=1
+[2026-11-15 16:16:34.287] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'ただ静かに', starting full-track background scan
+[2026-11-15 16:16:36.161] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ただ静かに
+[2026-11-15 16:16:40.626] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (420 blocks, peak=1.0): -14.951685 LUFS
+[2026-11-15 16:16:40.630] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2614287969: -14.951685 LUFS, peak=0.0 dBFS (BS.1770 算法计算)
+[2026-11-15 16:16:40.654] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='ただ静かに', source=-14.951685 LUFS, target=-14.0 LUFS, gain=-1.0 dB (peakLimited=true)
+[2026-11-15 16:18:00.588] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2101784043', reason=2
+[2026-11-15 16:18:00.603] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 16:18:00.605] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 16:18:00.641] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 16:18:01.012] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 16:18:01.044] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 16:18:01.208] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'きゅうくらりん - STUDY WITH MIKU ver. -', starting full-track background scan
+[2026-11-15 16:18:05.958] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for きゅうくらりん - STUDY WITH MIKU ver. -
+[2026-11-15 16:18:13.339] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (652 blocks, peak=0.9324951): -11.411718 LUFS
+[2026-11-15 16:18:13.342] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2101784043: -11.411718 LUFS, peak=-0.60706866 dBFS (BS.1770 算法计算)
+[2026-11-15 16:18:13.357] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='きゅうくらりん - STUDY WITH MIKU ver. -', source=-11.411718 LUFS, target=-14.0 LUFS, gain=-2.5882816 dB (peakLimited=false)
+[2026-11-15 16:22:22.513] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3323980596', reason=1
+[2026-11-15 16:22:22.707] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '愛迷エレジー (Reloaded)', starting full-track background scan
+[2026-11-15 16:22:25.018] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 愛迷エレジー (Reloaded)
+[2026-11-15 16:22:30.435] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (409 blocks, peak=0.964386): -5.9751277 LUFS
+[2026-11-15 16:22:30.439] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3323980596: -5.9751277 LUFS, peak=-0.31498218 dBFS (BS.1770 算法计算)
+[2026-11-15 16:22:30.473] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='愛迷エレジー (Reloaded)', source=-5.9751277 LUFS, target=-14.0 LUFS, gain=-8.024872 dB (peakLimited=false)
+[2026-11-15 16:25:06.230] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='477913', reason=1
+[2026-11-15 16:25:06.474] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'ヨスガノソラ メインテーマ -遠い空へ-', starting full-track background scan
+[2026-11-15 16:25:16.978] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (527 blocks, peak=0.99920654): -12.659796 LUFS
+[2026-11-15 16:25:16.985] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=477913: -12.659796 LUFS, peak=-0.006894616 dBFS (BS.1770 算法计算)
+[2026-11-15 16:25:17.006] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='ヨスガノソラ メインテーマ -遠い空へ-', source=-12.659796 LUFS, target=-14.0 LUFS, gain=-1.3402042 dB (peakLimited=false)
+[2026-11-15 16:25:46.023] [WARN] [AME_NCM_API]: Direct getLyric failed: Socket timeout has expired [url=https://interface.music.163.com/eapi/song/lyric/v1, socket_timeout=unknown] ms
+[2026-11-15 16:28:04.936] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1099, startIndex=1, keepInfiniteMode=false
+[2026-11-15 16:28:05.272] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3444183581', reason=3
+[2026-11-15 16:28:05.316] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 16:28:05.317] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 16:28:05.322] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 16:28:05.364] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+da1: fa3 was cancelled; job=fa3{Cancelling}@89c1dfd
+
+[2026-11-15 16:28:05.370] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='Message', source=-9.710342 LUFS, target=-14.0 LUFS, gain=-4.2896576 dB (peakLimited=false)
+[2026-11-15 16:28:05.595] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 16:28:05.596] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 16:28:09.717] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Message
+[2026-11-15 16:30:54.480] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='473817010', reason=1
+[2026-11-15 16:30:54.651] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'BLACK SHOUT', starting full-track background scan
+[2026-11-15 16:30:55.557] [DEBUG] [LyricsManager]: Fetched online YRC lyrics by exact ID for BLACK SHOUT
+[2026-11-15 16:30:58.509] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='1850581335', reason=2
+[2026-11-15 16:30:58.580] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 16:30:58.583] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 16:30:58.589] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 16:30:58.777] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 16:30:58.778] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 16:30:58.937] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Löschen', starting full-track background scan
+[2026-11-15 16:30:58.938] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (180 blocks, peak=0.9973755): -8.370893 LUFS
+[2026-11-15 16:30:59.832] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Löschen
+[2026-11-15 16:31:00.687] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2755377729', reason=2
+[2026-11-15 16:31:00.778] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 16:31:00.780] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 16:31:00.784] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 16:31:00.927] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'イグニッション', starting full-track background scan
+[2026-11-15 16:31:00.935] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 16:31:00.944] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 16:31:00.979] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (93 blocks, peak=0.9885559): -5.0969353 LUFS
+[2026-11-15 16:31:02.054] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for イグニッション
+[2026-11-15 16:31:10.597] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (537 blocks, peak=0.8913574): -8.7892065 LUFS
+[2026-11-15 16:31:10.604] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2755377729: -8.7892065 LUFS, peak=-0.9989623 dBFS (BS.1770 算法计算)
+[2026-11-15 16:31:10.631] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='イグニッション', source=-8.7892065 LUFS, target=-14.0 LUFS, gain=-5.2107935 dB (peakLimited=false)
+[2026-11-15 16:34:36.535] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2110359767', reason=1
+[2026-11-15 16:34:36.665] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Sage', starting full-track background scan
+[2026-11-15 16:34:40.044] [DEBUG] [LyricsManager]: Fetched fallback online lyrics from Cryogenic (feat. Petra Gurin) - かめりあ/Petra Gurin
+[2026-11-15 16:34:43.913] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (375 blocks, peak=0.9645996): -9.579581 LUFS
+[2026-11-15 16:34:43.917] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2110359767: -9.579581 LUFS, peak=-0.31305838 dBFS (BS.1770 算法计算)
+[2026-11-15 16:34:43.918] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='Sage', source=-9.579581 LUFS, target=-14.0 LUFS, gain=-4.4204187 dB (peakLimited=false)
+[2026-11-15 16:36:51.318] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='1962425055', reason=2
+[2026-11-15 16:36:51.417] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 16:36:51.418] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 16:36:51.426] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 16:36:51.438] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 16:36:51.439] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 16:36:51.682] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'AFTER PANDORA', starting full-track background scan
+[2026-11-15 16:36:52.614] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for AFTER PANDORA
+[2026-11-15 16:37:02.088] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (615 blocks, peak=0.9677124): -10.5211735 LUFS
+[2026-11-15 16:37:02.092] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1962425055: -10.5211735 LUFS, peak=-0.28507385 dBFS (BS.1770 算法计算)
+[2026-11-15 16:37:02.112] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='AFTER PANDORA', source=-10.5211735 LUFS, target=-14.0 LUFS, gain=-3.4788265 dB (peakLimited=false)
+[2026-11-15 16:40:58.470] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='468517764', reason=1
+[2026-11-15 16:40:58.646] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '夏休みの転校生', starting full-track background scan
+[2026-11-15 16:40:59.855] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 夏休みの転校生
+[2026-11-15 16:41:10.919] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (679 blocks, peak=1.0): -7.130567 LUFS
+[2026-11-15 16:41:10.926] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=468517764: -7.130567 LUFS, peak=0.0 dBFS (BS.1770 算法计算)
+[2026-11-15 16:41:10.951] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='夏休みの転校生', source=-7.130567 LUFS, target=-14.0 LUFS, gain=-6.869433 dB (peakLimited=false)
+[2026-11-15 16:45:30.147] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2044111860', reason=1
+[2026-11-15 16:45:30.451] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'イコラト', starting full-track background scan
+[2026-11-15 16:45:31.714] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for イコラト
+[2026-11-15 16:45:38.240] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (485 blocks, peak=1.0): -8.005441 LUFS
+[2026-11-15 16:45:38.243] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2044111860: -8.005441 LUFS, peak=0.0 dBFS (BS.1770 算法计算)
+[2026-11-15 16:45:38.262] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='イコラト', source=-8.005441 LUFS, target=-14.0 LUFS, gain=-5.9945593 dB (peakLimited=false)
+[2026-11-15 16:48:44.557] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2141265511', reason=1
+[2026-11-15 16:48:44.749] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'See you! 〜それぞれの明日へ〜', starting full-track background scan
+[2026-11-15 16:48:46.112] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for See you! 〜それぞれの明日へ〜
+[2026-11-15 16:48:59.202] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (778 blocks, peak=1.0): -5.6031966 LUFS
+[2026-11-15 16:48:59.207] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2141265511: -5.6031966 LUFS, peak=0.0 dBFS (BS.1770 算法计算)
+[2026-11-15 16:48:59.251] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='See you! 〜それぞれの明日へ〜', source=-5.6031966 LUFS, target=-14.0 LUFS, gain=-8.396803 dB (peakLimited=false)
+[2026-11-15 16:50:07.861] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='1818761620', reason=2
+[2026-11-15 16:50:07.950] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 16:50:07.951] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 16:50:07.956] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 16:50:08.037] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '天ノ弱', starting full-track background scan
+[2026-11-15 16:50:08.038] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 16:50:08.045] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 16:50:09.122] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2122283432', reason=2
+[2026-11-15 16:50:09.212] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 16:50:09.215] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 16:50:09.225] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 16:50:09.377] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 16:50:09.383] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 16:50:09.471] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'ロストエンファウンド (feat. 星乃一歌&天馬咲希&望月穂波&日野森志歩&初音ミク)', starting full-track background scan
+[2026-11-15 16:50:09.482] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (128 blocks, peak=0.9958801): -7.8036494 LUFS
+[2026-11-15 16:50:10.316] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ロストエンファウンド (feat. 星乃一歌&天馬咲希&望月穂波&日野森志歩&初音ミク)
+[2026-11-15 16:50:21.622] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (759 blocks, peak=0.9871521): -7.4846253 LUFS
+[2026-11-15 16:50:21.625] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2122283432: -7.4846253 LUFS, peak=-0.11231853 dBFS (BS.1770 算法计算)
+[2026-11-15 16:50:21.653] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='ロストエンファウンド (feat. 星乃一歌&天馬咲希&望月穂波&日野森志歩&初音ミク)', source=-7.4846253 LUFS, target=-14.0 LUFS, gain=-6.5153747 dB (peakLimited=false)
+[2026-11-15 16:55:13.671] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='431357026', reason=1
+[2026-11-15 16:55:13.831] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'ninelie', starting full-track background scan
+[2026-11-15 16:55:18.135] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ninelie
+[2026-11-15 16:55:24.753] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (654 blocks, peak=1.0): -7.817508 LUFS
+[2026-11-15 16:55:24.757] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=431357026: -7.817508 LUFS, peak=0.0 dBFS (BS.1770 算法计算)
+[2026-11-15 16:55:24.786] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='ninelie', source=-7.817508 LUFS, target=-14.0 LUFS, gain=-6.182492 dB (peakLimited=false)
+[2026-11-15 16:59:35.519] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2128215640', reason=1
+[2026-11-15 16:59:35.718] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Returns (instrumental)', starting full-track background scan
+[2026-11-15 16:59:40.144] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Returns (instrumental)
+[2026-11-15 16:59:52.507] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (808 blocks, peak=0.8592224): -9.76661 LUFS
+[2026-11-15 16:59:52.510] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2128215640: -9.76661 LUFS, peak=-1.317888 dBFS (BS.1770 算法计算)
+[2026-11-15 16:59:52.541] [INFO] [[AME_LOUDNESS]]: Applied whole-track EBU R128: track='Returns (instrumental)', source=-9.76661 LUFS, target=-14.0 LUFS, gain=-4.23339 dB (peakLimited=false)
+[2026-11-15 17:04:35.805] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-15 17:04:35.819] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 20:45:19.034] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-15 20:45:19.078] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 20:45:19.080] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-15 20:45:19.089] [DEBUG] [AME_LOUDNESS]: Loaded 37 cached loudness profiles from disk
+[2026-11-15 20:45:19.181] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-15 20:45:19.466] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 20:45:20.010] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-15 20:45:20.017] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 20:45:20.019] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-15 20:45:20.077] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-15 20:45:20.107] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 20:45:29.770] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-15 20:45:46.021] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-15 20:45:46.085] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 20:45:46.086] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-15 20:45:46.097] [DEBUG] [AME_LOUDNESS]: Loaded 37 cached loudness profiles from disk
+[2026-11-15 20:45:46.196] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-15 20:45:46.750] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 20:45:47.156] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-15 20:45:47.157] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 20:45:47.159] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-15 20:45:47.201] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-15 20:45:47.233] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 20:47:27.359] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1098, startIndex=2, keepInfiniteMode=false
+[2026-11-15 20:47:27.499] [DEBUG] [AME_LOUDNESS_PROC]: Track '977494702' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: -14.0 LUFS)
+[2026-11-15 20:47:27.724] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='977494702', reason=3
+[2026-11-15 20:47:27.725] [DEBUG] [AME_LOUDNESS_PROC]: Track '977494702' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: -14.0 LUFS)
+[2026-11-15 20:47:27.729] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 20:47:27.731] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 20:47:27.810] [DEBUG] [AME_LOUDNESS_PROC]: Track '977494702' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: -14.0 LUFS)
+[2026-11-15 20:47:27.810] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Kankitsu - Luminaria', starting dual-stage fast+full scan
+[2026-11-15 20:47:27.961] [INFO] [[AME_ONLINE_PLAY]]: Lazy loaded cover for Kankitsu - Luminaria: file:///data/user/0/Akari.NCM.player/cache/covers/977494702.jpg
+[2026-11-15 20:47:27.959] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+na1: gb3 was cancelled; job=gb3{Cancelling}@934190c
+
+[2026-11-15 20:47:28.184] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 20:47:28.186] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 20:47:28.748] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9048462): -9.189688 LUFS
+[2026-11-15 20:47:28.755] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2650432816: -9.189688 LUFS, peak=-0.86850476 dBFS (极速初判)
+[2026-11-15 20:47:28.779] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9885254): -6.069151 LUFS
+[2026-11-15 20:47:28.783] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=977494702: -6.069151 LUFS, peak=-0.10024343 dBFS (极速初判)
+[2026-11-15 20:47:28.999] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=977494702: -17.787128 LUFS, peak=-4.140699 dBFS (极速初判)
+[2026-11-15 20:47:29.123] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -8.476548 LUFS
+[2026-11-15 20:47:29.128] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2676308767: -8.476548 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-15 20:47:29.765] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -11.843596 LUFS
+[2026-11-15 20:47:29.768] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=995222711: -11.843596 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-15 20:47:29.782] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-9.836611
+[2026-11-15 20:47:29.877] [INFO] [AME_LOUDNESS_PROC]: Streaming Stage 1 preview for '977494702': -17.451065 LUFS, gain=3.140699 dB
+[2026-11-15 20:47:29.878] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=977494702: -17.451065 LUFS, peak=-4.140699 dBFS (极速初判)
+[2026-11-15 20:47:32.776] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 20:47:32.783] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2650432816', reason=2
+[2026-11-15 20:47:32.783] [DEBUG] [AME_LOUDNESS_PROC]: Track '2650432816' loudness preset (极速初判): -9.189688 LUFS, gain=-4.8103123 dB, locked=false
+[2026-11-15 20:47:32.835] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 20:47:32.840] [DEBUG] [AME_LOUDNESS_PROC]: Track '2650432816' loudness preset (极速初判): -9.189688 LUFS, gain=-4.8103123 dB, locked=false
+[2026-11-15 20:47:32.883] [DEBUG] [AME_LOUDNESS_PROC]: Track '2650432816' loudness preset (极速初判): -9.189688 LUFS, gain=-4.8103123 dB, locked=false
+[2026-11-15 20:47:32.904] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='水中リフレクション', source=-9.189688 LUFS, target=-14.0 LUFS, gain=-4.8103123 dB
+[2026-11-15 20:47:32.905] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (218 blocks, peak=0.9885254): -7.122162 LUFS
+[2026-11-15 20:47:32.975] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 20:47:32.987] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-9.379217
+[2026-11-15 20:47:33.155] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2650432816: -27.184752 LUFS, peak=-16.166115 dBFS (极速初判)
+[2026-11-15 20:47:33.883] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 20:47:33.899] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 20:47:33.979] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='水中リフレクション', source=-27.184752 LUFS, target=-14.0 LUFS, gain=13.1847515 dB
+[2026-11-15 20:47:33.984] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (50 blocks, peak=0.6967468): -19.045391 LUFS
+[2026-11-15 20:47:34.147] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2650432816: -27.184752 LUFS, peak=-16.166115 dBFS (极速初判)
+[2026-11-15 20:47:36.392] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 水中リフレクション
+[2026-11-15 20:47:36.644] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 水中リフレクション
+[2026-11-15 20:47:42.043] [INFO] [AME_LOUDNESS_PROC]: Streaming Stage 1 preview for '2650432816': -20.823093 LUFS, gain=4.2592196 dB
+[2026-11-15 20:47:42.043] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2650432816: -20.823093 LUFS, peak=-5.2592196 dBFS (极速初判)
+[2026-11-15 20:47:42.749] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 水中リフレクション
+[2026-11-15 20:47:47.973] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-15 20:47:49.155] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 20:47:49.560] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (970 blocks, peak=0.9812012): -9.423428 LUFS
+[2026-11-15 20:47:49.571] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2650432816: -9.423428 LUFS, peak=-0.16483884 dBFS (BS.1770 全曲锁定)
+[2026-11-15 20:47:51.933] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (1 devices)
+[2026-11-15 20:47:51.935] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 20:47:52.218] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (1 devices)
+[2026-11-15 20:47:52.219] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 20:47:53.227] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1098, startIndex=7, keepInfiniteMode=false
+[2026-11-15 20:47:53.321] [DEBUG] [AME_LOUDNESS_PROC]: Track '774481921' loudness preset (队列均值预补偿): -9.379217 LUFS, gain=-4.620783 dB, locked=false
+[2026-11-15 20:47:53.519] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='774481921', reason=3
+[2026-11-15 20:47:53.519] [DEBUG] [AME_LOUDNESS_PROC]: Track '774481921' loudness preset (队列均值预补偿): -9.379217 LUFS, gain=-4.620783 dB, locked=false
+[2026-11-15 20:47:53.664] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 20:47:53.691] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 20:47:53.919] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 20:47:53.925] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+na1: gb3 was cancelled; job=gb3{Cancelling}@128b812
+
+[2026-11-15 20:47:53.930] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 20:47:54.113] [DEBUG] [AME_LOUDNESS_PROC]: Track '774481921' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: -14.0 LUFS)
+[2026-11-15 20:47:54.113] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'seatrus - 夢の降る日に', starting dual-stage fast+full scan
+[2026-11-15 20:47:54.218] [INFO] [[AME_ONLINE_PLAY]]: Lazy loaded cover for seatrus - 夢の降る日に: file:///data/user/0/Akari.NCM.player/cache/covers/774481921.jpg
+[2026-11-15 20:47:54.900] [INFO] [AME_LOUDNESS_PROC]: Streaming Stage 1 preview for '774481921': -15.135776 LUFS, gain=1.1357756 dB
+[2026-11-15 20:47:54.901] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=774481921: -15.135776 LUFS, peak=-2.9562902 dBFS (极速初判)
+[2026-11-15 20:47:55.456] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -4.2091384 LUFS
+[2026-11-15 20:47:55.461] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=774481921: -4.2091384 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-15 20:47:55.678] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=774481921: -14.56858 LUFS, peak=-1.3711133 dBFS (极速初判)
+[2026-11-15 20:47:55.681] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9942627): -5.724197 LUFS
+[2026-11-15 20:47:55.689] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2706903589: -5.724197 LUFS, peak=-0.0499771 dBFS (极速初判)
+[2026-11-15 20:47:56.088] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.96661377): -13.263967 LUFS
+[2026-11-15 20:47:56.095] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1923751777: -13.263967 LUFS, peak=-0.29494044 dBFS (极速初判)
+[2026-11-15 20:47:56.316] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 20:47:56.324] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2706903589', reason=2
+[2026-11-15 20:47:56.324] [DEBUG] [AME_LOUDNESS_PROC]: Track '2706903589' loudness preset (极速初判): -5.724197 LUFS, gain=-8.275803 dB, locked=false
+[2026-11-15 20:47:56.378] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (3 blocks, peak=0.99731445): -6.0845385 LUFS
+[2026-11-15 20:47:56.457] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 20:47:56.459] [DEBUG] [AME_LOUDNESS_PROC]: Track '2706903589' loudness preset (极速初判): -5.724197 LUFS, gain=-8.275803 dB, locked=false
+[2026-11-15 20:47:56.517] [DEBUG] [AME_LOUDNESS_PROC]: Track '2706903589' loudness preset (极速初判): -5.724197 LUFS, gain=-8.275803 dB, locked=false
+[2026-11-15 20:47:56.559] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='BRIGHTEST HEART', source=-5.724197 LUFS, target=-14.0 LUFS, gain=-8.275803 dB
+[2026-11-15 20:47:56.562] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (34 blocks, peak=0.99057007): -12.255791 LUFS
+[2026-11-15 20:47:56.633] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 20:47:57.173] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2706903589: -5.3555293 LUFS, peak=-0.0499771 dBFS (极速初判)
+[2026-11-15 20:47:57.314] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.99731445): -5.4222326 LUFS
+[2026-11-15 20:47:57.318] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=-4200652: -5.4222326 LUFS, peak=-0.023357742 dBFS (极速初判)
+[2026-11-15 20:47:57.518] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 20:47:57.523] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 20:47:57.594] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='BRIGHTEST HEART', source=-5.3555293 LUFS, target=-14.0 LUFS, gain=-8.64447 dB
+[2026-11-15 20:47:57.599] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (10 blocks, peak=0.9942627): -5.7523823 LUFS
+[2026-11-15 20:47:57.647] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for BRIGHTEST HEART
+[2026-11-15 20:47:57.726] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9437866): -8.718701 LUFS
+[2026-11-15 20:47:57.730] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1363303397: -8.718701 LUFS, peak=-0.50252366 dBFS (极速初判)
+[2026-11-15 20:47:57.731] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-9.134967
+[2026-11-15 20:47:57.946] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2706903589: -5.3555293 LUFS, peak=-0.0499771 dBFS (极速初判)
+[2026-11-15 20:47:59.228] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 20:47:59.257] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='1923751777', reason=2
+[2026-11-15 20:47:59.257] [DEBUG] [AME_LOUDNESS_PROC]: Track '1923751777' loudness preset (极速初判): -13.263967 LUFS, gain=-0.73603344 dB, locked=false
+[2026-11-15 20:47:59.360] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 20:47:59.365] [DEBUG] [AME_LOUDNESS_PROC]: Track '1923751777' loudness preset (极速初判): -13.263967 LUFS, gain=-0.73603344 dB, locked=false
+[2026-11-15 20:47:59.398] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 20:47:59.398] [DEBUG] [AME_LOUDNESS_PROC]: Track '1923751777' loudness preset (极速初判): -13.263967 LUFS, gain=-0.73603344 dB, locked=false
+[2026-11-15 20:47:59.426] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='ド屑', source=-13.263967 LUFS, target=-14.0 LUFS, gain=-0.73603344 dB
+[2026-11-15 20:47:59.475] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (36 blocks, peak=0.9942627): -5.1899533 LUFS
+[2026-11-15 20:48:00.184] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1923751777: -12.880041 LUFS, peak=-0.27795494 dBFS (极速初判)
+[2026-11-15 20:48:00.392] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.97702026): -8.869979 LUFS
+[2026-11-15 20:48:00.400] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 20:48:00.404] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 20:48:00.412] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2670370756: -8.869979 LUFS, peak=-0.20192857 dBFS (极速初判)
+[2026-11-15 20:48:00.485] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='ド屑', source=-12.880041 LUFS, target=-14.0 LUFS, gain=-1.1199589 dB
+[2026-11-15 20:48:00.485] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.6703043
+[2026-11-15 20:48:00.494] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (17 blocks, peak=0.96850586): -11.509927 LUFS
+[2026-11-15 20:48:00.543] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ド屑
+[2026-11-15 20:48:00.767] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1923751777: -12.880041 LUFS, peak=-0.27795494 dBFS (极速初判)
+[2026-11-15 20:48:01.391] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ド屑
+[2026-11-15 20:48:02.060] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 20:48:02.082] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='-4200652', reason=2
+[2026-11-15 20:48:02.082] [DEBUG] [AME_LOUDNESS_PROC]: Track '-4200652' loudness preset (极速初判): -5.4222326 LUFS, gain=-8.577767 dB, locked=false
+[2026-11-15 20:48:02.218] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 20:48:02.222] [DEBUG] [AME_LOUDNESS_PROC]: Track '-4200652' loudness preset (极速初判): -5.4222326 LUFS, gain=-8.577767 dB, locked=false
+[2026-11-15 20:48:02.269] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 20:48:02.274] [DEBUG] [AME_LOUDNESS_PROC]: Track '-4200652' loudness preset (极速初判): -5.4222326 LUFS, gain=-8.577767 dB, locked=false
+[2026-11-15 20:48:02.305] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='Giga Vivid BAD SQUAD 初音ミク - Beyond the way (feat. 小豆沢こはね&白石杏&東雲彰人&青柳冬弥&初音ミク)', source=-5.4222326 LUFS, target=-14.0 LUFS, gain=-8.577767 dB
+[2026-11-15 20:48:02.317] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (69 blocks, peak=0.9711304): -11.869321 LUFS
+[2026-11-15 20:48:02.338] [INFO] [[AME_ONLINE_PLAY]]: Lazy loaded cover for Giga Vivid BAD SQUAD 初音ミク - Beyond the way (feat. 小豆沢こはね&白石杏&東雲彰人&青柳冬弥&初音ミク): file:///data/user/0/Akari.NCM.player/cache/covers/-4200652.jpg
+[2026-11-15 20:48:03.144] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=-4200652: -12.57808 LUFS, peak=-0.26728752 dBFS (极速初判)
+[2026-11-15 20:48:03.278] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 20:48:03.283] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 20:48:03.326] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='Giga Vivid BAD SQUAD 初音ミク - Beyond the way (feat. 小豆沢こはね&白石杏&東雲彰人&青柳冬弥&初音ミク)', source=-12.57808 LUFS, target=-14.0 LUFS, gain=-1.4219198 dB
+[2026-11-15 20:48:03.327] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (10 blocks, peak=0.9942322): -10.161894 LUFS
+[2026-11-15 20:48:03.544] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.93899536): -10.014772 LUFS
+[2026-11-15 20:48:03.552] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1863121951: -10.014772 LUFS, peak=-0.54673105 dBFS (极速初判)
+[2026-11-15 20:48:03.557] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-9.201151
+[2026-11-15 20:48:03.626] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=-4200652: -12.57808 LUFS, peak=-0.26728752 dBFS (极速初判)
+[2026-11-15 20:48:03.879] [DEBUG] [LyricsManager]: Fetched fallback YRC word-by-word lyrics from Beyond the way (feat. 小豆沢こはね&白石杏&東雲彰人&青柳冬弥&初音ミク) - Giga/Vivid BAD SQUAD/初音ミク
+[2026-11-15 20:48:03.950] [DEBUG] [LyricsManager]: Fetched fallback YRC word-by-word lyrics from Beyond the way (feat. 小豆沢こはね&白石杏&東雲彰人&青柳冬弥&初音ミク) - Giga/Vivid BAD SQUAD/初音ミク
+[2026-11-15 20:48:06.062] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-15 20:48:06.994] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 20:48:10.219] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device removed (2 devices)
+[2026-11-15 20:48:10.232] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 20:48:13.626] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (456 blocks, peak=0.99731445): -5.048477 LUFS
+[2026-11-15 20:48:13.629] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=-4200652: -5.048477 LUFS, peak=-0.023357742 dBFS (BS.1770 全曲锁定)
+[2026-11-15 20:48:21.747] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.99731445): -4.9456983 LUFS
+[2026-11-15 20:48:21.751] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2051254513: -4.9456983 LUFS, peak=-0.023357742 dBFS (极速初判)
+[2026-11-15 20:48:21.925] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (3 blocks, peak=0.98986816): -7.8187084 LUFS
+[2026-11-15 20:48:22.286] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.98986816): -9.337397 LUFS
+[2026-11-15 20:48:22.290] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=-1186301783: -9.337397 LUFS, peak=-0.08845286 dBFS (极速初判)
+[2026-11-15 20:48:22.516] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (3 blocks, peak=0.8562927): -8.8339205 LUFS
+[2026-11-15 20:48:22.521] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-9.201151
+[2026-11-15 20:48:27.345] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 20:48:27.350] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 20:48:28.171] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-15 20:48:29.125] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 20:56:26.718] [DEBUG] [LyricsManager]: Fetched fallback YRC word-by-word lyrics from Beyond the way (feat. 小豆沢こはね&白石杏&東雲彰人&青柳冬弥&初音ミク) - Giga/Vivid BAD SQUAD/初音ミク
+[2026-11-15 23:44:07.129] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-15 23:44:07.177] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 23:44:07.181] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-15 23:44:07.188] [DEBUG] [AME_LOUDNESS]: Loaded 50 cached loudness profiles from disk
+[2026-11-15 23:44:07.219] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-15 23:44:07.767] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 23:44:08.055] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-15 23:44:08.057] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 23:44:08.058] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 23:44:08.061] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-15 23:44:08.136] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-15 23:44:13.637] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1099, startIndex=4, keepInfiniteMode=false
+[2026-11-15 23:44:13.816] [DEBUG] [AME_LOUDNESS_PROC]: Track '3444452494' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: -14.0 LUFS)
+[2026-11-15 23:44:13.997] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3444452494', reason=3
+[2026-11-15 23:44:13.997] [DEBUG] [AME_LOUDNESS_PROC]: Track '3444452494' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: -14.0 LUFS)
+[2026-11-15 23:44:14.001] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 23:44:14.004] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 23:44:14.193] [DEBUG] [AME_LOUDNESS_PROC]: Track '3444452494' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: -14.0 LUFS)
+[2026-11-15 23:44:14.194] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'ハテ', starting dual-stage fast+full scan
+[2026-11-15 23:44:14.422] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+na1: gb3 was cancelled; job=gb3{Cancelling}@f237c4b
+
+[2026-11-15 23:44:14.785] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 23:44:14.791] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 23:44:14.927] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-15 23:44:15.413] [INFO] [AME_LOUDNESS_PROC]: Streaming Stage 1 preview for '3444452494': -24.79504 LUFS, gain=10.79504 dB
+[2026-11-15 23:44:15.413] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3444452494: -24.79504 LUFS, peak=-13.740957 dBFS (极速初判)
+[2026-11-15 23:44:15.873] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -7.4601216 LUFS
+[2026-11-15 23:44:15.885] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2717303420: -7.4601216 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-15 23:44:16.120] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9880371): -7.885652 LUFS
+[2026-11-15 23:44:16.140] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3444452494: -7.885652 LUFS, peak=-0.10453487 dBFS (极速初判)
+[2026-11-15 23:44:16.192] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 23:44:16.547] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 23:44:16.556] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 23:44:16.954] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3444452494: -23.422829 LUFS, peak=-13.267942 dBFS (极速初判)
+[2026-11-15 23:44:17.207] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-15 23:44:17.741] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-15 23:44:18.008] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9594116): -11.403742 LUFS
+[2026-11-15 23:44:18.017] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2718327123: -11.403742 LUFS, peak=-0.3599005 dBFS (极速初判)
+[2026-11-15 23:44:18.782] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9042969): -9.039477 LUFS
+[2026-11-15 23:44:18.786] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2649156123: -9.039477 LUFS, peak=-0.8737794 dBFS (极速初判)
+[2026-11-15 23:44:18.793] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-9.301113
+[2026-11-15 23:45:59.693] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-15 23:45:59.819] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 23:45:59.820] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-15 23:45:59.825] [DEBUG] [AME_LOUDNESS]: Loaded 54 cached loudness profiles from disk
+[2026-11-15 23:45:59.869] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-15 23:46:00.247] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 23:46:00.720] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-15 23:46:00.722] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 23:46:00.726] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-15 23:46:00.757] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-15 23:46:00.776] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 23:46:38.475] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-15 23:46:58.064] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-15 23:46:58.099] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 23:46:58.104] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-15 23:46:58.110] [DEBUG] [AME_LOUDNESS]: Loaded 54 cached loudness profiles from disk
+[2026-11-15 23:46:58.139] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-15 23:46:58.994] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-15 23:46:58.995] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-15 23:46:58.996] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-15 23:46:59.020] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-15 23:46:59.110] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 23:46:59.157] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-15 23:47:49.131] [INFO] [[AME_ONLINE_PLAY]]: >>> loadPlaylist size=1099, startIndex=3, keepInfiniteMode=false
+[2026-11-15 23:47:49.341] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: -14.0 LUFS)
+[2026-11-15 23:47:49.527] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2099298177', reason=3
+[2026-11-15 23:47:49.532] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: -14.0 LUFS)
+[2026-11-15 23:47:49.536] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-15 23:47:49.538] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-15 23:47:49.683] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: -14.0 LUFS)
+[2026-11-15 23:47:49.683] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Synthesis.', starting dual-stage fast+full scan
+[2026-11-15 23:47:50.038] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+ka1: ra3 was cancelled; job=ra3{Cancelling}@18e35ea
+
+[2026-11-15 23:47:50.410] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-15 23:47:50.416] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-15 23:47:50.779] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -7.3113775 LUFS
+[2026-11-15 23:47:50.782] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2099298177: -7.3113775 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-15 23:47:50.873] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9885559): -3.4521768 LUFS
+[2026-11-15 23:47:50.878] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1850581335: -3.4521768 LUFS, peak=-0.09997528 dBFS (极速初判)
+[2026-11-15 23:47:50.950] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2099298177: -16.922535 LUFS, peak=-3.582206 dBFS (极速初判)
+[2026-11-15 23:47:51.134] [INFO] [AME_LOUDNESS_PROC]: Streaming Stage 1 preview for '2099298177': -17.056837 LUFS, gain=2.582206 dB
+[2026-11-15 23:47:51.135] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2099298177: -17.056837 LUFS, peak=-3.582206 dBFS (极速初判)
+[2026-11-15 23:47:51.877] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9760132): -9.140068 LUFS
+[2026-11-15 23:47:51.880] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1850977722: -9.140068 LUFS, peak=-0.21088631 dBFS (极速初判)
+[2026-11-15 23:47:52.370] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.97714233): -4.812554 LUFS
+[2026-11-15 23:47:52.377] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2624523919: -4.812554 LUFS, peak=-0.20084342 dBFS (极速初判)
+[2026-11-15 23:47:52.378] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-5.8015995
+[2026-11-15 23:47:58.336] [INFO] [AME_LOUDNESS_PROC]: Streaming Stage 1 preview for '2099298177': -14.760411 LUFS, gain=0.76041126 dB
+[2026-11-15 23:47:58.337] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2099298177: -14.760411 LUFS, peak=-1.9456254 dBFS (极速初判)
+[2026-11-15 23:48:00.585] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (583 blocks, peak=1.0): -6.585006 LUFS
+[2026-11-15 23:48:00.589] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2099298177: -6.585006 LUFS, peak=0.0 dBFS (BS.1770 全曲锁定)
+[2026-11-15 23:48:07.417] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9642029): -8.299652 LUFS
+[2026-11-15 23:48:07.421] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2146888577: -8.299652 LUFS, peak=-0.3166315 dBFS (极速初判)
+[2026-11-15 23:48:07.422] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-14.378066
+[2026-11-15 23:48:07.646] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-14.378066
+[2026-11-15 23:48:08.014] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-5.8015995
+[2026-11-15 23:48:11.222] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-15 23:48:11.987] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 00:25:08.871] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-16 00:25:09.031] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 00:25:09.032] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-16 00:25:09.036] [DEBUG] [AME_LOUDNESS]: Loaded 59 cached loudness profiles from disk
+[2026-11-16 00:25:09.220] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness preset (BS.1770 全曲锁定): -6.585006 LUFS, gain=-7.414994 dB, locked=true
+[2026-11-16 00:25:09.280] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2099298177', reason=3
+[2026-11-16 00:25:09.287] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness preset (BS.1770 全曲锁定): -6.585006 LUFS, gain=-7.414994 dB, locked=true
+[2026-11-16 00:25:09.291] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-16 00:25:09.375] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 00:25:10.134] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 00:25:10.156] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-16 00:25:10.157] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 00:25:10.166] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='Synthesis.', source=-6.585006 LUFS, target=-14.0 LUFS, gain=-7.414994 dB
+[2026-11-16 00:25:10.173] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-16 00:25:10.403] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-16 00:25:10.423] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='Synthesis.', source=-6.585006 LUFS, target=-14.0 LUFS, gain=-7.414994 dB
+[2026-11-16 00:25:11.097] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.97631836): -6.921973 LUFS
+[2026-11-16 00:25:11.102] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2740823660: -6.921973 LUFS, peak=-0.20817088 dBFS (极速初判)
+[2026-11-16 00:25:11.958] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9796448): -7.563951 LUFS
+[2026-11-16 00:25:11.982] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1965921366: -7.563951 LUFS, peak=-0.17862746 dBFS (极速初判)
+[2026-11-16 00:25:12.328] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -9.092813 LUFS
+[2026-11-16 00:25:12.332] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2682010337: -9.092813 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-16 00:25:12.333] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.859579
+[2026-11-16 00:26:41.623] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-16 00:26:41.679] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 00:26:41.684] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-16 00:26:41.694] [DEBUG] [AME_LOUDNESS]: Loaded 62 cached loudness profiles from disk
+[2026-11-16 00:26:41.792] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness preset (BS.1770 全曲锁定): -6.585006 LUFS, gain=-7.414994 dB, locked=true
+[2026-11-16 00:26:42.034] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 00:26:42.114] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2099298177', reason=3
+[2026-11-16 00:26:42.165] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness preset (BS.1770 全曲锁定): -6.585006 LUFS, gain=-7.414994 dB, locked=true
+[2026-11-16 00:26:42.171] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-16 00:26:42.172] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+ka1: ra3 was cancelled; job=ra3{Cancelling}@f74cd4c
+
+[2026-11-16 00:26:42.593] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -5.4322996 LUFS
+[2026-11-16 00:26:42.597] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1968735533: -5.4322996 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-16 00:26:42.864] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-16 00:26:42.865] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 00:26:42.870] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-16 00:26:42.975] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='Synthesis.', source=-6.585006 LUFS, target=-14.0 LUFS, gain=-7.414994 dB
+[2026-11-16 00:26:42.972] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 00:26:43.011] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-16 00:26:43.032] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='Synthesis.', source=-6.585006 LUFS, target=-14.0 LUFS, gain=-7.414994 dB
+[2026-11-16 00:26:43.477] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9771118): -7.357989 LUFS
+[2026-11-16 00:26:43.481] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3340112782: -7.357989 LUFS, peak=-0.2011147 dBFS (极速初判)
+[2026-11-16 00:26:44.166] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.96606445): -5.564353 LUFS
+[2026-11-16 00:26:44.170] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2123215739: -5.564353 LUFS, peak=-0.29987794 dBFS (极速初判)
+[2026-11-16 00:26:44.171] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-6.1182137
+[2026-11-16 00:26:45.159] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-16 00:27:05.193] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-16 00:27:05.342] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 00:27:05.345] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-16 00:27:05.352] [DEBUG] [AME_LOUDNESS]: Loaded 65 cached loudness profiles from disk
+[2026-11-16 00:27:05.441] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness preset (BS.1770 全曲锁定): -6.585006 LUFS, gain=-7.414994 dB, locked=true
+[2026-11-16 00:27:05.500] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2099298177', reason=3
+[2026-11-16 00:27:05.510] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness preset (BS.1770 全曲锁定): -6.585006 LUFS, gain=-7.414994 dB, locked=true
+[2026-11-16 00:27:05.514] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+na1: sa3 was cancelled; job=sa3{Cancelling}@2c732fd
+
+[2026-11-16 00:27:05.517] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-16 00:27:06.074] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 00:27:06.297] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-16 00:27:06.299] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 00:27:06.303] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-16 00:27:06.342] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 00:27:06.428] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='Synthesis.', source=-6.585006 LUFS, target=-14.0 LUFS, gain=-7.414994 dB
+[2026-11-16 00:27:06.566] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-16 00:27:06.588] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='Synthesis.', source=-6.585006 LUFS, target=-14.0 LUFS, gain=-7.414994 dB
+[2026-11-16 00:27:09.822] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.980011): -6.0215206 LUFS
+[2026-11-16 00:27:09.835] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3340113701: -6.0215206 LUFS, peak=-0.17538111 dBFS (极速初判)
+[2026-11-16 00:27:10.934] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.98617554): -6.729887 LUFS
+[2026-11-16 00:27:10.948] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3331965190: -6.729887 LUFS, peak=-0.120915495 dBFS (极速初判)
+[2026-11-16 00:27:11.684] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2107557776', reason=2
+[2026-11-16 00:27:11.688] [DEBUG] [AME_LOUDNESS_PROC]: Track '2107557776' loudness preset (队列均值预补偿): -6.375704 LUFS, gain=-7.624296 dB, locked=false
+[2026-11-16 00:27:11.692] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 00:27:11.694] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (4 blocks, peak=0.9417114): -8.610427 LUFS
+[2026-11-16 00:27:11.698] [DEBUG] [AME_LOUDNESS_PROC]: Track '2107557776' loudness preset (队列均值预补偿): -6.4454713 LUFS, gain=-7.5545287 dB, locked=false
+[2026-11-16 00:27:11.777] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-6.4454713
+[2026-11-16 00:27:11.946] [DEBUG] [AME_LOUDNESS_PROC]: Track '2107557776' loudness preset (队列均值预补偿): -6.4454713 LUFS, gain=-7.5545287 dB, locked=false
+[2026-11-16 00:27:11.947] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'ダイジョブですか？ (feat. 初音ミク)', starting dual-stage fast+full scan
+[2026-11-16 00:27:12.016] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 00:27:12.607] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (3 blocks, peak=0.8937988): -9.904116 LUFS
+[2026-11-16 00:27:12.730] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 00:27:12.756] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 00:27:12.903] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 00:27:12.920] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3315757844', reason=2
+[2026-11-16 00:27:12.924] [DEBUG] [AME_LOUDNESS_PROC]: Track '3315757844' loudness preset (队列均值预补偿): -6.4454713 LUFS, gain=-7.5545287 dB, locked=false
+[2026-11-16 00:27:13.079] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 00:27:13.087] [DEBUG] [AME_LOUDNESS_PROC]: Track '3315757844' loudness preset (队列均值预补偿): -6.3032637 LUFS, gain=-7.6967363 dB, locked=false
+[2026-11-16 00:27:13.272] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 00:27:13.289] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.8937988): -8.2648115 LUFS
+[2026-11-16 00:27:13.309] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2107557776: -8.2648115 LUFS, peak=-0.9752044 dBFS (极速初判)
+[2026-11-16 00:27:13.353] [DEBUG] [AME_LOUDNESS_PROC]: Track '3315757844' loudness preset (队列均值预补偿): -6.3032637 LUFS, gain=-7.6967363 dB, locked=false
+[2026-11-16 00:27:13.353] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Ourania (feat. 藍月なくる)', starting dual-stage fast+full scan
+[2026-11-16 00:27:14.091] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (4 blocks, peak=1.0): -12.160263 LUFS
+[2026-11-16 00:27:14.168] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2107557776', reason=2
+[2026-11-16 00:27:14.172] [DEBUG] [AME_LOUDNESS_PROC]: Track '2107557776' loudness preset (极速初判): -8.2648115 LUFS, gain=-5.7351885 dB, locked=false
+[2026-11-16 00:27:14.181] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Ourania (feat. 藍月なくる)
+[2026-11-16 00:27:14.217] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.8937988): -8.2648115 LUFS
+[2026-11-16 00:27:14.280] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 00:27:14.282] [DEBUG] [AME_LOUDNESS_PROC]: Track '2107557776' loudness preset (极速初判): -8.2648115 LUFS, gain=-5.7351885 dB, locked=false
+[2026-11-16 00:27:14.330] [DEBUG] [AME_LOUDNESS_PROC]: Track '2107557776' loudness preset (极速初判): -8.2648115 LUFS, gain=-5.7351885 dB, locked=false
+[2026-11-16 00:27:14.339] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='ダイジョブですか？ (feat. 初音ミク)', source=-8.2648115 LUFS, target=-14.0 LUFS, gain=-5.7351885 dB
+[2026-11-16 00:27:14.349] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (5 blocks, peak=1.0): -11.12773 LUFS
+[2026-11-16 00:27:14.361] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-6.4454713
+[2026-11-16 00:27:14.414] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 00:27:15.085] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2107557776: -22.784342 LUFS, peak=-13.65882 dBFS (极速初判)
+[2026-11-16 00:27:15.131] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for ダイジョブですか？ (feat. 初音ミク)
+[2026-11-16 00:27:15.332] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 00:27:15.339] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 00:27:15.392] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='ダイジョブですか？ (feat. 初音ミク)', source=-22.784342 LUFS, target=-14.0 LUFS, gain=8.784342 dB
+[2026-11-16 00:27:15.400] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (9 blocks, peak=0.89138794): -11.802079 LUFS
+[2026-11-16 00:27:15.634] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 00:27:15.653] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3315757844', reason=2
+[2026-11-16 00:27:15.657] [DEBUG] [AME_LOUDNESS_PROC]: Track '3315757844' loudness preset (队列均值预补偿): -6.4454713 LUFS, gain=-7.5545287 dB, locked=false
+[2026-11-16 00:27:15.770] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 00:27:15.773] [DEBUG] [AME_LOUDNESS_PROC]: Track '3315757844' loudness preset (队列均值预补偿): -11.796956 LUFS, gain=-2.203044 dB, locked=false
+[2026-11-16 00:27:15.835] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 00:27:15.881] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-11.796956
+[2026-11-16 00:27:16.036] [DEBUG] [AME_LOUDNESS_PROC]: Track '3315757844' loudness preset (队列均值预补偿): -11.796956 LUFS, gain=-2.203044 dB, locked=false
+[2026-11-16 00:27:16.036] [INFO] [[AME_LOUDNESS]]: Loudness unknown for 'Ourania (feat. 藍月なくる)', starting dual-stage fast+full scan
+[2026-11-16 00:27:16.038] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (5 blocks, peak=0.20751953): -23.67774 LUFS
+[2026-11-16 00:27:16.458] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -9.854466 LUFS
+[2026-11-16 00:27:16.465] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3315757844: -9.854466 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-16 00:27:16.466] [DEBUG] [AME_LOUDNESS_PROC]: Track '3315757844' loudness preset (极速初判): -9.854466 LUFS, gain=-4.1455336 dB, locked=false
+[2026-11-16 00:27:16.539] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -9.854466 LUFS
+[2026-11-16 00:27:16.543] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3315757844: -9.854466 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-16 00:27:16.573] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='1914659895', reason=2
+[2026-11-16 00:27:16.576] [DEBUG] [AME_LOUDNESS_PROC]: Track '1914659895' loudness preset (队列均值预补偿): -11.796956 LUFS, gain=-2.203044 dB, locked=false
+[2026-11-16 00:27:16.657] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 00:27:16.659] [DEBUG] [AME_LOUDNESS_PROC]: Track '1914659895' loudness preset (队列均值预补偿): -13.074605 LUFS, gain=-1.0 dB, locked=false
+[2026-11-16 00:27:16.713] [DEBUG] [AME_LOUDNESS_PROC]: Track '1914659895' loudness preset (队列均值预补偿): -13.074605 LUFS, gain=-1.0 dB, locked=false
+[2026-11-16 00:27:16.713] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '封焔の135秒', starting dual-stage fast+full scan
+[2026-11-16 00:27:16.756] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 00:27:16.758] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-13.074605
+[2026-11-16 00:27:17.163] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.96487427): -9.129888 LUFS
+[2026-11-16 00:27:17.166] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1914659895: -9.129888 LUFS, peak=-0.31058553 dBFS (极速初判)
+[2026-11-16 00:27:17.167] [DEBUG] [AME_LOUDNESS_PROC]: Track '1914659895' loudness preset (极速初判): -9.129888 LUFS, gain=-4.8701124 dB, locked=false
+[2026-11-16 00:27:17.171] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.96487427): -9.129888 LUFS
+[2026-11-16 00:27:17.174] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1914659895: -9.129888 LUFS, peak=-0.31058553 dBFS (极速初判)
+[2026-11-16 00:27:17.345] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3315757844', reason=2
+[2026-11-16 00:27:17.348] [DEBUG] [AME_LOUDNESS_PROC]: Track '3315757844' loudness preset (极速初判): -9.854466 LUFS, gain=-4.1455336 dB, locked=false
+[2026-11-16 00:27:17.405] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 00:27:17.408] [DEBUG] [AME_LOUDNESS_PROC]: Track '3315757844' loudness preset (极速初判): -9.854466 LUFS, gain=-4.1455336 dB, locked=false
+[2026-11-16 00:27:17.433] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1914659895: -22.260548 LUFS, peak=-9.921687 dBFS (极速初判)
+[2026-11-16 00:27:17.455] [DEBUG] [AME_LOUDNESS_PROC]: Track '3315757844' loudness preset (极速初判): -9.854466 LUFS, gain=-4.1455336 dB, locked=false
+[2026-11-16 00:27:17.459] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='Ourania (feat. 藍月なくる)', source=-9.854466 LUFS, target=-14.0 LUFS, gain=-4.1455336 dB
+[2026-11-16 00:27:17.462] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (4 blocks, peak=0.3190918): -22.260548 LUFS
+[2026-11-16 00:27:17.471] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-11.796956
+[2026-11-16 00:27:17.537] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 00:27:17.728] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3315757844: -18.353678 LUFS, peak=-6.358977 dBFS (极速初判)
+[2026-11-16 00:27:18.189] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2107557776', reason=2
+[2026-11-16 00:27:18.192] [DEBUG] [AME_LOUDNESS_PROC]: Track '2107557776' loudness preset (极速初判): -22.784342 LUFS, gain=8.784342 dB, locked=false
+[2026-11-16 00:27:18.261] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 00:27:18.263] [DEBUG] [AME_LOUDNESS_PROC]: Track '2107557776' loudness preset (极速初判): -22.784342 LUFS, gain=8.784342 dB, locked=false
+[2026-11-16 00:27:18.290] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='ダイジョブですか？ (feat. 初音ミク)', source=-22.784342 LUFS, target=-14.0 LUFS, gain=8.784342 dB
+[2026-11-16 00:27:18.300] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (19 blocks, peak=0.5769043): -18.061975 LUFS
+[2026-11-16 00:27:18.305] [DEBUG] [AME_LOUDNESS_PROC]: Track '2107557776' loudness preset (极速初判): -22.784342 LUFS, gain=8.784342 dB, locked=false
+[2026-11-16 00:27:18.338] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 00:27:18.352] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-6.4454713
+[2026-11-16 00:27:18.670] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2107557776: -22.784342 LUFS, peak=-13.65882 dBFS (极速初判)
+[2026-11-16 00:27:19.007] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2099298177', reason=2
+[2026-11-16 00:27:19.010] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness preset (BS.1770 全曲锁定): -6.585006 LUFS, gain=-7.414994 dB, locked=true
+[2026-11-16 00:27:19.138] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 00:27:19.140] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness preset (BS.1770 全曲锁定): -6.585006 LUFS, gain=-7.414994 dB, locked=true
+[2026-11-16 00:27:19.191] [DEBUG] [AME_LOUDNESS_PROC]: Track '2099298177' loudness preset (BS.1770 全曲锁定): -6.585006 LUFS, gain=-7.414994 dB, locked=true
+[2026-11-16 00:27:19.226] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='Synthesis.', source=-6.585006 LUFS, target=-14.0 LUFS, gain=-7.414994 dB
+[2026-11-16 00:27:19.244] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 00:27:20.122] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9923401): -8.220592 LUFS
+[2026-11-16 00:27:20.136] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2128211595: -8.220592 LUFS, peak=-0.06678928 dBFS (极速初判)
+[2026-11-16 00:27:20.138] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-6.9906664
+[2026-11-16 00:27:20.193] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 00:27:20.196] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 00:27:20.218] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='Synthesis.', source=-6.585006 LUFS, target=-14.0 LUFS, gain=-7.414994 dB
+[2026-11-16 00:27:23.089] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 00:27:23.096] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3340113701', reason=2
+[2026-11-16 00:27:23.099] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (极速初判): -6.0215206 LUFS, gain=-7.9784794 dB, locked=false
+[2026-11-16 00:27:23.104] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 00:27:23.106] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (极速初判): -6.0215206 LUFS, gain=-7.9784794 dB, locked=false
+[2026-11-16 00:27:23.140] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (极速初判): -6.0215206 LUFS, gain=-7.9784794 dB, locked=false
+[2026-11-16 00:27:23.153] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='瞬間、シンフォニー。', source=-6.0215206 LUFS, target=-14.0 LUFS, gain=-7.9784794 dB
+[2026-11-16 00:27:23.156] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (199 blocks, peak=0.8995056): -8.1073475 LUFS
+[2026-11-16 00:27:23.273] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 00:27:23.491] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3340113701: -14.617462 LUFS, peak=-2.9913802 dBFS (极速初判)
+[2026-11-16 00:27:23.846] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.97720337): -7.588187 LUFS
+[2026-11-16 00:27:23.849] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2735856124: -7.588187 LUFS, peak=-0.20030089 dBFS (极速初判)
+[2026-11-16 00:27:23.851] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.5128884
+[2026-11-16 00:27:24.102] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 瞬間、シンフォニー。
+[2026-11-16 00:27:24.142] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 00:27:24.145] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 00:27:24.166] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='瞬間、シンフォニー。', source=-14.617462 LUFS, target=-14.0 LUFS, gain=0.61746216 dB
+[2026-11-16 00:27:24.170] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (29 blocks, peak=0.7805176): -15.072616 LUFS
+[2026-11-16 00:27:24.345] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3340113701: -14.617462 LUFS, peak=-2.9913802 dBFS (极速初判)
+[2026-11-16 00:27:31.893] [INFO] [AME_LOUDNESS_PROC]: Streaming Stage 1 preview for '3340113701': -14.838056 LUFS, gain=0.8380556 dB
+[2026-11-16 00:27:31.894] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3340113701: -14.838056 LUFS, peak=-2.7163627 dBFS (极速初判)
+[2026-11-16 00:27:36.703] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (650 blocks, peak=0.98272705): -6.0436773 LUFS
+[2026-11-16 00:27:36.707] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3340113701: -6.0436773 LUFS, peak=-0.15134178 dBFS (BS.1770 全曲锁定)
+[2026-11-16 00:28:12.594] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 00:28:12.601] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 00:28:12.733] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 00:28:12.735] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 00:28:22.075] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-16 00:28:22.077] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 08:43:56.746] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-16 08:43:56.799] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 08:43:56.804] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-16 08:43:56.823] [DEBUG] [AME_LOUDNESS]: Loaded 72 cached loudness profiles from disk
+[2026-11-16 08:43:57.026] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 08:43:57.084] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3340113701', reason=3
+[2026-11-16 08:43:57.093] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 08:43:57.097] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-16 08:43:57.096] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+na1: sa3 was cancelled; job=sa3{Cancelling}@28c1f1f
+
+[2026-11-16 08:43:57.326] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 08:43:58.489] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-16 08:43:58.517] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 08:43:58.527] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 08:43:58.541] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-16 08:43:58.666] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 08:43:58.721] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-16 08:43:58.753] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 08:44:00.885] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -6.7587576 LUFS
+[2026-11-16 08:44:00.895] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=3396545503: -6.7587576 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-16 08:44:01.713] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.99990845): -6.5637593 LUFS
+[2026-11-16 08:44:01.719] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2641982601: -6.5637593 LUFS, peak=-7.952534E-4 dBFS (极速初判)
+[2026-11-16 08:44:01.720] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-8.666806
+[2026-11-16 08:44:03.230] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-16 08:44:04.428] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 瞬間、シンフォニー。
+[2026-11-16 08:44:22.337] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-16 08:44:22.390] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 08:44:22.392] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-16 08:44:22.420] [DEBUG] [AME_LOUDNESS]: Loaded 74 cached loudness profiles from disk
+[2026-11-16 08:44:22.573] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 08:44:22.629] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3340113701', reason=3
+[2026-11-16 08:44:22.637] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 08:44:22.641] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-16 08:44:22.727] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 08:44:23.289] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-16 08:44:23.290] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 08:44:23.294] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-16 08:44:23.346] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 08:44:23.377] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 08:44:23.389] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-16 08:44:23.393] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 08:44:27.252] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.97631836): -5.635865 LUFS
+[2026-11-16 08:44:27.296] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2137413651: -5.635865 LUFS, peak=-0.20817088 dBFS (极速初判)
+[2026-11-16 08:44:28.197] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.973053): -11.090403 LUFS
+[2026-11-16 08:44:28.211] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2019336897: -11.090403 LUFS, peak=-0.23727027 dBFS (极速初判)
+[2026-11-16 08:44:28.213] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-8.716565
+[2026-11-16 08:44:30.178] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 瞬間、シンフォニー。
+[2026-11-16 08:44:49.682] [INFO] [AppUpdateManager]: Starting update check: channel=ACTION, package=Akari.NCM.player (标准版), currentVersion=release-0.3
+[2026-11-16 08:45:21.282] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 08:45:21.284] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 08:45:21.315] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 08:45:21.326] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-8.716565
+[2026-11-16 08:45:21.489] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 08:45:21.490] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 08:45:25.168] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 08:45:25.180] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 08:45:25.324] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 08:45:25.327] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 08:45:25.711] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 瞬間、シンフォニー。
+[2026-11-16 08:45:48.252] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-16 08:45:49.516] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 08:47:47.545] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-16 08:47:47.594] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 08:47:47.595] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-16 08:47:47.604] [DEBUG] [AME_LOUDNESS]: Loaded 76 cached loudness profiles from disk
+[2026-11-16 08:47:47.690] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 08:47:47.733] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3340113701', reason=3
+[2026-11-16 08:47:47.739] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 08:47:47.743] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-16 08:47:47.870] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 08:47:48.293] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (9 devices)
+[2026-11-16 08:47:48.294] [INFO] [AME_USB_AUDIO]: No USB audio output device connected
+[2026-11-16 08:47:48.301] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-16 08:47:48.368] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 08:47:48.391] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=null)
+[2026-11-16 08:47:48.388] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 08:47:48.394] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 08:47:48.433] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9644165): -9.521721 LUFS
+[2026-11-16 08:47:48.442] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2110359751: -9.521721 LUFS, peak=-0.31470734 dBFS (极速初判)
+[2026-11-16 08:47:48.810] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -5.743383 LUFS
+[2026-11-16 08:47:48.818] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2007051632: -5.743383 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-16 08:47:48.819] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.7568483
+[2026-11-16 08:47:51.543] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 瞬間、シンフォニー。
+[2026-11-16 08:47:54.225] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 瞬間、シンフォニー。
+[2026-11-16 08:48:33.969] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2750091949', reason=2
+[2026-11-16 08:48:33.974] [DEBUG] [AME_LOUDNESS_PROC]: Track '2750091949' loudness preset (队列均值预补偿): -7.7568483 LUFS, gain=-6.2431517 dB, locked=false
+[2026-11-16 08:48:33.982] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 08:48:33.983] [DEBUG] [AME_LOUDNESS_PROC]: Track '2750091949' loudness preset (队列均值预补偿): -7.8569465 LUFS, gain=-6.1430535 dB, locked=false
+[2026-11-16 08:48:34.057] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.8569465
+[2026-11-16 08:48:34.177] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 08:48:34.193] [DEBUG] [AME_LOUDNESS_PROC]: Track '2750091949' loudness preset (队列均值预补偿): -7.8569465 LUFS, gain=-6.1430535 dB, locked=false
+[2026-11-16 08:48:34.193] [INFO] [[AME_LOUDNESS]]: Loudness unknown for '夜空を蝕んで', starting dual-stage fast+full scan
+[2026-11-16 08:48:34.651] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.93414307): -6.1646805 LUFS
+[2026-11-16 08:48:34.657] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2750091949: -6.1646805 LUFS, peak=-0.5917321 dBFS (极速初判)
+[2026-11-16 08:48:34.657] [DEBUG] [AME_LOUDNESS_PROC]: Track '2750091949' loudness preset (极速初判): -6.1646805 LUFS, gain=-7.8353195 dB, locked=false
+[2026-11-16 08:48:34.673] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.93414307): -6.1646805 LUFS
+[2026-11-16 08:48:34.678] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2750091949: -6.1646805 LUFS, peak=-0.5917321 dBFS (极速初判)
+[2026-11-16 08:48:34.810] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2750091949: -11.339725 LUFS, peak=-0.6082058 dBFS (极速初判)
+[2026-11-16 08:48:34.964] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 夜空を蝕んで
+[2026-11-16 08:48:35.007] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 08:48:35.009] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 08:48:35.096] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 08:48:35.109] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2752280109', reason=2
+[2026-11-16 08:48:35.113] [DEBUG] [AME_LOUDNESS_PROC]: Track '2752280109' loudness preset (BS.1770 全曲锁定): -11.4125595 LUFS, gain=-2.5874405 dB, locked=true
+[2026-11-16 08:48:35.190] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 08:48:35.194] [DEBUG] [AME_LOUDNESS_PROC]: Track '2752280109' loudness preset (BS.1770 全曲锁定): -11.4125595 LUFS, gain=-2.5874405 dB, locked=true
+[2026-11-16 08:48:35.240] [DEBUG] [AME_LOUDNESS_PROC]: Track '2752280109' loudness preset (BS.1770 全曲锁定): -11.4125595 LUFS, gain=-2.5874405 dB, locked=true
+[2026-11-16 08:48:35.260] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='Ref:rain (for 7th Heaven)', source=-11.4125595 LUFS, target=-14.0 LUFS, gain=-2.5874405 dB
+[2026-11-16 08:48:35.341] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 08:48:35.348] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-8.968374
+[2026-11-16 08:48:36.242] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 08:48:36.250] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 08:48:36.329] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='Ref:rain (for 7th Heaven)', source=-11.4125595 LUFS, target=-14.0 LUFS, gain=-2.5874405 dB
+[2026-11-16 08:48:36.533] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Ref:rain (for 7th Heaven)
+[2026-11-16 08:48:36.924] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 08:48:36.945] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2750091949', reason=2
+[2026-11-16 08:48:36.952] [DEBUG] [AME_LOUDNESS_PROC]: Track '2750091949' loudness preset (极速初判): -11.339725 LUFS, gain=-2.6602755 dB, locked=false
+[2026-11-16 08:48:37.082] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 08:48:37.083] [DEBUG] [AME_LOUDNESS_PROC]: Track '2750091949' loudness preset (极速初判): -11.339725 LUFS, gain=-2.6602755 dB, locked=false
+[2026-11-16 08:48:37.130] [DEBUG] [AME_LOUDNESS_PROC]: Track '2750091949' loudness preset (极速初判): -11.339725 LUFS, gain=-2.6602755 dB, locked=false
+[2026-11-16 08:48:37.140] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='夜空を蝕んで', source=-11.339725 LUFS, target=-14.0 LUFS, gain=-2.6602755 dB
+[2026-11-16 08:48:37.145] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (47 blocks, peak=0.93463135): -7.373953 LUFS
+[2026-11-16 08:48:37.197] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 08:48:37.215] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.8569465
+[2026-11-16 08:48:37.481] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2750091949: -11.339725 LUFS, peak=-0.6082058 dBFS (极速初判)
+[2026-11-16 08:48:37.845] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3340113701', reason=2
+[2026-11-16 08:48:37.851] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 08:48:37.968] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 08:48:37.971] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 08:48:38.010] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 08:48:38.024] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 08:48:38.059] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 08:48:38.119] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.7568483
+[2026-11-16 08:48:38.940] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 瞬間、シンフォニー。
+[2026-11-16 08:48:39.014] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 08:48:39.017] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 08:48:39.043] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 08:48:39.618] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-16 08:48:40.312] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 08:48:48.305] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (472 blocks, peak=0.93530273): -6.00753 LUFS
+[2026-11-16 08:48:48.309] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2750091949: -6.00753 LUFS, peak=-0.5809559 dBFS (BS.1770 全曲锁定)
+[2026-11-16 12:58:28.769] [INFO] [AME_DEBUG]: AmeApp onCreate started
+[2026-11-16 12:58:28.879] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=false
+[2026-11-16 12:58:28.882] [INFO] [AME_USB_AUDIO]: Registered USB audio broadcast and AudioDeviceCallback listeners
+[2026-11-16 12:58:28.887] [DEBUG] [AME_LOUDNESS]: Loaded 79 cached loudness profiles from disk
+[2026-11-16 12:58:29.005] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 12:58:29.049] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='3340113701', reason=3
+[2026-11-16 12:58:29.057] [DEBUG] [AME_LOUDNESS_PROC]: Track '3340113701' loudness preset (BS.1770 全曲锁定): -6.0436773 LUFS, gain=-7.9563227 dB, locked=true
+[2026-11-16 12:58:29.061] [ERROR] [[AME_ONLINE_PLAY]]: Failed to resolve cover/metadata for media session
+oa1: ua3 was cancelled; job=ua3{Cancelling}@fe8d5dc
+
+[2026-11-16 12:58:29.062] [INFO] [AME_DEBUG]: MainActivity onCreate started
+[2026-11-16 12:58:29.349] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 12:58:29.733] [INFO] [AME_USB_AUDIO]: AudioDeviceCallback: output device added (10 devices)
+[2026-11-16 12:58:29.741] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=false, isExclusive=false
+[2026-11-16 12:58:29.747] [INFO] [[AME_ONLINE_PLAY]]: >>> JYEffect preference changed to false, clearing resolved URL cache.
+[2026-11-16 12:58:29.770] [INFO] [AME_LOGIN_DEBUG]: Direct getUserProfile success: userId=8288096702, nickname=Akiyama_25
+[2026-11-16 12:58:29.857] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 12:58:29.881] [INFO] [[AME_USB_AUDIO]]: >>> Reverting USB Audio routing to default (isExclusive=false, device=USB-Audio - MOONDROP Dawn Pro)
+[2026-11-16 12:58:29.884] [INFO] [[AME_USB_AUDIO]]: >>> Routing standard AudioTrack to USB device: 'USB-Audio - MOONDROP Dawn Pro'
+[2026-11-16 12:58:29.898] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 12:58:30.671] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.99990845): -5.7641616 LUFS
+[2026-11-16 12:58:30.683] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2083806628: -5.7641616 LUFS, peak=-7.952534E-4 dBFS (极速初判)
+[2026-11-16 12:58:31.161] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -6.9277635 LUFS
+[2026-11-16 12:58:31.166] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2674718758: -6.9277635 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-16 12:58:32.076] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.98983765): -8.71557 LUFS
+[2026-11-16 12:58:32.080] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2008003632: -8.71557 LUFS, peak=-0.08872066 dBFS (极速初判)
+[2026-11-16 12:58:32.082] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.135832
+[2026-11-16 12:58:33.917] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 瞬間、シンフォニー。
+[2026-11-16 12:58:35.822] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for 瞬間、シンフォニー。
+[2026-11-16 12:58:36.170] [INFO] [AME_USB_AUDIO]: Exclusive USB Audio mode toggled: enabled=true
+[2026-11-16 12:58:36.172] [INFO] [AME_USB_AUDIO]: Requesting hardware USB permission for: MOONDROP Dawn Pro
+[2026-11-16 12:58:36.196] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=100, type=22)
+[2026-11-16 12:58:36.196] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-16 12:58:36.233] [INFO] [[AME_USB_AUDIO]]: >>> Applying USB Exclusive Routing to device: 'USB-Audio - MOONDROP Dawn Pro' (UAC 2.0, id=100, type=22)
+[2026-11-16 12:58:36.234] [INFO] [[AME_USB_AUDIO]]: >>> exoPlayer.setPreferredAudioDevice result: kotlin.Unit
+[2026-11-16 12:58:37.882] [INFO] [AME_USB_AUDIO]: USB Broadcast received action: Akari.NCM.player.USB_PERMISSION
+[2026-11-16 12:58:37.885] [INFO] [AME_USB_AUDIO]: USB permission broadcast result for device /dev/bus/usb/001/002: granted=true
+[2026-11-16 12:58:37.902] [INFO] [AME_USB_AUDIO]: Scanned USB Audio: name='USB-Audio - MOONDROP Dawn Pro', UAC=UAC 2.0, VID:PID=VID:2FC6  PID:F06A, hasPerm=true, isExclusive=true
+[2026-11-16 12:58:42.507] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 12:58:42.509] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 12:58:42.532] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (BS.1770 全曲锁定): track='瞬間、シンフォニー。', source=-6.0436773 LUFS, target=-14.0 LUFS, gain=-7.9563227 dB
+[2026-11-16 12:58:42.559] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.135832
+[2026-11-16 12:58:42.689] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 12:58:42.690] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 12:59:03.884] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 12:59:03.900] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2083806628', reason=2
+[2026-11-16 12:59:03.903] [DEBUG] [AME_LOUDNESS_PROC]: Track '2083806628' loudness preset (极速初判): -5.7641616 LUFS, gain=-8.235838 dB, locked=false
+[2026-11-16 12:59:03.967] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 12:59:03.970] [DEBUG] [AME_LOUDNESS_PROC]: Track '2083806628' loudness preset (极速初判): -5.7641616 LUFS, gain=-8.235838 dB, locked=false
+[2026-11-16 12:59:04.013] [DEBUG] [AME_LOUDNESS_PROC]: Track '2083806628' loudness preset (极速初判): -5.7641616 LUFS, gain=-8.235838 dB, locked=false
+[2026-11-16 12:59:04.022] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='Ego Eimi', source=-5.7641616 LUFS, target=-14.0 LUFS, gain=-8.235838 dB
+[2026-11-16 12:59:04.124] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 12:59:04.454] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2083806628: -15.586894 LUFS, peak=-4.280585 dBFS (极速初判)
+[2026-11-16 12:59:04.786] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=0.9708557): -7.7116556 LUFS
+[2026-11-16 12:59:04.789] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=1453894413: -7.7116556 LUFS, peak=-0.25690618 dBFS (极速初判)
+[2026-11-16 12:59:04.791] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.7849965
+[2026-11-16 12:59:05.018] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 12:59:05.034] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 12:59:05.072] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='Ego Eimi', source=-15.586894 LUFS, target=-14.0 LUFS, gain=1.586894 dB
+[2026-11-16 12:59:05.076] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (24 blocks, peak=0.8320923): -15.284776 LUFS
+[2026-11-16 12:59:05.351] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2083806628: -15.586894 LUFS, peak=-4.280585 dBFS (极速初判)
+[2026-11-16 12:59:05.699] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Ego Eimi
+[2026-11-16 12:59:08.266] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Ego Eimi
+[2026-11-16 12:59:12.793] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-16 12:59:13.783] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 12:59:14.761] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (397 blocks, peak=0.99990845): -5.906743 LUFS
+[2026-11-16 12:59:14.767] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2083806628: -5.906743 LUFS, peak=-7.952534E-4 dBFS (BS.1770 全曲锁定)
+[2026-11-16 12:59:16.495] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 12:59:16.498] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 12:59:28.341] [DEBUG] [LyricsManager]: Fetched online lyrics by exact ID for Ego Eimi
+[2026-11-16 12:59:52.808] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false
+[2026-11-16 12:59:52.815] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onMediaItemTransition: mediaId='2674718758', reason=2
+[2026-11-16 12:59:52.820] [DEBUG] [AME_LOUDNESS_PROC]: Track '2674718758' loudness preset (极速初判): -6.9277635 LUFS, gain=-7.0722365 dB, locked=false
+[2026-11-16 12:59:52.905] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: BUFFERING (2)
+[2026-11-16 12:59:52.909] [DEBUG] [AME_LOUDNESS_PROC]: Track '2674718758' loudness preset (极速初判): -6.9277635 LUFS, gain=-7.0722365 dB, locked=false
+[2026-11-16 12:59:52.950] [DEBUG] [AME_LOUDNESS_PROC]: Track '2674718758' loudness preset (极速初判): -6.9277635 LUFS, gain=-7.0722365 dB, locked=false
+[2026-11-16 12:59:52.957] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onPlaybackStateChanged: READY (3)
+[2026-11-16 12:59:52.970] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='Dahlia', source=-6.9277635 LUFS, target=-14.0 LUFS, gain=-7.0722365 dB
+[2026-11-16 12:59:53.365] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2674718758: -21.290596 LUFS, peak=-9.964157 dBFS (极速初判)
+[2026-11-16 12:59:53.576] [INFO] [TrackLoudnessScanner]: Fast multi-point scan complete (9 blocks, peak=1.0): -7.077321 LUFS
+[2026-11-16 12:59:53.584] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2154502893: -7.077321 LUFS, peak=0.0 dBFS (极速初判)
+[2026-11-16 12:59:53.585] [DEBUG] [[AME_LOUDNESS]]: Prefetched 3/3 upcoming tracks, avgLufs=-7.834849
+[2026-11-16 12:59:53.953] [INFO] [[AME_ONLINE_PLAY]]: >>> play() called (fadeEnabled=true)
+[2026-11-16 12:59:53.957] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: true
+[2026-11-16 12:59:54.011] [INFO] [[AME_LOUDNESS]]: Applied EBU R128 (极速初判): track='Dahlia', source=-21.290596 LUFS, target=-14.0 LUFS, gain=7.290596 dB
+[2026-11-16 12:59:54.012] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (32 blocks, peak=0.83795166): -18.217773 LUFS
+[2026-11-16 12:59:54.328] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2674718758: -21.290596 LUFS, peak=-9.964157 dBFS (极速初判)
+[2026-11-16 12:59:59.814] [DEBUG] [LyricsManager]: Fetched fallback online lyrics from Dahlia - Mwk/初音ミク
+[2026-11-16 13:00:00.801] [DEBUG] [LyricsManager]: Fetched fallback online lyrics from Dahlia - Mwk/初音ミク
+[2026-11-16 13:00:01.795] [INFO] [TrackLoudnessScanner]: Completed full-track BS.1770 scan (351 blocks, peak=1.0): -9.62356 LUFS
+[2026-11-16 13:00:01.800] [DEBUG] [AME_LOUDNESS]: Saved loudness for mediaId=2674718758: -9.62356 LUFS, peak=0.0 dBFS (BS.1770 全曲锁定)
+[2026-11-16 13:00:24.382] [INFO] [[AME_ONLINE_PLAY]]: >>> pause(immediate=false) called (fadeEnabled=true)
+[2026-11-16 13:00:25.488] [INFO] [[AME_ONLINE_PLAY]]: >>> ExoPlayer onIsPlayingChanged: false

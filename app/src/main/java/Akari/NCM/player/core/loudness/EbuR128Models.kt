@@ -6,19 +6,23 @@ import kotlinx.serialization.Serializable
 /**
  * 音频响度特征来源
  */
-enum class LoudnessSource(val label: String) {
-    NETEASE_ONLINE("云端特征"),         // 网易云 API 返回的有效非零 gain/peak 响度元数据
-    REPLAYGAIN_TAG("本地标签"),         // 本地音频内嵌的 ReplayGain / R128 / SoundCheck 标签
-    FAST_PREVIEW_SCAN("极速初判"),      // 双阶段第一阶段：多点跳帧极速抽样或首秒解码流 BS.1770 初判
-    BS1770_SCAN("BS.1770 全曲锁定"),    // 双阶段第二阶段：基于 ITU-R BS.1770-4 全曲门控积分锁定并缓存
-    QUEUE_AVERAGE("队列均值预补偿"),     // 基于未来 3 首预计算平均响度的先验初始补偿
-    DEFAULT_FALLBACK("基准兜底");       // 默认平准电平
+enum class LoudnessSource(val label: String, val priority: Int) {
+    NETEASE_ONLINE("云端特征", 4),         // 网易云 API 返回的有效非零 gain/peak 响度元数据
+    REPLAYGAIN_TAG("本地标签", 4),         // 本地音频内嵌的 ReplayGain / R128 / SoundCheck 标签
+    BS1770_SCAN("BS.1770 全曲锁定", 5),    // 双阶段第二阶段：基于 ITU-R BS.1770-4 全曲门控积分锁定并缓存
+    FAST_PREVIEW_SCAN("极速初判", 3),      // 双阶段第一阶段：多点跳帧极速抽样 (20%/45%/70%)
+    INTRO_PREVIEW_SCAN("前奏初判", 2),     // 首段流式或全曲扫描初期 (~1s) 单点初判，不可覆盖多点抽样
+    QUEUE_AVERAGE("队列均值预补偿", 1),     // 基于未来 3 首预计算平均响度的先验初始补偿
+    DEFAULT_FALLBACK("基准兜底", 0);       // 默认平准电平
 
     val isKnownValid: Boolean
         get() = this != DEFAULT_FALLBACK
 
     val isFinalLocked: Boolean
         get() = this == NETEASE_ONLINE || this == REPLAYGAIN_TAG || this == BS1770_SCAN
+
+    val isMultiPointOrLocked: Boolean
+        get() = isFinalLocked || this == FAST_PREVIEW_SCAN
 }
 
 /**
@@ -73,7 +77,8 @@ data class LoudnessNormalizationState(
             val gainSign = if (appliedGainDb >= 0) "+" else ""
             val peakTag = if (isPeakLimited) " · 防过载压制" else ""
             val stageTag = when (source) {
-                LoudnessSource.FAST_PREVIEW_SCAN -> " · 初判"
+                LoudnessSource.FAST_PREVIEW_SCAN,
+                LoudnessSource.INTRO_PREVIEW_SCAN -> " · 初判"
                 LoudnessSource.QUEUE_AVERAGE -> " · 队列均值"
                 else -> ""
             }

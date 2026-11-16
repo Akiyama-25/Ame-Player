@@ -45,33 +45,56 @@ static inline float clampf(float v) { return v > 1.0f ? 1.0f : (v < -1.0f ? -1.0
 // Clamp after scaling to handle the asymmetry: -1.0 × 32768 = -32768 (valid min),
 // but +1.0 × 32768 = 32768 (exceeds max 32767, needs clamping).
 
-static void convertFloatToInt16(const float *src, uint8_t *dst, int n, float vol) {
+static void convertFloatToInt16Ramped(
+        const float *src, uint8_t *dst, int totalFrames, int channels,
+        float &curVol, float targetVol, float alpha) {
     auto *out = reinterpret_cast<int16_t *>(dst);
-    for (int i = 0; i < n; i++) {
-        float s = clampf(src[i] * vol) * 32768.0f;
-        if (s > 32767.0f) s = 32767.0f;
-        if (s < -32768.0f) s = -32768.0f;
-        out[i] = (int16_t)s;
+    int idx = 0;
+    for (int f = 0; f < totalFrames; f++) {
+        curVol += (targetVol - curVol) * alpha;
+        if (fabsf(targetVol - curVol) < 1e-5f) curVol = targetVol;
+        for (int c = 0; c < channels; c++, idx++) {
+            float s = clampf(src[idx] * curVol) * 32768.0f;
+            if (s > 32767.0f) s = 32767.0f;
+            if (s < -32768.0f) s = -32768.0f;
+            out[idx] = (int16_t)s;
+        }
     }
 }
-static void convertFloatToInt24(const float *src, uint8_t *dst, int n, float vol) {
-    for (int i = 0; i < n; i++) {
-        float s = clampf(src[i] * vol) * 8388608.0f;
-        if (s > 8388607.0f) s = 8388607.0f;
-        if (s < -8388608.0f) s = -8388608.0f;
-        int32_t v = (int32_t)s;
-        dst[i*3] = v & 0xFF; dst[i*3+1] = (v>>8) & 0xFF; dst[i*3+2] = (v>>16) & 0xFF;
+
+static void convertFloatToInt24Ramped(
+        const float *src, uint8_t *dst, int totalFrames, int channels,
+        float &curVol, float targetVol, float alpha) {
+    int idx = 0;
+    for (int f = 0; f < totalFrames; f++) {
+        curVol += (targetVol - curVol) * alpha;
+        if (fabsf(targetVol - curVol) < 1e-5f) curVol = targetVol;
+        for (int c = 0; c < channels; c++, idx++) {
+            float s = clampf(src[idx] * curVol) * 8388608.0f;
+            if (s > 8388607.0f) s = 8388607.0f;
+            if (s < -8388608.0f) s = -8388608.0f;
+            int32_t v = (int32_t)s;
+            dst[idx * 3] = v & 0xFF;
+            dst[idx * 3 + 1] = (v >> 8) & 0xFF;
+            dst[idx * 3 + 2] = (v >> 16) & 0xFF;
+        }
     }
 }
-static void convertFloatToInt32(const float *src, uint8_t *dst, int n, float vol) {
+
+static void convertFloatToInt32Ramped(
+        const float *src, uint8_t *dst, int totalFrames, int channels,
+        float &curVol, float targetVol, float alpha) {
     auto *out = reinterpret_cast<int32_t *>(dst);
-    for (int i = 0; i < n; i++) {
-        // Use double: float32 can't represent 2147483648.0 exactly (needs 31 bits,
-        // float32 has 24-bit mantissa). Double has 53-bit mantissa — sufficient.
-        double s = (double)clampf(src[i] * vol) * 2147483648.0;
-        if (s > 2147483647.0) s = 2147483647.0;
-        if (s < -2147483648.0) s = -2147483648.0;
-        out[i] = (int32_t)s;
+    int idx = 0;
+    for (int f = 0; f < totalFrames; f++) {
+        curVol += (targetVol - curVol) * alpha;
+        if (fabsf(targetVol - curVol) < 1e-5f) curVol = targetVol;
+        for (int c = 0; c < channels; c++, idx++) {
+            double s = (double)clampf(src[idx] * curVol) * 2147483648.0;
+            if (s > 2147483647.0) s = 2147483647.0;
+            if (s < -2147483648.0) s = -2147483648.0;
+            out[idx] = (int32_t)s;
+        }
     }
 }
 
@@ -414,6 +437,8 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioCreate(
     ctx->bytesPerFrame = (bits / 8) * ch;
     ctx->maxPacketSize = maxPkt;
     ctx->running.store(false);
+    ctx->volume.store(0.0f);
+    ctx->currentVolume = 0.0f;
     ctx->transferBuffer = nullptr;
     ctx->transferBufferCapacity = 0;
     ctx->framesWritten = 0;
@@ -476,8 +501,12 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioSetVolume(
     if (v < 0.0f) v = 0.0f;
     if (v > 1.0f) v = 1.0f;
     // Quadratic perceptual volume curve
-    ctx->volume.store(v * v);
-    LOGI("nativeUsbAudioSetVolume: req=%.3f, applied=%.4f", volume, v * v);
+    float applied = v * v;
+    ctx->volume.store(applied);
+    if (!ctx->running.load()) {
+        ctx->currentVolume = applied;
+    }
+    LOGI("nativeUsbAudioSetVolume: req=%.3f, applied=%.4f", volume, applied);
 }
 
 JNIEXPORT jboolean JNICALL
@@ -485,6 +514,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioStart(
         JNIEnv *, jobject, jlong h) {
     auto *ctx = reinterpret_cast<UsbAudioContext *>(h);
     if (!ctx) return JNI_FALSE;
+    ctx->currentVolume = ctx->volume.load();
     ctx->running.store(true);
     ctx->framesWritten = 0;
     ctx->submitIdx = 0;
@@ -548,16 +578,20 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWrite(
     static long writeCallCount = 0;
     writeCallCount++;
 
-    // Convert float PCM to target bit depth
+    // Convert float PCM to target bit depth with smooth per-frame volume ramp
     jfloat *f = env->GetFloatArrayElements(pcm, nullptr);
     if (!f) return;
-    float vol = ctx->volume.load();
+    float targetVol = ctx->volume.load();
+    float curVol = ctx->currentVolume;
+    float sr = ctx->sampleRate > 0 ? (float)ctx->sampleRate : 48000.0f;
+    float alpha = 1.0f - expf(-1.0f / (sr * 0.008f));
     switch (ctx->bitDepth) {
-        case 16: convertFloatToInt16(f, ctx->transferBuffer, totalSamples, vol); break;
-        case 24: convertFloatToInt24(f, ctx->transferBuffer, totalSamples, vol); break;
-        case 32: convertFloatToInt32(f, ctx->transferBuffer, totalSamples, vol); break;
+        case 16: convertFloatToInt16Ramped(f, ctx->transferBuffer, totalFrames, ctx->channelCount, curVol, targetVol, alpha); break;
+        case 24: convertFloatToInt24Ramped(f, ctx->transferBuffer, totalFrames, ctx->channelCount, curVol, targetVol, alpha); break;
+        case 32: convertFloatToInt32Ramped(f, ctx->transferBuffer, totalFrames, ctx->channelCount, curVol, targetVol, alpha); break;
         default: env->ReleaseFloatArrayElements(pcm, f, JNI_ABORT); return;
     }
+    ctx->currentVolume = curVol;
     env->ReleaseFloatArrayElements(pcm, f, JNI_ABORT);
 
     // Submit converted PCM to USB pipeline (shared with raw path)
@@ -814,49 +848,78 @@ void submitPcmToUrbs(UsbAudioContext *ctx, const uint8_t *pcmData, int totalByte
     free(mergedBuf);
 }
 
-static void scaleRawInt16(const uint8_t *src, uint8_t *dst, int totalSamples, int dstBitDepth, float vol) {
+static void scaleRawInt16Ramped(
+        const uint8_t *src, uint8_t *dst, int totalFrames, int channels, int dstBitDepth,
+        float &curVol, float targetVol, float alpha) {
     const auto *in = reinterpret_cast<const int16_t *>(src);
+    int idx = 0;
     if (dstBitDepth == 16) {
         auto *out = reinterpret_cast<int16_t *>(dst);
-        for (int i = 0; i < totalSamples; i++) {
-            out[i] = (int16_t)(in[i] * vol);
+        for (int f = 0; f < totalFrames; f++) {
+            curVol += (targetVol - curVol) * alpha;
+            if (fabsf(targetVol - curVol) < 1e-5f) curVol = targetVol;
+            for (int c = 0; c < channels; c++, idx++) {
+                out[idx] = (int16_t)(in[idx] * curVol);
+            }
         }
     } else if (dstBitDepth == 32) {
         auto *out = reinterpret_cast<int32_t *>(dst);
-        for (int i = 0; i < totalSamples; i++) {
-            int32_t scaled = (int32_t)(in[i] * vol);
-            out[i] = scaled << 16;
+        for (int f = 0; f < totalFrames; f++) {
+            curVol += (targetVol - curVol) * alpha;
+            if (fabsf(targetVol - curVol) < 1e-5f) curVol = targetVol;
+            for (int c = 0; c < channels; c++, idx++) {
+                int32_t scaled = (int32_t)(in[idx] * curVol);
+                out[idx] = scaled << 16;
+            }
         }
     }
 }
 
-static void scaleRawInt24(const uint8_t *src, uint8_t *dst, int totalSamples, int dstBitDepth, float vol) {
+static void scaleRawInt24Ramped(
+        const uint8_t *src, uint8_t *dst, int totalFrames, int channels, int dstBitDepth,
+        float &curVol, float targetVol, float alpha) {
+    int idx = 0;
     if (dstBitDepth == 24) {
-        for (int i = 0; i < totalSamples; i++) {
-            int32_t val = (int32_t)(src[i*3] | (src[i*3+1] << 8) | (src[i*3+2] << 16));
-            if (val & 0x800000) val |= 0xFF000000;
-            int32_t scaled = (int32_t)(val * (double)vol);
-            dst[i*3] = scaled & 0xFF;
-            dst[i*3+1] = (scaled >> 8) & 0xFF;
-            dst[i*3+2] = (scaled >> 16) & 0xFF;
+        for (int f = 0; f < totalFrames; f++) {
+            curVol += (targetVol - curVol) * alpha;
+            if (fabsf(targetVol - curVol) < 1e-5f) curVol = targetVol;
+            for (int c = 0; c < channels; c++, idx++) {
+                int32_t val = (int32_t)(src[idx * 3] | (src[idx * 3 + 1] << 8) | (src[idx * 3 + 2] << 16));
+                if (val & 0x800000) val |= 0xFF000000;
+                int32_t scaled = (int32_t)(val * (double)curVol);
+                dst[idx * 3] = scaled & 0xFF;
+                dst[idx * 3 + 1] = (scaled >> 8) & 0xFF;
+                dst[idx * 3 + 2] = (scaled >> 16) & 0xFF;
+            }
         }
     } else if (dstBitDepth == 32) {
         auto *out = reinterpret_cast<int32_t *>(dst);
-        for (int i = 0; i < totalSamples; i++) {
-            int32_t val = (int32_t)(src[i*3] | (src[i*3+1] << 8) | (src[i*3+2] << 16));
-            if (val & 0x800000) val |= 0xFF000000;
-            int32_t scaled = (int32_t)(val * (double)vol);
-            out[i] = scaled << 8;
+        for (int f = 0; f < totalFrames; f++) {
+            curVol += (targetVol - curVol) * alpha;
+            if (fabsf(targetVol - curVol) < 1e-5f) curVol = targetVol;
+            for (int c = 0; c < channels; c++, idx++) {
+                int32_t val = (int32_t)(src[idx * 3] | (src[idx * 3 + 1] << 8) | (src[idx * 3 + 2] << 16));
+                if (val & 0x800000) val |= 0xFF000000;
+                int32_t scaled = (int32_t)(val * (double)curVol);
+                out[idx] = scaled << 8;
+            }
         }
     }
 }
 
-static void scaleRawInt32(const uint8_t *src, uint8_t *dst, int totalSamples, int dstBitDepth, float vol) {
+static void scaleRawInt32Ramped(
+        const uint8_t *src, uint8_t *dst, int totalFrames, int channels, int dstBitDepth,
+        float &curVol, float targetVol, float alpha) {
     const auto *in = reinterpret_cast<const int32_t *>(src);
     auto *out = reinterpret_cast<int32_t *>(dst);
-    for (int i = 0; i < totalSamples; i++) {
-        int32_t val = in[i] << 8;
-        out[i] = (int32_t)(val * (double)vol);
+    int idx = 0;
+    for (int f = 0; f < totalFrames; f++) {
+        curVol += (targetVol - curVol) * alpha;
+        if (fabsf(targetVol - curVol) < 1e-5f) curVol = targetVol;
+        for (int c = 0; c < channels; c++, idx++) {
+            int32_t val = in[idx] << 8;
+            out[idx] = (int32_t)(val * (double)curVol);
+        }
     }
 }
 
@@ -888,8 +951,10 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWriteRaw(
     jbyte *rawData = env->GetByteArrayElements(pcm, nullptr);
     if (!rawData) return;
 
-    float vol = ctx->volume.load();
-    if (vol >= 0.999f) {
+    float targetVol = ctx->volume.load();
+    float curVol = ctx->currentVolume;
+    if (targetVol >= 0.9999f && curVol >= 0.9999f) {
+        ctx->currentVolume = 1.0f;
         // Bit-depth matching: pad input to DAC's bit depth (lossless integer ops, zero float)
         if (inputBitDepth == ctx->bitDepth) {
             // Same bit depth: zero-copy
@@ -908,17 +973,20 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWriteRaw(
             return;
         }
     } else {
+        float sr = ctx->sampleRate > 0 ? (float)ctx->sampleRate : 48000.0f;
+        float alpha = 1.0f - expf(-1.0f / (sr * 0.008f));
         if (inputBitDepth == 16) {
-            scaleRawInt16((const uint8_t *)rawData, ctx->transferBuffer, totalSamples, ctx->bitDepth, vol);
+            scaleRawInt16Ramped((const uint8_t *)rawData, ctx->transferBuffer, totalFrames, ctx->channelCount, ctx->bitDepth, curVol, targetVol, alpha);
         } else if (inputBitDepth == 24) {
-            scaleRawInt24((const uint8_t *)rawData, ctx->transferBuffer, totalSamples, ctx->bitDepth, vol);
+            scaleRawInt24Ramped((const uint8_t *)rawData, ctx->transferBuffer, totalFrames, ctx->channelCount, ctx->bitDepth, curVol, targetVol, alpha);
         } else if (inputBitDepth == 32) {
-            scaleRawInt32((const uint8_t *)rawData, ctx->transferBuffer, totalSamples, ctx->bitDepth, vol);
+            scaleRawInt32Ramped((const uint8_t *)rawData, ctx->transferBuffer, totalFrames, ctx->channelCount, ctx->bitDepth, curVol, targetVol, alpha);
         } else {
             LOGE("WriteRaw: unsupported bit-depth for volume scaling: %d", inputBitDepth);
             env->ReleaseByteArrayElements(pcm, rawData, JNI_ABORT);
             return;
         }
+        ctx->currentVolume = curVol;
     }
 
     env->ReleaseByteArrayElements(pcm, rawData, JNI_ABORT);

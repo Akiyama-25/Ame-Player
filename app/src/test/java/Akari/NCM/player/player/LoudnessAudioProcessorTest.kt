@@ -360,7 +360,7 @@ class LoudnessAudioProcessorTest {
         processor.queueInput(chunk1)
 
         assertNotNull("1 秒播放流内应触发 Stage 1 极速初判", previewData)
-        assertEquals(LoudnessSource.FAST_PREVIEW_SCAN, previewData!!.source)
+        assertEquals(LoudnessSource.INTRO_PREVIEW_SCAN, previewData!!.source)
         assertEquals(-6.06f, previewData!!.integratedLufs, 0.6f)
         assertNotNull(processor.staticGainDb)
         assertFalse(processor.isFinalLocked)
@@ -382,5 +382,65 @@ class LoudnessAudioProcessorTest {
         assertEquals(LoudnessSource.BS1770_SCAN, finalData!!.source)
         assertEquals(-6.06f, finalData!!.integratedLufs, 0.5f)
         assertTrue(processor.isFinalLocked)
+    }
+
+    @Test
+    fun `多点极速初判预设后流式前奏测算不得覆盖已有初判增益`() {
+        val processor = LoudnessAudioProcessor()
+        processor.isEnabled = true
+        processor.targetLufs = -14.0f
+        processor.peakLimitEnabled = true
+
+        val sr = 48000
+        processor.configure(AudioFormat(sr, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+
+        var previewCalled = 0
+        processor.onPreviewLoudnessMeasured = { _, _ -> previewCalled++ }
+
+        // 先通过 3 锚点极速抽样预设 -6.9 LUFS -> 应施加 -7.1 dB 衰减
+        val fastPreview = LoudnessData(-6.9f, 0.95f, LoudnessSource.FAST_PREVIEW_SCAN)
+        processor.resetForTrack("dahlia_track", fastPreview)
+        assertEquals(-7.1f, processor.staticGainDb!!, 0.05f)
+        assertEquals(LoudnessSource.FAST_PREVIEW_SCAN, processor.currentSource)
+
+        // 播放极轻前奏（约 -26 LUFS）：不得回调覆盖 FAST_PREVIEW_SCAN
+        val amp = 1600.0
+        val chunk = ByteBuffer.allocateDirect(sr * 2 * 4).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until sr * 2) {
+            val s = (amp * kotlin.math.sin(2.0 * kotlin.math.PI * 1000.0 * i / sr)).toInt().toShort()
+            chunk.putShort(s)
+            chunk.putShort(s)
+        }
+        chunk.flip()
+        processor.queueInput(chunk)
+
+        assertEquals(0, previewCalled)
+        assertEquals(-7.1f, processor.staticGainDb!!, 0.05f)
+        assertEquals(LoudnessSource.FAST_PREVIEW_SCAN, processor.currentSource)
+
+        // 尝试用低优先级 INTRO_PREVIEW_SCAN 调用 setStaticGain 也应被拒绝
+        processor.setStaticGain(7.3f, 2.31f, isFinal = false, smoothSec = 0.25, source = LoudnessSource.INTRO_PREVIEW_SCAN)
+        assertEquals(-7.1f, processor.staticGainDb!!, 0.05f)
+        assertEquals(LoudnessSource.FAST_PREVIEW_SCAN, processor.currentSource)
+    }
+
+    @Test
+    fun `修改目标响度重算时保留未锁定初判的2dB正增益上限`() {
+        val processor = LoudnessAudioProcessor()
+        processor.isEnabled = true
+        processor.targetLufs = -16.0f
+        processor.peakLimitEnabled = true
+
+        processor.configure(AudioFormat(48000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+
+        val unverifiedQuiet = LoudnessData(-21.3f, 0.2f, LoudnessSource.FAST_PREVIEW_SCAN)
+        processor.resetForTrack("cap_preserve_track", unverifiedQuiet)
+        assertEquals(2.0f, processor.staticGainDb!!, 0.01f)
+
+        // 将目标响度进一步调高到 -11.0 LUFS 时，未锁定源的正向增益仍被控制在 +2.0 dB 以内
+        processor.updateSettings(enabled = true, target = -11.0f, peakLimit = true)
+        assertEquals(2.0f, processor.staticGainDb!!, 0.01f)
     }
 }

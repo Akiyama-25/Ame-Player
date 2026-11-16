@@ -9,6 +9,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -46,6 +47,7 @@ fun LogScreen(
     }
 
     val listState = rememberLazyListState()
+    val horizontalScrollState = rememberScrollState()
     var currentLogLevel by remember { mutableStateOf(AppLogger.currentLevel.value) }
     var maxFileSizeKb by remember { mutableStateOf(AppLogger.maxFileSizeKb.value) }
 
@@ -54,9 +56,27 @@ fun LogScreen(
     var showExportMenu by remember { mutableStateOf(false) }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(lines.size) {
-        if (lines.isNotEmpty()) {
+    suspend fun scrollToTrueBottom(animate: Boolean) {
+        if (lines.isEmpty()) return
+        withFrameNanos { }
+        if (animate) {
+            listState.animateScrollToItem(lines.lastIndex)
+        } else {
             listState.scrollToItem(lines.lastIndex)
+        }
+        withFrameNanos { }
+        var attempts = 0
+        while (listState.canScrollForward && attempts < 8) {
+            val scrolled = listState.scrollBy(10_000f)
+            if (scrolled == 0f) break
+            withFrameNanos { }
+            attempts++
+        }
+    }
+
+    LaunchedEffect(logText, lines.size) {
+        if (lines.isNotEmpty()) {
+            scrollToTrueBottom(animate = false)
         }
     }
 
@@ -238,48 +258,56 @@ fun LogScreen(
                     )
                 }
             } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                        .testTag("list_logs"),
-                    contentPadding = PaddingValues(bottom = navBarBottom + 72.dp)
+                BoxWithConstraints(
+                    modifier = Modifier.fillMaxSize()
                 ) {
-                    itemsIndexed(lines) { _, line ->
-                        val textColor = when {
-                            line.contains("[ERROR]") -> MaterialTheme.colorScheme.error
-                            line.contains("[WARN]") -> Color(0xFFF57C00)
-                            line.contains("[INFO]") -> MaterialTheme.colorScheme.primary
-                            line.contains("[DEBUG]") -> MaterialTheme.colorScheme.onSurfaceVariant
-                            else -> MaterialTheme.colorScheme.onSurface
-                        }
-                        Text(
-                            text = line,
-                            color = textColor,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp,
+                    val viewportWidth = maxWidth
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .horizontalScroll(horizontalScrollState)
+                    ) {
+                        LazyColumn(
+                            state = listState,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
-                                .padding(vertical = 1.dp)
-                        )
+                                .widthIn(min = viewportWidth)
+                                .fillMaxHeight()
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .testTag("list_logs"),
+                            contentPadding = PaddingValues(bottom = navBarBottom + 72.dp)
+                        ) {
+                            itemsIndexed(lines) { _, line ->
+                                val textColor = when {
+                                    line.contains("[ERROR]") -> MaterialTheme.colorScheme.error
+                                    line.contains("[WARN]") -> Color(0xFFF57C00)
+                                    line.contains("[INFO]") -> MaterialTheme.colorScheme.primary
+                                    line.contains("[DEBUG]") -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    else -> MaterialTheme.colorScheme.onSurface
+                                }
+                                Text(
+                                    text = line,
+                                    color = textColor,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp,
+                                    softWrap = false,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(vertical = 1.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
-                val isAtBottom by remember {
-                    derivedStateOf {
-                        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                        lastVisible >= (lines.size - 3).coerceAtLeast(0)
-                    }
+                val canScrollDown by remember {
+                    derivedStateOf { listState.canScrollForward }
                 }
 
-                if (!isAtBottom && lines.isNotEmpty()) {
+                if (canScrollDown && lines.isNotEmpty()) {
                     SmallFloatingActionButton(
                         onClick = {
                             scope.launch {
-                                listState.animateScrollToItem(lines.lastIndex)
+                                scrollToTrueBottom(animate = true)
                             }
                         },
                         modifier = Modifier

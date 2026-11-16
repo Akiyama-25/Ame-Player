@@ -62,6 +62,13 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
     var isFinalLocked: Boolean = false
         private set
 
+    @Volatile
+    var currentSource: LoudnessSource = LoudnessSource.DEFAULT_FALLBACK
+        private set
+
+    @Volatile
+    private var currentLoudnessData: LoudnessData? = null
+
     var onPreviewLoudnessMeasured: ((String, LoudnessData) -> Unit)? = null
     var onLoudnessMeasured: ((String, LoudnessData) -> Unit)? = null
 
@@ -140,14 +147,20 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         gainDb: Float?,
         multiplier: Float,
         isFinal: Boolean = true,
-        smoothSec: Double = 0.2
+        smoothSec: Double = 0.2,
+        source: LoudnessSource = if (isFinal) LoudnessSource.BS1770_SCAN else LoudnessSource.INTRO_PREVIEW_SCAN
     ) {
+        if (!isFinal && currentSource.priority > source.priority) {
+            return
+        }
+        this.currentSource = source
         this.staticGainDb = gainDb
         this.currentMultiplier = multiplier
         this.smoothTimeConstantSec = smoothSec.coerceIn(0.05, 1.0)
         if (isFinal) {
             this.isFinalLocked = true
             this.hasEmittedStage1Preview = true
+            this.hasEmittedMidRefine = true
         }
         if (isEnabled) {
             this.targetLinearGain = multiplier
@@ -164,23 +177,29 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
 
         if (loudness != null && loudness.source != LoudnessSource.DEFAULT_FALLBACK) {
             val gain = EbuR128Calculator.computeGain(loudness, targetLufs, peakLimitEnabled)
+            this.currentLoudnessData = loudness
+            this.currentSource = loudness.source
             this.staticGainDb = gain.effectiveGainDb
             this.currentMultiplier = gain.linearMultiplier
             this.targetLinearGain = if (isEnabled) gain.linearMultiplier else 1.0f
             this.currentLinearGain = this.targetLinearGain
             this.isFinalLocked = loudness.source.isFinalLocked
             this.hasEmittedStage1Preview = this.isFinalLocked || loudness.source == LoudnessSource.FAST_PREVIEW_SCAN
+            this.hasEmittedMidRefine = this.isFinalLocked || loudness.source == LoudnessSource.FAST_PREVIEW_SCAN
             AppLogger.d(
                 TAG,
                 "Track '$mediaId' loudness preset (${loudness.source.label}): ${loudness.integratedLufs} LUFS, gain=${gain.effectiveGainDb} dB, locked=$isFinalLocked"
             )
         } else {
+            this.currentLoudnessData = null
+            this.currentSource = LoudnessSource.DEFAULT_FALLBACK
             this.staticGainDb = null
             this.currentMultiplier = 1.0f
             this.targetLinearGain = 1.0f
             this.currentLinearGain = 1.0f
             this.isFinalLocked = false
             this.hasEmittedStage1Preview = false
+            this.hasEmittedMidRefine = false
             AppLogger.d(TAG, "Track '$mediaId' loudness unknown, armed real-time dual-stage BS.1770 analyzer (target: $targetLufs LUFS)")
         }
     }
@@ -206,10 +225,18 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
     }
 
     private fun recalculateTargetGain() {
+        val data = currentLoudnessData
+        if (data != null && data.source != LoudnessSource.DEFAULT_FALLBACK) {
+            val gainResult = EbuR128Calculator.computeGain(data, targetLufs, peakLimitEnabled)
+            staticGainDb = gainResult.effectiveGainDb
+            currentMultiplier = gainResult.linearMultiplier
+            targetLinearGain = gainResult.linearMultiplier
+            return
+        }
         val static = staticGainDb
         if (static != null) {
             val gainResult = EbuR128Calculator.computeGain(
-                LoudnessData(targetLufs - static, 1.0f, LoudnessSource.BS1770_SCAN),
+                LoudnessData(targetLufs - static, 1.0f, currentSource.takeIf { it != LoudnessSource.DEFAULT_FALLBACK } ?: LoudnessSource.BS1770_SCAN),
                 targetLufs,
                 peakLimitEnabled
             )
@@ -336,22 +363,27 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
     private fun emitStreamingEstimate(energies: List<Double>, isFinal: Boolean) {
         val mediaId = currentMediaId ?: return
         if (isFinalLocked) return
+        val targetSource = if (isFinal) LoudnessSource.BS1770_SCAN else LoudnessSource.INTRO_PREVIEW_SCAN
+        if (!isFinal && currentSource.priority > targetSource.priority) {
+            return
+        }
 
         val measured = EbuR128Calculator.computeIntegratedLoudnessFromBlockEnergies(
             energies,
             streamingMaxPeak
         ).let {
-            if (isFinal) it else it.copy(source = LoudnessSource.FAST_PREVIEW_SCAN)
+            if (isFinal) it else it.copy(source = targetSource)
         }
 
+        currentLoudnessData = measured
         val gain = EbuR128Calculator.computeGain(measured, targetLufs, peakLimitEnabled)
         if (isFinal) {
-            setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = true, smoothSec = 0.45)
+            setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = true, smoothSec = 0.45, source = targetSource)
             AppLogger.i(TAG, "Streaming Stage 2 locked for '$mediaId': ${measured.integratedLufs} LUFS, gain=${gain.effectiveGainDb} dB")
             onLoudnessMeasured?.invoke(mediaId, measured)
         } else {
             val smoothTau = if (staticGainDb != null) 0.4 else 0.2
-            setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = false, smoothSec = smoothTau)
+            setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = false, smoothSec = smoothTau, source = targetSource)
             AppLogger.i(TAG, "Streaming Stage 1 preview for '$mediaId': ${measured.integratedLufs} LUFS, gain=${gain.effectiveGainDb} dB")
             onPreviewLoudnessMeasured?.invoke(mediaId, measured)
         }

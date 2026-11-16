@@ -75,7 +75,8 @@ struct UsbAudioContext {
     int32_t maxPacketSize;
 
     std::atomic<bool> running;
-    std::atomic<float> volume{1.0f};
+    std::atomic<float> volume{0.0f};
+    float currentVolume = 0.0f;
 
     /** Scratch buffer for PCM format conversion (float -> int16/24/32). */
     uint8_t *transferBuffer;

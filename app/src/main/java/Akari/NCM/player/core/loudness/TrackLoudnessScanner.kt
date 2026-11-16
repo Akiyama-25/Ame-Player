@@ -178,12 +178,17 @@ object TrackLoudnessScanner {
                 }
             }
 
-            if (allBlockEnergies.isNotEmpty()) {
+            if (coroutineContext.isActive && allBlockEnergies.isNotEmpty()) {
+                val previewSource = if (anchors.size > 1) {
+                    LoudnessSource.FAST_PREVIEW_SCAN
+                } else {
+                    LoudnessSource.INTRO_PREVIEW_SCAN
+                }
                 val previewResult = EbuR128Calculator.computeIntegratedLoudnessFromBlockEnergies(
                     allBlockEnergies,
                     maxObservedPeak
-                ).copy(source = LoudnessSource.FAST_PREVIEW_SCAN)
-                AppLogger.i(TAG, "Fast multi-point scan complete (${allBlockEnergies.size} blocks, peak=$maxObservedPeak): ${previewResult.integratedLufs} LUFS")
+                ).copy(source = previewSource)
+                AppLogger.i(TAG, "Fast multi-point scan complete (${allBlockEnergies.size} blocks, anchors=${anchors.size}, peak=$maxObservedPeak): ${previewResult.integratedLufs} LUFS (${previewSource.label})")
                 previewResult
             } else {
                 null
@@ -318,7 +323,7 @@ object TrackLoudnessScanner {
                                     val preview = EbuR128Calculator.computeIntegratedLoudnessFromBlockEnergies(
                                         blockEnergies.toList(),
                                         maxObservedPeak
-                                    ).copy(source = LoudnessSource.FAST_PREVIEW_SCAN)
+                                    ).copy(source = LoudnessSource.INTRO_PREVIEW_SCAN)
                                     onPreviewReady(preview)
                                 }
                             }
@@ -328,7 +333,7 @@ object TrackLoudnessScanner {
                 }
             }
 
-            if (blockEnergies.isNotEmpty()) {
+            if (coroutineContext.isActive && blockEnergies.isNotEmpty()) {
                 val fullResult = EbuR128Calculator.computeIntegratedLoudnessFromBlockEnergies(
                     blockEnergies,
                     maxObservedPeak

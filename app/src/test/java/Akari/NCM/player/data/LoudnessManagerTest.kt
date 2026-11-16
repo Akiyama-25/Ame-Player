@@ -92,4 +92,42 @@ class LoudnessManagerTest {
         assertEquals(2, readyCount)
         assertEquals(-12.0f, avg!!, 0.01f)
     }
+
+    @Test
+    fun `流式前奏初判不可覆盖多点极速初判而高优先级来源可正常升级`() {
+        val song = PlayableMedia.Online(
+            id = "track_priority",
+            title = "Priority Test",
+            artist = "Artist",
+            album = "Album",
+            durationMs = 200_000L,
+            coverUrl = null
+        )
+
+        // 1. 先保存 3 锚点多点抽样 (-6.9 LUFS, FAST_PREVIEW_SCAN)
+        val multiPoint = LoudnessData(-6.9f, 0.95f, LoudnessSource.FAST_PREVIEW_SCAN)
+        loudnessManager.saveLoudness(song.id, multiPoint)
+
+        // 2. 低优先级前奏初判 (-21.3 LUFS, INTRO_PREVIEW_SCAN) 不得覆盖多点初判
+        val introPreview = LoudnessData(-21.3f, 0.3f, LoudnessSource.INTRO_PREVIEW_SCAN)
+        loudnessManager.saveLoudness(song.id, introPreview)
+        val afterIntro = loudnessManager.getCachedLoudnessSync(song)!!
+        assertEquals(-6.9f, afterIntro.integratedLufs, 0.01f)
+        assertEquals(LoudnessSource.FAST_PREVIEW_SCAN, afterIntro.source)
+
+        // 3. 若先写入 INTRO_PREVIEW_SCAN，后续 FAST_PREVIEW_SCAN 可升级覆盖
+        val song2 = song.copy(id = "track_priority_2")
+        loudnessManager.saveLoudness(song2.id, introPreview)
+        loudnessManager.saveLoudness(song2.id, multiPoint)
+        val upgraded = loudnessManager.getCachedLoudnessSync(song2)!!
+        assertEquals(-6.9f, upgraded.integratedLufs, 0.01f)
+        assertEquals(LoudnessSource.FAST_PREVIEW_SCAN, upgraded.source)
+
+        // 4. 全曲 BS.1770 锁定可升级多点初判
+        val finalLocked = LoudnessData(-9.6f, 0.98f, LoudnessSource.BS1770_SCAN)
+        loudnessManager.saveLoudness(song.id, finalLocked)
+        val afterFinal = loudnessManager.getCachedLoudnessSync(song)!!
+        assertEquals(-9.6f, afterFinal.integratedLufs, 0.01f)
+        assertEquals(LoudnessSource.BS1770_SCAN, afterFinal.source)
+    }
 }

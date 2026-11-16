@@ -201,4 +201,53 @@ class EbuR128CalculatorTest {
         )
         assertTrue(previewState.statusSummary.contains("初判"))
     }
+
+    @Test
+    fun `未锁定初判源的正向增益限制在2dB以内而衰减与锁定全曲不受此限`() {
+        // 极低响度前奏 -21.3 LUFS -> 理论正增益 +7.3 dB
+        for (source in listOf(
+            LoudnessSource.INTRO_PREVIEW_SCAN,
+            LoudnessSource.FAST_PREVIEW_SCAN,
+            LoudnessSource.QUEUE_AVERAGE
+        )) {
+            val preview = LoudnessData(
+                integratedLufs = -21.3f,
+                truePeak = 0.25f,
+                source = source
+            )
+            val result = EbuR128Calculator.computeGain(
+                loudness = preview,
+                targetLufs = EbuR128Calculator.TARGET_STREAMING_LUFS,
+                peakLimitEnabled = true
+            )
+            assertEquals(7.3f, result.rawGainDb, 0.05f)
+            assertEquals(EbuR128Calculator.MAX_UNVERIFIED_POSITIVE_GAIN_DB, result.effectiveGainDb, 0.01f)
+        }
+
+        // 未锁定初判若需负向衰减（如 -7.0 LUFS -> -7.0 dB），应全额执行不被 +2dB 截断
+        val loudPreview = LoudnessData(
+            integratedLufs = -7.0f,
+            truePeak = 0.95f,
+            source = LoudnessSource.FAST_PREVIEW_SCAN
+        )
+        val attenResult = EbuR128Calculator.computeGain(
+            loudness = loudPreview,
+            targetLufs = EbuR128Calculator.TARGET_STREAMING_LUFS,
+            peakLimitEnabled = true
+        )
+        assertEquals(-7.0f, attenResult.effectiveGainDb, 0.05f)
+
+        // 已锁定的全曲测量可使用完整正增益范围
+        val lockedQuiet = LoudnessData(
+            integratedLufs = -21.3f,
+            truePeak = 0.25f,
+            source = LoudnessSource.BS1770_SCAN
+        )
+        val lockedResult = EbuR128Calculator.computeGain(
+            loudness = lockedQuiet,
+            targetLufs = EbuR128Calculator.TARGET_STREAMING_LUFS,
+            peakLimitEnabled = true
+        )
+        assertEquals(7.3f, lockedResult.effectiveGainDb, 0.05f)
+    }
 }

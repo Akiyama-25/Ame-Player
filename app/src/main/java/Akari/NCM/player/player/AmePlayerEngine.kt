@@ -201,32 +201,39 @@ class AmePlayerEngine @Inject constructor(
     private var fadeJob: Job? = null
     private var isFadingOut: Boolean = false
 
+    private fun readSystemVolumeRatio(): Float {
+        return try {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return 1f
+            val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            if (max > 0) (current.toFloat() / max.toFloat()).coerceIn(0f, 1f) else 1f
+        } catch (_: Exception) {
+            1f
+        }
+    }
+
     private fun applyEffectiveVolume(fadeMultiplier: Float = currentFadeMultiplier) {
         currentFadeMultiplier = fadeMultiplier.coerceIn(0f, 1f)
         val baseVol = _volume.value
         val effectiveVol = (baseVol * currentFadeMultiplier).coerceIn(0f, 1f)
-        exoPlayer.volume = effectiveVol
 
-        val effectiveUsbVol = if (usbAudioManager.isExclusiveModeEnabled.value && ThemePrefs.volumeNormalizationEnabled) {
-            val mult = loudnessAudioProcessor.currentMultiplier
-            (effectiveVol * mult).coerceIn(0f, 1f)
+        val loudnessMult = if (ThemePrefs.volumeNormalizationEnabled) {
+            loudnessAudioProcessor.currentMultiplier
         } else {
-            effectiveVol
+            1.0f
         }
-        usbAudioSink?.setVolume(effectiveUsbVol)
+        val effectiveUsbVol = (effectiveVol * loudnessMult).coerceIn(0f, 1f)
+        usbAudioSink?.setExclusiveVolume(effectiveUsbVol)
+
+        val isUsbExclusiveActive = usbAudioManager.isExclusiveModeEnabled.value &&
+            (usbAudioSink?.isExclusiveStreamActive() == true)
+        exoPlayer.volume = if (isUsbExclusiveActive) 0f else effectiveVol
     }
 
     fun syncVolumeFromSystem() {
-        try {
-            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-            val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-            val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            if (max > 0) {
-                val ratio = (current.toFloat() / max.toFloat()).coerceIn(0f, 1f)
-                _volume.value = ratio
-                applyEffectiveVolume()
-            }
-        } catch (_: Exception) {}
+        val ratio = readSystemVolumeRatio()
+        _volume.value = ratio
+        applyEffectiveVolume()
     }
 
     private var fixedRepeatMode: RepeatMode = when (ThemePrefs.playbackRepeatMode) {
@@ -296,6 +303,7 @@ class AmePlayerEngine @Inject constructor(
     private var exoPlayer: ExoPlayer
 
     init {
+        _volume.value = readSystemVolumeRatio()
         exoPlayer = createExoPlayer()
         restoreLastPlaybackState()
         startBackgroundObservers()
@@ -704,7 +712,10 @@ class AmePlayerEngine @Inject constructor(
 
         val currentDevice = usbAudioManager.connectedUsbDevice.value
         val isExclusive = usbAudioManager.isExclusiveModeEnabled.value
-        if (isExclusive && currentDevice != null) {
+        finalAudioSink.setExclusiveVolume(_volume.value)
+        if (isExclusive) {
+            player.setPreferredAudioDevice(null)
+        } else if (currentDevice != null) {
             player.setPreferredAudioDevice(currentDevice)
         }
 
@@ -760,15 +771,16 @@ class AmePlayerEngine @Inject constructor(
             }
         }
 
-        // USB Exclusive mode and device observer
+        // USB Exclusive mode, device, and permission observer
         scope.launch {
             kotlinx.coroutines.flow.combine(
                 usbAudioManager.isExclusiveModeEnabled,
-                usbAudioManager.connectedUsbDevice
-            ) { isExclusive, device ->
-                Pair(isExclusive, device)
-            }.collect { (isExclusive, device) ->
-                applyUsbAudioRouting(device, isExclusive)
+                usbAudioManager.connectedUsbDevice,
+                usbAudioManager.usbDeviceDetails
+            ) { isExclusive, device, details ->
+                Triple(isExclusive, device, details?.hasPermission == true)
+            }.collect { (isExclusive, device, hasPermission) ->
+                applyUsbAudioRouting(device, isExclusive, hasPermission)
             }
         }
 
@@ -797,28 +809,30 @@ class AmePlayerEngine @Inject constructor(
         loudnessAudioProcessor.onPreviewLoudnessMeasured = { mediaId, previewData ->
             loudnessManager.saveLoudness(mediaId, previewData)
             val cur = _currentMedia.value
-            if (cur?.id == mediaId && ThemePrefs.volumeNormalizationEnabled) {
-                val target = ThemePrefs.targetLoudnessLufs
-                val gain = EbuR128Calculator.computeGain(previewData, target, ThemePrefs.loudnessPeakLimitEnabled)
-                _loudnessState.value = LoudnessNormalizationState(
-                    isEnabled = true,
-                    targetLufs = target,
-                    currentMediaTitle = cur.title,
-                    sourceLoudnessLufs = previewData.integratedLufs,
-                    sourcePeakDb = previewData.peakDb,
-                    appliedGainDb = gain.effectiveGainDb,
-                    linearMultiplier = gain.linearMultiplier,
-                    isPeakLimited = gain.isPeakLimited,
-                    source = previewData.source,
-                    upcomingAverageLufs = upcomingAverageLufs,
-                    prefetchedCount = upcomingPrefetchedCount,
-                    prefetchedTotalCount = upcomingPrefetchedTotalCount,
-                    isInterTrackWaiting = isInterTrackWaiting
-                )
-                if (usbAudioManager.isExclusiveModeEnabled.value) {
-                    val baseVol = _volume.value
-                    val finalVol = (baseVol * gain.linearMultiplier).coerceIn(0f, 1f)
-                    usbAudioSink?.setVolume(finalVol)
+            if (cur?.id == mediaId && ThemePrefs.volumeNormalizationEnabled && !loudnessAudioProcessor.isFinalLocked) {
+                val existingState = _loudnessState.value
+                val sameTrack = existingState.currentMediaTitle == cur.title
+                if (!sameTrack || previewData.source.priority >= existingState.source.priority) {
+                    val target = ThemePrefs.targetLoudnessLufs
+                    val gain = EbuR128Calculator.computeGain(previewData, target, ThemePrefs.loudnessPeakLimitEnabled)
+                    _loudnessState.value = LoudnessNormalizationState(
+                        isEnabled = true,
+                        targetLufs = target,
+                        currentMediaTitle = cur.title,
+                        sourceLoudnessLufs = previewData.integratedLufs,
+                        sourcePeakDb = previewData.peakDb,
+                        appliedGainDb = gain.effectiveGainDb,
+                        linearMultiplier = gain.linearMultiplier,
+                        isPeakLimited = gain.isPeakLimited,
+                        source = previewData.source,
+                        upcomingAverageLufs = upcomingAverageLufs,
+                        prefetchedCount = upcomingPrefetchedCount,
+                        prefetchedTotalCount = upcomingPrefetchedTotalCount,
+                        isInterTrackWaiting = isInterTrackWaiting
+                    )
+                    if (usbAudioManager.isExclusiveModeEnabled.value) {
+                        applyEffectiveVolume()
+                    }
                 }
             }
         }
@@ -829,7 +843,13 @@ class AmePlayerEngine @Inject constructor(
             if (cur?.id == mediaId) {
                 val target = ThemePrefs.targetLoudnessLufs
                 val gain = EbuR128Calculator.computeGain(data, target, ThemePrefs.loudnessPeakLimitEnabled)
-                loudnessAudioProcessor.setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = true, smoothSec = 0.45)
+                loudnessAudioProcessor.setStaticGain(
+                    gain.effectiveGainDb,
+                    gain.linearMultiplier,
+                    isFinal = true,
+                    smoothSec = 0.45,
+                    source = data.source
+                )
                 _loudnessState.value = LoudnessNormalizationState(
                     isEnabled = ThemePrefs.volumeNormalizationEnabled,
                     targetLufs = target,
@@ -847,9 +867,7 @@ class AmePlayerEngine @Inject constructor(
                 )
                 // 在 USB 独占模式且启用了音量均衡时，将测算出的均衡增益同步缩放至 USB 输出
                 if (usbAudioManager.isExclusiveModeEnabled.value && ThemePrefs.volumeNormalizationEnabled) {
-                    val baseVol = _volume.value
-                    val finalVol = (baseVol * gain.linearMultiplier).coerceIn(0f, 1f)
-                    usbAudioSink?.setVolume(finalVol)
+                    applyEffectiveVolume()
                 }
             }
         }
@@ -971,10 +989,20 @@ class AmePlayerEngine @Inject constructor(
                 if (fastPreview != null && isActive) {
                     loudnessManager.saveLoudness(media.id, fastPreview)
                     withContext(Dispatchers.Main) {
-                        if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled && !loudnessAudioProcessor.isFinalLocked) {
+                        if (_currentMedia.value?.id == media.id &&
+                            ThemePrefs.volumeNormalizationEnabled &&
+                            !loudnessAudioProcessor.isFinalLocked &&
+                            fastPreview.source.priority >= loudnessAudioProcessor.currentSource.priority
+                        ) {
                             val target = ThemePrefs.targetLoudnessLufs
                             val gain = EbuR128Calculator.computeGain(fastPreview, target, ThemePrefs.loudnessPeakLimitEnabled)
-                            loudnessAudioProcessor.setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = false, smoothSec = 0.2)
+                            loudnessAudioProcessor.setStaticGain(
+                                gain.effectiveGainDb,
+                                gain.linearMultiplier,
+                                isFinal = false,
+                                smoothSec = 0.2,
+                                source = fastPreview.source
+                            )
                             _loudnessState.value = LoudnessNormalizationState(
                                 isEnabled = true,
                                 targetLufs = target,
@@ -1004,14 +1032,26 @@ class AmePlayerEngine @Inject constructor(
             val scanned = Akari.NCM.player.core.loudness.TrackLoudnessScanner.scanTrack(
                 context = context,
                 dataSource = dataSource,
-                onPreviewReady = { preview ->
-                    if (!loudnessAudioProcessor.isFinalLocked) {
+                onPreviewReady = if (needStage1Fast) { preview ->
+                    if (!loudnessAudioProcessor.isFinalLocked &&
+                        preview.source.priority >= loudnessAudioProcessor.currentSource.priority
+                    ) {
                         loudnessManager.saveLoudness(media.id, preview)
                         scope.launch(Dispatchers.Main) {
-                            if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled && !loudnessAudioProcessor.isFinalLocked) {
+                            if (_currentMedia.value?.id == media.id &&
+                                ThemePrefs.volumeNormalizationEnabled &&
+                                !loudnessAudioProcessor.isFinalLocked &&
+                                preview.source.priority >= loudnessAudioProcessor.currentSource.priority
+                            ) {
                                 val target = ThemePrefs.targetLoudnessLufs
                                 val gain = EbuR128Calculator.computeGain(preview, target, ThemePrefs.loudnessPeakLimitEnabled)
-                                loudnessAudioProcessor.setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = false, smoothSec = 0.25)
+                                loudnessAudioProcessor.setStaticGain(
+                                    gain.effectiveGainDb,
+                                    gain.linearMultiplier,
+                                    isFinal = false,
+                                    smoothSec = 0.25,
+                                    source = preview.source
+                                )
                                 _loudnessState.value = _loudnessState.value.copy(
                                     sourceLoudnessLufs = preview.integratedLufs,
                                     sourcePeakDb = preview.peakDb,
@@ -1020,10 +1060,13 @@ class AmePlayerEngine @Inject constructor(
                                     isPeakLimited = gain.isPeakLimited,
                                     source = preview.source
                                 )
+                                if (usbAudioManager.isExclusiveModeEnabled.value) {
+                                    applyEffectiveVolume()
+                                }
                             }
                         }
                     }
-                }
+                } else null
             )
             if (scanned != null && isActive) {
                 loudnessManager.saveLoudness(media.id, scanned)
@@ -1037,7 +1080,13 @@ class AmePlayerEngine @Inject constructor(
                     if (_currentMedia.value?.id == media.id && ThemePrefs.volumeNormalizationEnabled) {
                         val target = ThemePrefs.targetLoudnessLufs
                         val gain = EbuR128Calculator.computeGain(scanned, target, ThemePrefs.loudnessPeakLimitEnabled)
-                        loudnessAudioProcessor.setStaticGain(gain.effectiveGainDb, gain.linearMultiplier, isFinal = true, smoothSec = 0.45)
+                        loudnessAudioProcessor.setStaticGain(
+                            gain.effectiveGainDb,
+                            gain.linearMultiplier,
+                            isFinal = true,
+                            smoothSec = 0.45,
+                            source = scanned.source
+                        )
                         _loudnessState.value = LoudnessNormalizationState(
                             isEnabled = true,
                             targetLufs = target,
@@ -1106,7 +1155,8 @@ class AmePlayerEngine @Inject constructor(
                         gainResult.effectiveGainDb,
                         gainResult.linearMultiplier,
                         isFinal = isLocked,
-                        smoothSec = 0.25
+                        smoothSec = 0.25,
+                        source = loudnessData.source
                     )
                 }
 
@@ -2359,14 +2409,16 @@ class AmePlayerEngine @Inject constructor(
 
     override fun setUsbExclusiveMode(enabled: Boolean) {
         ensureActive()
-        usbAudioManager.setExclusiveModeEnabled(enabled)
-        usbAudioSink?.setBitPerfectEnabled(enabled)
-        val currentDevice = usbAudioManager.connectedUsbDevice.value
-        applyUsbAudioRouting(currentDevice, enabled)
-
         if (enabled) {
             syncVolumeFromSystem()
-        } else {
+        }
+        usbAudioManager.setExclusiveModeEnabled(enabled)
+        val currentDevice = usbAudioManager.connectedUsbDevice.value
+        val hasPermission = usbAudioManager.usbDeviceDetails.value?.hasPermission == true
+        applyUsbAudioRouting(currentDevice, enabled, hasPermission)
+
+        if (!enabled) {
+            applyEffectiveVolume()
             if (_isPlaying.value) {
                 // Switching OFF exclusive: re-sync ExoPlayer to flush and resume system AudioTrack cleanly
                 val currentPos = exoPlayer.currentPosition
@@ -2375,19 +2427,28 @@ class AmePlayerEngine @Inject constructor(
         }
     }
 
-    private fun applyUsbAudioRouting(device: AudioDeviceInfo?, isExclusive: Boolean) {
-        usbAudioSink?.setBitPerfectEnabled(isExclusive && device != null)
+    private fun applyUsbAudioRouting(
+        device: AudioDeviceInfo?,
+        isExclusive: Boolean,
+        hasPermission: Boolean = usbAudioManager.usbDeviceDetails.value?.hasPermission == true
+    ) {
+        val enableBitPerfect = isExclusive && device != null
+        usbAudioSink?.setBitPerfectEnabled(enableBitPerfect)
         if (isExclusive && device != null) {
             val uac = usbAudioManager.uacVersion.value ?: "UAC"
-            AppLogger.i("[AME_USB_AUDIO]", ">>> Applying USB Exclusive Routing to device: '${device.productName}' ($uac, id=${device.id}, type=${device.type})")
-            val routeSuccess = exoPlayer.setPreferredAudioDevice(device)
-            AppLogger.i("[AME_USB_AUDIO]", ">>> exoPlayer.setPreferredAudioDevice result: $routeSuccess")
+            AppLogger.i("[AME_USB_AUDIO]", ">>> Applying USB Exclusive Routing to device: '${device.productName}' ($uac, id=${device.id}, type=${device.type}, hasPerm=$hasPermission)")
+            // 禁止 DefaultAudioSink 将硬件路径抢占至 USB DAC：独占通道由 UsbAudioSink 通过 usbdevfs 接管
+            exoPlayer.setPreferredAudioDevice(null)
             val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                 .setUsage(C.USAGE_MEDIA)
                 .setAllowedCapturePolicy(C.ALLOW_CAPTURE_BY_NONE)
                 .build()
             exoPlayer.setAudioAttributes(audioAttributes, false)
+            if (hasPermission) {
+                usbAudioSink?.onUsbPermissionGranted()
+            }
+            applyEffectiveVolume()
         } else {
             AppLogger.i("[AME_USB_AUDIO]", ">>> Reverting USB Audio routing to default (isExclusive=$isExclusive, device=${device?.productName})")
             if (device != null) {
@@ -2396,6 +2457,7 @@ class AmePlayerEngine @Inject constructor(
             } else {
                 exoPlayer.setPreferredAudioDevice(null)
             }
+            applyEffectiveVolume()
             if (isExclusive && device == null && _isPlaying.value) {
                 AppLogger.w("[AME_USB_AUDIO]", ">>> USB Audio DAC unplugged during exclusive playback! Pausing audio to protect ears/speakers.")
                 pause(immediate = true)

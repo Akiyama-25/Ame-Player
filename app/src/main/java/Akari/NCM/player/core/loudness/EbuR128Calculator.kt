@@ -20,6 +20,7 @@ object EbuR128Calculator {
     const val TARGET_EBU_R128_LUFS = -23.0f  // EBU R128 国际广电标准（保留宽广动态范围）
     const val TARGET_STUDIO_LUFS = -16.0f    // Apple Sound Check / 录音室标准
     const val TRUE_PEAK_LIMIT_DBTP = -1.0f    // EBU R128 准许最大真峰值电平 (-1.0 dBTP)
+    const val MAX_UNVERIFIED_POSITIVE_GAIN_DB = 2.0f // 未全曲锁定前的初判正向增益上限
 
     data class GainResult(
         val rawGainDb: Float,          // 目标响度 - 综合响度的原始增益 (dB)
@@ -55,8 +56,9 @@ object EbuR128Calculator {
             }
         }
 
-        // 设定合理的防破音与防噪声增益上下限 [-24.0 dB, +15.0 dB]
-        effectiveGainDb = effectiveGainDb.coerceIn(-24.0f, 15.0f)
+        // 未全曲锁定前（前奏初判 / 多点初判 / 队列均值），正向增益安全封顶 +2.0 dB，负向衰减保留完整效果
+        val maxPositiveDb = if (loudness.source.isFinalLocked) 15.0f else MAX_UNVERIFIED_POSITIVE_GAIN_DB
+        effectiveGainDb = effectiveGainDb.coerceIn(-24.0f, maxPositiveDb)
         val linearMultiplier = 10.0.pow(effectiveGainDb.toDouble() / 20.0).toFloat()
 
         return GainResult(
