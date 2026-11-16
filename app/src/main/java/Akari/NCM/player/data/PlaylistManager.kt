@@ -101,7 +101,7 @@ class PlaylistManager(private val context: Context) {
 
     private val json = Json {
         ignoreUnknownKeys = true
-        prettyPrint = true
+        prettyPrint = false
     }
 
     private val playlistFile = File(context.filesDir, "custom_playlists.json")

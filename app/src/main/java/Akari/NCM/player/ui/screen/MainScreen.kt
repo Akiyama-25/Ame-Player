@@ -18,17 +18,23 @@ import Akari.NCM.player.ui.component.AdaptiveButtonGroup
 import Akari.NCM.player.ui.component.AdaptiveButtonSpec
 import Akari.NCM.player.ui.component.AddToPlaylistDialog
 import Akari.NCM.player.ui.component.ExpressiveButtonStyle
+import Akari.NCM.player.ui.component.PortraitPullDownDrawerOverlay
 import Akari.NCM.player.ui.component.PredictiveBackEasing
+import Akari.NCM.player.ui.component.SaltLandscapePlayQueueSheet
+import Akari.NCM.player.ui.component.SaltPlayQueueView
 import Akari.NCM.player.ui.component.SongActionBottomSheet
 import Akari.NCM.player.ui.component.predictiveBackBackground
 import Akari.NCM.player.ui.component.predictiveBackForeground
+import Akari.NCM.player.ui.component.rememberPlayerCoverPalette
 import Akari.NCM.player.ui.component.rememberPredictiveBackState
+import Akari.NCM.player.ui.component.rememberPullDownDrawerState
 import Akari.NCM.player.ui.theme.blend
 import Akari.NCM.player.ui.theme.buildExpressiveColorScheme
 import Akari.NCM.player.ui.theme.ensureContrast
 import Akari.NCM.player.ui.theme.extractSeedColorFromBitmap
 import Akari.NCM.player.ui.theme.rememberIsDarkTheme
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.widget.Toast
@@ -71,8 +77,10 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -300,22 +308,50 @@ fun MainScreen(
         else -> playerBackState.swipeEdge
     }
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+        configuration.screenWidthDp > configuration.screenHeightDp
+    val (queueActiveTrack, queuePalette, queueBlurCoverBg) = rememberPlayerCoverPalette(currentMedia)
+    val mainQueueDrawerState = rememberPullDownDrawerState(
+        isOpen = showQueueBottomSheet,
+        isLandscape = isLandscape,
+        backEnabled = showQueueBottomSheet && !showPlayerScreen && !showSearchScreen && !showSettingsScreen && !showLogScreen,
+        label = "MainQueueParallax",
+        onDismiss = { showQueueBottomSheet = false }
+    )
+    val mainQueueDensity = LocalDensity.current
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
         Box(
-            modifier = if (topLevelScreen != TopLevelScreen.MAIN && isTopBackActive) {
-                Modifier
-                    .fillMaxSize()
-                    .predictiveBackBackground(
-                        progress = activeTopBackProgress,
-                        swipeEdge = activeTopBackEdge
-                    )
-            } else {
-                Modifier.fillMaxSize()
-            }
+            modifier = Modifier
+                .fillMaxSize()
+                .then(
+                    if (topLevelScreen != TopLevelScreen.MAIN && isTopBackActive) {
+                        Modifier.predictiveBackBackground(
+                            progress = activeTopBackProgress,
+                            swipeEdge = activeTopBackEdge
+                        )
+                    } else if (!isLandscape && mainQueueDrawerState.effectiveProgress > 0f) {
+                        val p = mainQueueDrawerState.effectiveProgress
+                        Modifier
+                            .graphicsLayer {
+                                val scale = 1.0f + (0.92f - 1.0f) * p
+                                val translateY = with(mainQueueDensity) { (-32.dp.toPx()) * p }
+                                val alphaVal = 1.0f + (0.45f - 1.0f) * p
+                                scaleX = scale
+                                scaleY = scale
+                                translationY = translateY
+                                alpha = alphaVal
+                            }
+                            .clip(RoundedCornerShape(24.dp * p))
+                    } else {
+                        Modifier
+                    }
+                )
         ) {
                 val adaptiveInfo = androidx.compose.material3.adaptive.currentWindowAdaptiveInfo()
                 val useNavRail = with(adaptiveInfo.windowSizeClass) {
@@ -924,7 +960,7 @@ fun MainScreen(
                                                                         modifier = Modifier.fillMaxSize(),
                                                                         contentPadding = PaddingValues(bottom = 96.dp)
                                                                     ) {
-                                                                        items(displayedSongs, key = { it.second.id }) { (origIndex, songDto, isMatched) ->
+                                                                        items(displayedSongs, key = { "${it.first}_${it.second.id}" }) { (origIndex, songDto, isMatched) ->
                                                                             val media = songDto.toPlayableMedia()
                                                                             SongItem(
                                                                                 media = media,
@@ -1147,6 +1183,36 @@ fun MainScreen(
                 )
             }
         }
+        // Main Page Unified Play Queue Drawer (Portrait pull-down drawer + Landscape themed sheet)
+        PortraitPullDownDrawerOverlay(
+            visible = !isLandscape && showQueueBottomSheet,
+            drawerState = mainQueueDrawerState,
+            sheetTestTag = "play_queue_sheet"
+        ) {
+            SaltPlayQueueView(
+                playerState = playerEngine,
+                playerController = playerEngine,
+                displayedTrack = queueActiveTrack,
+                palette = queuePalette,
+                blurCoverBg = queueBlurCoverBg,
+                pullHintText = "下滑此处返回",
+                pullHandleTestTag = "play_queue_pull_handle",
+                currentPullOffsetPx = { mainQueueDrawerState.pullOffsetPx.value },
+                onPullDelta = mainQueueDrawerState.onPullDelta,
+                onPullSettle = mainQueueDrawerState.onPullSettle,
+                onDismiss = { showQueueBottomSheet = false }
+            )
+        }
+    }
+
+    // Landscape Play Queue BottomSheet (Unified Salt Theme Style)
+    if (isLandscape && showQueueBottomSheet) {
+        SaltLandscapePlayQueueSheet(
+            playerState = playerEngine,
+            playerController = playerEngine,
+            palette = queuePalette,
+            onDismiss = { showQueueBottomSheet = false }
+        )
     }
 
     // Add To Playlist Dialog
@@ -1195,106 +1261,6 @@ fun MainScreen(
             },
             onRemoveFromCurrentPlaylist = actionRemoveCallback
         )
-    }
-
-    // Play Queue BottomSheet
-    if (showQueueBottomSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showQueueBottomSheet = false }
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        "播放队列 (${playlist.size})",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (infinitePlayMode.isActive) {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "∞ ${infinitePlayMode.label}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.widthIn(max = 180.dp)
-                                )
-                                if (isFetchingRecommendations) {
-                                    Spacer(Modifier.width(6.dp))
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(12.dp),
-                                        strokeWidth = 1.5.dp,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                                Spacer(Modifier.width(6.dp))
-                                Icon(
-                                    imageVector = Icons.Rounded.Close,
-                                    contentDescription = "退出无限推荐",
-                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    modifier = Modifier
-                                        .size(14.dp)
-                                        .clickable {
-                                            playerEngine.disableInfinitePlayback()
-                                            Toast.makeText(context, "已关闭无限推荐", Toast.LENGTH_SHORT).show()
-                                        }
-                                )
-                            }
-                        }
-                    }
-                }
-                if (playlist.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(200.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            if (isFetchingRecommendations) "正在加载推荐曲目..." else "队列为空",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentPadding = PaddingValues(vertical = 8.dp)
-                    ) {
-                        itemsIndexed(playlist) { index, media ->
-                            SongItem(
-                                media = media,
-                                isCurrentTrack = index == currentIndex,
-                                isPlaying = isPlaying && index == currentIndex,
-                                onClick = {
-                                    playerEngine.skipToIndex(index)
-                                    playerEngine.play()
-                                },
-                                onActionClick = {
-                                    actionMedia = media
-                                    actionPlaylistContext = null
-                                    actionRemoveCallback = null
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // Cloud Playlist Sync Dialog

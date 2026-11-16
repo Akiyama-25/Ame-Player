@@ -122,6 +122,7 @@ interface PlayerController {
     fun toggleShuffle()
     fun setVolume(volume: Float)
     fun setUsbExclusiveMode(enabled: Boolean)
+    fun requestUsbPermission() {}
     fun setVolumeNormalizationEnabled(enabled: Boolean) {}
     fun setTargetLoudness(targetLufs: Float) {}
     fun insertAsNext(media: PlayableMedia)

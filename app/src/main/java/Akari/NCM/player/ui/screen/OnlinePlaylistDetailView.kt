@@ -568,7 +568,7 @@ fun OnlinePlaylistDetailView(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 96.dp)
                 ) {
-                    items(displayedSongs, key = { it.second.id }) { (origIndex, onlineMedia, isMatched) ->
+                    items(displayedSongs, key = { "${it.first}_${it.second.id}" }) { (origIndex, onlineMedia, isMatched) ->
                         SongItem(
                             media = onlineMedia,
                             isCurrentTrack = currentMedia?.id == onlineMedia.id,

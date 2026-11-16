@@ -51,13 +51,28 @@ class UsbAudioManager @Inject constructor(
     val usbDeviceDetails: StateFlow<UsbDeviceDetails?> = _usbDeviceDetails.asStateFlow()
 
     private var isReceiverRegistered = false
+    private var lastDetectedDeviceKey: String? = null
+    private var awaitingPermissionFromUserToggle = false
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
             val action = intent?.action
             AppLogger.i(TAG, "USB Broadcast received action: $action")
             when (action) {
-                UsbManager.ACTION_USB_DEVICE_ATTACHED, UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                    val attachedDevice = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                    }
+                    if (attachedDevice == null || !usbManager.hasPermission(attachedDevice)) {
+                        resetExclusiveSwitchIfUnauthorized("USB device attached without permission")
+                    }
+                    scanUsbAudioDevices()
+                }
+                UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                    resetExclusiveSwitch("USB device detached")
                     scanUsbAudioDevices()
                 }
                 ACTION_USB_PERMISSION -> {
@@ -68,6 +83,7 @@ class UsbAudioManager @Inject constructor(
                         @Suppress("DEPRECATION")
                         intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                     }
+                    awaitingPermissionFromUserToggle = false
                     AppLogger.i(TAG, "USB permission broadcast result for device ${device?.deviceName}: granted=$granted")
                     scanUsbAudioDevices()
                 }
@@ -88,8 +104,30 @@ class UsbAudioManager @Inject constructor(
     }
 
     init {
-        scanUsbAudioDevices()
+        val initialDevice = scanUsbAudioDevices(isInitialScan = true)
+        val initialDetails = _usbDeviceDetails.value
+        if (initialDevice == null || initialDetails?.hasPermission != true) {
+            if (_isExclusiveModeEnabled.value) {
+                resetExclusiveSwitch("Initial startup without authorized USB DAC")
+            }
+        }
         registerListeners()
+    }
+
+    private fun resetExclusiveSwitch(reason: String) {
+        awaitingPermissionFromUserToggle = false
+        if (_isExclusiveModeEnabled.value || ThemePrefs.usbExclusiveMode) {
+            AppLogger.i(TAG, "Resetting USB Exclusive switch to OFF ($reason)")
+        }
+        ThemePrefs.usbExclusiveMode = false
+        _isExclusiveModeEnabled.value = false
+        _usbDeviceDetails.value = _usbDeviceDetails.value?.copy(isExclusiveClaimed = false)
+    }
+
+    private fun resetExclusiveSwitchIfUnauthorized(reason: String) {
+        if (!awaitingPermissionFromUserToggle) {
+            resetExclusiveSwitch(reason)
+        }
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -113,7 +151,7 @@ class UsbAudioManager @Inject constructor(
         }
     }
 
-    fun scanUsbAudioDevices(): AudioDeviceInfo? {
+    fun scanUsbAudioDevices(isInitialScan: Boolean = false): AudioDeviceInfo? {
         val outputDevices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
         val usbAudioDevice = outputDevices.firstOrNull { device ->
             device.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
@@ -125,9 +163,22 @@ class UsbAudioManager @Inject constructor(
         _connectedUsbDeviceName.value = usbAudioDevice?.let { getDeviceDisplayName(it) }
 
         val matchingUsbDevice = findMatchingUsbDevice(usbAudioDevice)
+        val currentDeviceKey: String? = when {
+            matchingUsbDevice != null -> "${matchingUsbDevice.vendorId}:${matchingUsbDevice.productId}:${matchingUsbDevice.deviceName}"
+            usbAudioDevice != null -> "audio_only:${getDeviceDisplayName(usbAudioDevice)}"
+            else -> null
+        }
+
+        val isDeviceChangedOrNewlyAttached = currentDeviceKey != null && currentDeviceKey != lastDetectedDeviceKey
+
         if (matchingUsbDevice != null) {
             val hasPerm = usbManager.hasPermission(matchingUsbDevice)
+            if ((isInitialScan || isDeviceChangedOrNewlyAttached) && !hasPerm && !awaitingPermissionFromUserToggle) {
+                resetExclusiveSwitch("USB device connected without permission ($currentDeviceKey)")
+            }
+            lastDetectedDeviceKey = currentDeviceKey
             val detectedUac = detectUacVersion(matchingUsbDevice, hasPerm)
+            val isClaimed = _isExclusiveModeEnabled.value && hasPerm
 
             _uacVersion.value = detectedUac
             _usbDeviceDetails.value = UsbDeviceDetails(
@@ -137,11 +188,18 @@ class UsbAudioManager @Inject constructor(
                 vendorId = matchingUsbDevice.vendorId,
                 productId = matchingUsbDevice.productId,
                 uacVersion = detectedUac,
-                isExclusiveClaimed = _isExclusiveModeEnabled.value,
+                isExclusiveClaimed = isClaimed,
                 hasPermission = hasPerm
             )
-            AppLogger.i(TAG, "Scanned USB Audio: name='${_connectedUsbDeviceName.value}', UAC=$detectedUac, VID:PID=${_usbDeviceDetails.value?.formattedVidPid}, hasPerm=$hasPerm, isExclusive=${_isExclusiveModeEnabled.value}")
+            AppLogger.i(
+                TAG,
+                "Scanned USB Audio: name='${_connectedUsbDeviceName.value}', UAC=$detectedUac, VID:PID=${_usbDeviceDetails.value?.formattedVidPid}, hasPerm=$hasPerm, switchEnabled=${_isExclusiveModeEnabled.value}, isClaimed=$isClaimed"
+            )
         } else if (usbAudioDevice != null) {
+            if ((isInitialScan || isDeviceChangedOrNewlyAttached) && !awaitingPermissionFromUserToggle) {
+                resetExclusiveSwitch("Audio-only USB device connected without UsbDevice permission ($currentDeviceKey)")
+            }
+            lastDetectedDeviceKey = currentDeviceKey
             _uacVersion.value = "UAC 1.0 / 2.0"
             _usbDeviceDetails.value = UsbDeviceDetails(
                 deviceName = "usb_audio",
@@ -150,11 +208,15 @@ class UsbAudioManager @Inject constructor(
                 vendorId = 0,
                 productId = 0,
                 uacVersion = "UAC 1.0 / 2.0",
-                isExclusiveClaimed = _isExclusiveModeEnabled.value,
+                isExclusiveClaimed = false,
                 hasPermission = false
             )
             AppLogger.i(TAG, "Scanned USB Audio: AudioDeviceInfo detected='${_connectedUsbDeviceName.value}', but UsbDevice not matched in deviceList")
         } else {
+            lastDetectedDeviceKey = null
+            if (_isExclusiveModeEnabled.value) {
+                resetExclusiveSwitch("No USB audio device present")
+            }
             _uacVersion.value = "未连接"
             _usbDeviceDetails.value = null
             AppLogger.i(TAG, "No USB audio output device connected")
@@ -265,17 +327,34 @@ class UsbAudioManager @Inject constructor(
     fun setExclusiveModeEnabled(enabled: Boolean) {
         ThemePrefs.usbExclusiveMode = enabled
         _isExclusiveModeEnabled.value = enabled
-        AppLogger.i(TAG, "Exclusive USB Audio mode toggled: enabled=$enabled")
+        val matchingUsb = findMatchingUsbDevice(_connectedUsbDevice.value)
+        val hasPerm = matchingUsb != null && usbManager.hasPermission(matchingUsb)
+        awaitingPermissionFromUserToggle = enabled && matchingUsb != null && !hasPerm
+        AppLogger.i(
+            TAG,
+            "Exclusive USB Audio mode toggled: enabled=$enabled, hasMatchingUsb=${matchingUsb != null}, hasPerm=$hasPerm"
+        )
         val currentDetails = _usbDeviceDetails.value
         if (currentDetails != null) {
-            _usbDeviceDetails.value = currentDetails.copy(isExclusiveClaimed = enabled)
+            _usbDeviceDetails.value = currentDetails.copy(
+                hasPermission = hasPerm,
+                isExclusiveClaimed = enabled && hasPerm
+            )
         }
-        if (enabled) {
-            val matchingUsb = findMatchingUsbDevice(_connectedUsbDevice.value)
-            if (matchingUsb != null && !usbManager.hasPermission(matchingUsb)) {
-                requestUsbPermission(matchingUsb)
-            }
+        if (enabled && matchingUsb != null && !hasPerm) {
+            requestUsbPermission(matchingUsb)
         }
+    }
+
+    fun requestUsbPermissionForCurrentDevice(): Boolean {
+        val matchingUsb = findMatchingUsbDevice(_connectedUsbDevice.value) ?: return false
+        if (usbManager.hasPermission(matchingUsb)) {
+            scanUsbAudioDevices()
+            return true
+        }
+        awaitingPermissionFromUserToggle = _isExclusiveModeEnabled.value
+        requestUsbPermission(matchingUsb)
+        return true
     }
 
     fun requestUsbPermission(device: UsbDevice) {

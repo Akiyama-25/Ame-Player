@@ -13,21 +13,24 @@ import Akari.NCM.player.data.ThemePrefs
 import Akari.NCM.player.ui.component.AdaptiveButtonGroup
 import Akari.NCM.player.ui.component.AdaptiveButtonSpec
 import Akari.NCM.player.ui.component.ExpressiveButtonStyle
+import Akari.NCM.player.ui.component.DrawerPullHandle
+import Akari.NCM.player.ui.component.PlayerBackgroundLayer
+import Akari.NCM.player.ui.component.PortraitPullDownDrawerOverlay
 import Akari.NCM.player.ui.component.PredictiveBackEasing
+import Akari.NCM.player.ui.component.SaltLandscapePlayQueueSheet
+import Akari.NCM.player.ui.component.SaltPlayQueueView
 import Akari.NCM.player.ui.component.WordByWordLyricView
 import Akari.NCM.player.ui.component.predictiveBackForeground
+import Akari.NCM.player.ui.component.rememberDrawerNestedScrollConnection
+import Akari.NCM.player.ui.component.rememberPlayerCoverPalette
 import Akari.NCM.player.ui.component.rememberPredictiveBackState
+import Akari.NCM.player.ui.component.rememberPullDownDrawerState
 import Akari.NCM.player.ui.component.rememberSmoothPosition
 import Akari.NCM.player.ui.theme.PlayerExpressivePalette
-import Akari.NCM.player.ui.theme.buildPlayerExpressivePalette
 import Akari.NCM.player.ui.theme.ensureContrast
-import Akari.NCM.player.ui.theme.extractAverageColorFromBitmap
-import Akari.NCM.player.ui.theme.extractSeedColorFromBitmap
-import Akari.NCM.player.ui.theme.rememberIsDarkTheme
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.res.Configuration
-import android.graphics.drawable.BitmapDrawable
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -123,93 +126,7 @@ fun PlayerScreen(
     val context = LocalContext.current
     val density = LocalDensity.current
     val rawTrack by playerState.currentMedia.collectAsState()
-
-    val isDarkTheme = rememberIsDarkTheme()
-    val colorVariant by ThemePrefs.colorVariantFlow.collectAsState()
-    val contrastLevel by ThemePrefs.contrastLevelFlow.collectAsState()
-    val useMaterialBg by ThemePrefs.useMaterialBgFlow.collectAsState()
-    val blurCoverBg by ThemePrefs.playerBlurCoverBgFlow.collectAsState()
-    val fallbackAccentInt by ThemePrefs.accentColorFlow.collectAsState()
-    val defaultSeedColor = remember(fallbackAccentInt) { Color(fallbackAccentInt.toInt()) }
-
-    // 缓存当前渲染曲目与封面取色结果
-    var displayedTrack by remember { mutableStateOf(rawTrack) }
-    var extractedSeedColor by remember { mutableStateOf(defaultSeedColor) }
-    var extractedAvgColor by remember { mutableStateOf<Color?>(null) }
-
-    LaunchedEffect(rawTrack, defaultSeedColor) {
-        val target = rawTrack
-        if (target == null) {
-            displayedTrack = null
-            extractedSeedColor = defaultSeedColor
-            extractedAvgColor = null
-        } else {
-            val url = target.coverUrl
-            if (!url.isNullOrEmpty()) {
-                val pair = withTimeoutOrNull(650) {
-                    withContext(Dispatchers.IO) {
-                        runCatching {
-                            val request = ImageRequest.Builder(context)
-                                .data(url)
-                                .allowHardware(false)
-                                .size(128, 128)
-                                .build()
-                            val result = context.imageLoader.execute(request)
-                            val bmp = (result.drawable as? BitmapDrawable)?.bitmap
-                            if (bmp != null) {
-                                val seed = extractSeedColorFromBitmap(bmp, defaultSeedColor)
-                                val avg = extractAverageColorFromBitmap(bmp, Color(0xFF16161D))
-                                seed to avg
-                            } else null
-                        }.getOrNull()
-                    }
-                }
-                if (pair != null) {
-                    extractedSeedColor = pair.first
-                    extractedAvgColor = pair.second
-                } else {
-                    extractedSeedColor = defaultSeedColor
-                    extractedAvgColor = null
-                }
-            } else {
-                extractedSeedColor = defaultSeedColor
-                extractedAvgColor = null
-            }
-            displayedTrack = target
-        }
-    }
-
-    val animatedSeedColor by animateColorAsState(
-        targetValue = extractedSeedColor,
-        animationSpec = tween(480, easing = FastOutSlowInEasing),
-        label = "PlayerCoverSeedColor"
-    )
-    val animatedAvgColor by animateColorAsState(
-        targetValue = extractedAvgColor ?: Color(0xFF16161D),
-        animationSpec = tween(480, easing = FastOutSlowInEasing),
-        label = "PlayerCoverAvgColor"
-    )
-
-    val palette = remember(
-        animatedSeedColor,
-        animatedAvgColor,
-        extractedAvgColor,
-        isDarkTheme,
-        colorVariant,
-        contrastLevel,
-        blurCoverBg,
-        useMaterialBg
-    ) {
-        buildPlayerExpressivePalette(
-            coverSeedColor = animatedSeedColor,
-            coverAverageColor = if (extractedAvgColor != null) animatedAvgColor else null,
-            darkTheme = isDarkTheme,
-            variant = colorVariant,
-            contrastLevel = contrastLevel,
-            blurCoverBackground = blurCoverBg,
-            useMaterialBackground = useMaterialBg
-        )
-    }
+    val (activeTrack, palette, blurCoverBg) = rememberPlayerCoverPalette(rawTrack)
 
     // 根据播放页面当前背景明暗动态调整状态栏与导航栏图标颜色，退出时恢复
     val view = LocalView.current
@@ -230,45 +147,42 @@ fun PlayerScreen(
         }
     }
 
-    val activeTrack = displayedTrack ?: rawTrack
     val coverUrl = activeTrack?.coverUrl
 
     var showPlayQueuePage by remember { mutableStateOf(false) }
+    var showQuickFunctionsPage by remember { mutableStateOf(false) }
+    var showPlaybackStatusDialog by remember { mutableStateOf(false) }
+    var showUsbExclusiveDialog by remember { mutableStateOf(false) }
+
+    val isUsbExclusiveMode by playerState.isUsbExclusiveMode.collectAsState()
+    val connectedUsbDeviceName by playerState.connectedUsbDeviceName.collectAsState()
+    val usbUacVersion by playerState.usbUacVersion.collectAsState()
+    val usbDeviceDetails by playerState.usbDeviceDetails.collectAsState()
+    val loudnessState by playerState.loudnessState.collectAsState()
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
         configuration.screenWidthDp > configuration.screenHeightDp
 
-    val queueProgress by animateFloatAsState(
-        targetValue = if (showPlayQueuePage && !isLandscape) 1f else 0f,
-        animationSpec = tween(450, easing = EaseInOut),
-        label = "QueueParallaxProgress"
+    val queueDrawerState = rememberPullDownDrawerState(
+        isOpen = showPlayQueuePage,
+        isLandscape = isLandscape,
+        backEnabled = showPlayQueuePage,
+        label = "QueueParallaxProgress",
+        onDismiss = { showPlayQueuePage = false }
+    )
+    val quickFunctionsDrawerState = rememberPullDownDrawerState(
+        isOpen = showQuickFunctionsPage,
+        isLandscape = isLandscape,
+        backEnabled = showQuickFunctionsPage && !showPlayQueuePage,
+        label = "QuickFunctionsParallaxProgress",
+        onDismiss = { showQuickFunctionsPage = false }
     )
 
-    val queueBackState = rememberPredictiveBackState(enabled = showPlayQueuePage) {
-        showPlayQueuePage = false
-    }
-
-    val queueScope = rememberCoroutineScope()
-    val queuePullOffsetPx = remember { Animatable(0f) }
-    var isQueueDismissedByPullDown by remember { mutableStateOf(false) }
-    var queueContainerHeightPx by remember { mutableFloatStateOf(0f) }
-    val queueFallbackHeightPx = with(density) { 640.dp.toPx() }
-    val effectiveQueueHeightPx = queueContainerHeightPx.takeIf { it > 0f } ?: queueFallbackHeightPx
-    val pullDismissFraction = (queuePullOffsetPx.value / effectiveQueueHeightPx).coerceIn(0f, 1f)
-
-    LaunchedEffect(showPlayQueuePage) {
-        if (showPlayQueuePage) {
-            isQueueDismissedByPullDown = false
-            queuePullOffsetPx.snapTo(0f)
-        }
-    }
-
-    val effectiveQueueProgress = (
-        queueProgress *
-            (1f - PredictiveBackEasing.transform(queueBackState.progress.coerceIn(0f, 1f)) * 0.85f) *
-            (1f - pullDismissFraction)
-        ).coerceIn(0f, 1f)
+    val effectiveOverlayProgress = maxOf(
+        queueDrawerState.effectiveProgress,
+        quickFunctionsDrawerState.effectiveProgress
+    )
 
     Box(
         modifier = Modifier
@@ -291,16 +205,16 @@ fun PlayerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    val scale = lerpF(1.0f, 0.92f, effectiveQueueProgress)
-                    val translateY = lerpF(0f, -32.dp.toPx(), effectiveQueueProgress)
-                    val alphaVal = lerpF(1.0f, 0.45f, effectiveQueueProgress)
+                    val scale = lerpF(1.0f, 0.92f, effectiveOverlayProgress)
+                    val translateY = lerpF(0f, -32.dp.toPx(), effectiveOverlayProgress)
+                    val alphaVal = lerpF(1.0f, 0.45f, effectiveOverlayProgress)
 
                     scaleX = scale
                     scaleY = scale
                     translationY = translateY
                     alpha = alphaVal
                 }
-                .clip(RoundedCornerShape(with(density) { lerpF(0f, 24f, effectiveQueueProgress).toDp() }))
+                .clip(RoundedCornerShape(with(density) { lerpF(0f, 24f, effectiveOverlayProgress).toDp() }))
         ) {
             PlayerMainContentView(
                 playerState = playerState,
@@ -309,23 +223,47 @@ fun PlayerScreen(
                 ncmApi = ncmApi,
                 palette = palette,
                 blurCoverBg = blurCoverBg,
-                isQueueOpen = showPlayQueuePage,
+                isQueueOpen = showPlayQueuePage || showQuickFunctionsPage,
                 onBackClick = onBackClick,
-                onAddToPlaylistClick = onAddToPlaylistClick,
-                onOpenQueueClick = { showPlayQueuePage = true }
+                onOpenQueueClick = { showPlayQueuePage = true },
+                onOpenQuickFunctionsClick = { showQuickFunctionsPage = true }
             )
         }
 
-        // ── 3. 播放队列视图 ───────────────────────────
+        // ── 3. 播放队列抽屉视图 ───────────────────────────
         if (isLandscape && showPlayQueuePage) {
-            val playlist by playerState.playlist.collectAsState()
-            val currentIndex by playerState.currentIndex.collectAsState()
-            val isPlaying by playerState.isPlaying.collectAsState()
-            val infinitePlayMode by playerState.infinitePlayMode.collectAsState()
-            val isFetchingRecommendations by playerState.isFetchingRecommendations.collectAsState()
+            SaltLandscapePlayQueueSheet(
+                playerState = playerState,
+                playerController = playerController,
+                palette = palette,
+                onDismiss = { showPlayQueuePage = false }
+            )
+        }
 
+        PortraitPullDownDrawerOverlay(
+            visible = !isLandscape && showPlayQueuePage,
+            drawerState = queueDrawerState,
+            sheetTestTag = "play_queue_sheet"
+        ) {
+            SaltPlayQueueView(
+                playerState = playerState,
+                playerController = playerController,
+                displayedTrack = activeTrack,
+                palette = palette,
+                blurCoverBg = blurCoverBg,
+                pullHintText = "下滑此处返回播放界面",
+                pullHandleTestTag = "play_queue_pull_handle",
+                currentPullOffsetPx = { queueDrawerState.pullOffsetPx.value },
+                onPullDelta = queueDrawerState.onPullDelta,
+                onPullSettle = queueDrawerState.onPullSettle,
+                onDismiss = { showPlayQueuePage = false }
+            )
+        }
+
+        // ── 4. 快捷功能抽屉视图（与播放列表统一样式）───────────────────────
+        if (isLandscape && showQuickFunctionsPage) {
             ModalBottomSheet(
-                onDismissRequest = { showPlayQueuePage = false },
+                onDismissRequest = { showQuickFunctionsPage = false },
                 containerColor = palette.cardSurfaceColor,
                 contentColor = palette.primaryTextColor
             ) {
@@ -333,217 +271,105 @@ fun PlayerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = configuration.screenHeightDp.dp * 0.85f)
-                        .padding(bottom = 16.dp)
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 20.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Text(
+                        text = "快捷功能与外观",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = palette.primaryTextColor,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.verticalScroll(rememberScrollState())
                     ) {
-                        Text(
-                            "播放队列 (${playlist.size})",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = palette.primaryTextColor
+                        QuickFunctionsCards(
+                            isUsbExclusive = isUsbExclusiveMode,
+                            usbDeviceName = connectedUsbDeviceName,
+                            uacVersion = usbUacVersion,
+                            usbDeviceDetails = usbDeviceDetails,
+                            loudnessState = loudnessState,
+                            blurCoverBg = blurCoverBg,
+                            palette = palette,
+                            onDismiss = { showQuickFunctionsPage = false },
+                            onShowStatusClick = { showPlaybackStatusDialog = true },
+                            onShowUsbExclusiveClick = { showUsbExclusiveDialog = true },
+                            onToggleLoudness = {
+                                playerController.setVolumeNormalizationEnabled(!loudnessState.isEnabled)
+                            },
+                            onToggleBlurCoverBg = {
+                                ThemePrefs.playerBlurCoverBackground = !blurCoverBg
+                            },
+                            onAddToPlaylistClick = onAddToPlaylistClick
                         )
-                        if (infinitePlayMode.isActive) {
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = palette.secondaryButtonContainer
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "∞ ${infinitePlayMode.label}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = palette.onSecondaryButton,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    if (isFetchingRecommendations) {
-                                        Spacer(Modifier.width(6.dp))
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(12.dp),
-                                            strokeWidth = 1.5.dp,
-                                            color = palette.onSecondaryButton
-                                        )
-                                    }
-                                    Spacer(Modifier.width(6.dp))
-                                    Icon(
-                                        imageVector = Icons.Rounded.Close,
-                                        contentDescription = "退出无限推荐",
-                                        tint = palette.onSecondaryButton,
-                                        modifier = Modifier
-                                            .size(14.dp)
-                                            .clickable { playerController.disableInfinitePlayback() }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    if (playlist.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(200.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                if (isFetchingRecommendations) "正在加载推荐曲目..." else "队列为空",
-                                color = palette.secondaryTextColor
-                            )
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(vertical = 8.dp)
-                        ) {
-                            itemsIndexed(playlist) { index, media ->
-                                SongItem(
-                                    media = media,
-                                    isCurrentTrack = index == currentIndex,
-                                    isPlaying = isPlaying && index == currentIndex,
-                                    onClick = {
-                                        playerController.skipToIndex(index)
-                                    }
-                                )
-                            }
-                        }
                     }
                 }
             }
         }
 
-        AnimatedVisibility(
-            visible = !isLandscape && showPlayQueuePage,
-            enter = slideInVertically(
-                initialOffsetY = { fullHeight -> fullHeight },
-                animationSpec = tween(450, easing = EaseInOut)
-            ) + fadeIn(tween(300)),
-            exit = if (queueBackState.isDismissedByGesture || isQueueDismissedByPullDown) {
-                ExitTransition.None
-            } else {
-                slideOutVertically(
-                    targetOffsetY = { fullHeight -> fullHeight },
-                    animationSpec = tween(450, easing = EaseInOut)
-                ) + fadeOut(tween(300))
-            }
+        PortraitPullDownDrawerOverlay(
+            visible = !isLandscape && showQuickFunctionsPage,
+            drawerState = quickFunctionsDrawerState,
+            sheetTestTag = "quick_functions_sheet"
         ) {
-            val handleQueuePullDelta: (Float) -> Unit = { deltaY ->
-                val nextOffset = (queuePullOffsetPx.value + deltaY).coerceAtLeast(0f)
-                queueScope.launch(start = CoroutineStart.UNDISPATCHED) {
-                    queuePullOffsetPx.snapTo(nextOffset)
-                }
-            }
-            val handleQueuePullSettle: (Float) -> Unit = { velocityY ->
-                queueScope.launch {
-                    val currentOffset = queuePullOffsetPx.value
-                    val distanceThresholdPx = with(density) { 108.dp.toPx() }
-                    val velocityThresholdPx = with(density) { 650.dp.toPx() }
-                    val minDragForFlingPx = with(density) { 20.dp.toPx() }
-                    val shouldDismiss = currentOffset >= distanceThresholdPx ||
-                        (velocityY >= velocityThresholdPx && currentOffset >= minDragForFlingPx)
-                    if (shouldDismiss) {
-                        queuePullOffsetPx.animateTo(
-                            targetValue = effectiveQueueHeightPx,
-                            initialVelocity = velocityY.coerceAtLeast(0f),
-                            animationSpec = tween(durationMillis = 220, easing = FastOutLinearInEasing)
-                        )
-                        isQueueDismissedByPullDown = true
-                        showPlayQueuePage = false
-                    } else if (currentOffset > 0.5f) {
-                        queuePullOffsetPx.animateTo(
-                            targetValue = 0f,
-                            initialVelocity = velocityY,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMediumLow
-                            )
-                        )
-                    } else {
-                        queuePullOffsetPx.snapTo(0f)
-                    }
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .onSizeChanged { queueContainerHeightPx = it.height.toFloat() }
-                    .graphicsLayer {
-                        val offset = queuePullOffsetPx.value
-                        translationY = offset
-                        if (offset > 0.5f) {
-                            val fraction = (offset / effectiveQueueHeightPx).coerceIn(0f, 1f)
-                            val cornerFraction = (fraction * 3.5f).coerceIn(0f, 1f)
-                            shape = RoundedCornerShape(
-                                topStart = (28f * cornerFraction).dp,
-                                topEnd = (28f * cornerFraction).dp
-                            )
-                            clip = true
-                        } else {
-                            clip = false
-                        }
-                    }
-                    .predictiveBackForeground(state = queueBackState, pullDownDp = 64f)
-                    .testTag("play_queue_sheet")
-            ) {
-                SaltPlayQueueView(
-                    playerState = playerState,
-                    playerController = playerController,
-                    displayedTrack = activeTrack,
-                    palette = palette,
-                    blurCoverBg = blurCoverBg,
-                    currentPullOffsetPx = { queuePullOffsetPx.value },
-                    onPullDelta = handleQueuePullDelta,
-                    onPullSettle = handleQueuePullSettle,
-                    onDismiss = { showPlayQueuePage = false }
-                )
-            }
+            SaltQuickFunctionsView(
+                displayedTrack = activeTrack,
+                isUsbExclusive = isUsbExclusiveMode,
+                usbDeviceName = connectedUsbDeviceName,
+                uacVersion = usbUacVersion,
+                usbDeviceDetails = usbDeviceDetails,
+                loudnessState = loudnessState,
+                blurCoverBg = blurCoverBg,
+                palette = palette,
+                currentPullOffsetPx = { quickFunctionsDrawerState.pullOffsetPx.value },
+                onPullDelta = quickFunctionsDrawerState.onPullDelta,
+                onPullSettle = quickFunctionsDrawerState.onPullSettle,
+                onDismiss = { showQuickFunctionsPage = false },
+                onShowStatusClick = { showPlaybackStatusDialog = true },
+                onShowUsbExclusiveClick = { showUsbExclusiveDialog = true },
+                onToggleLoudness = {
+                    playerController.setVolumeNormalizationEnabled(!loudnessState.isEnabled)
+                },
+                onToggleBlurCoverBg = {
+                    ThemePrefs.playerBlurCoverBackground = !blurCoverBg
+                },
+                onAddToPlaylistClick = onAddToPlaylistClick
+            )
         }
     }
-}
 
-@Composable
-private fun PlayerBackgroundLayer(
-    coverUrl: String?,
-    blurCoverBg: Boolean,
-    palette: PlayerExpressivePalette
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(palette.effectiveBackgroundColor)
-    ) {
-        if (blurCoverBg && coverUrl != null) {
-            AsyncImage(
-                model = coverUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(72.dp),
-                contentScale = ContentScale.Crop,
-                alpha = 0.82f
-            )
-            // 保护前景对比度的渐变遮罩层
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                Color(0x4D06060A),
-                                Color(0x7306060A),
-                                Color(0x9E06060A)
-                            )
-                        )
-                    )
-            )
-        }
+    if (showUsbExclusiveDialog) {
+        UsbExclusiveDialog(
+            isExclusive = isUsbExclusiveMode,
+            usbDeviceName = connectedUsbDeviceName,
+            uacVersion = usbUacVersion,
+            deviceDetails = usbDeviceDetails,
+            palette = palette,
+            onToggleExclusive = { enabled ->
+                playerController.setUsbExclusiveMode(enabled)
+            },
+            onRequestPermission = {
+                playerController.requestUsbPermission()
+            },
+            onDismiss = { showUsbExclusiveDialog = false }
+        )
+    }
+
+    if (showPlaybackStatusDialog) {
+        val audioFormatInfo by playerState.audioFormatInfo.collectAsState()
+        PlaybackStatusDialog(
+            media = activeTrack,
+            audioFormatInfo = audioFormatInfo,
+            isUsbExclusive = isUsbExclusiveMode,
+            usbDeviceName = connectedUsbDeviceName,
+            uacVersion = usbUacVersion,
+            hasUsbPermission = usbDeviceDetails?.hasPermission == true,
+            loudnessState = loudnessState,
+            palette = palette,
+            onDismiss = { showPlaybackStatusDialog = false }
+        )
     }
 }
 
@@ -559,70 +385,10 @@ private fun PlayerMainContentView(
     blurCoverBg: Boolean,
     isQueueOpen: Boolean = false,
     onBackClick: () -> Unit,
-    onAddToPlaylistClick: () -> Unit,
-    onOpenQueueClick: () -> Unit
+    onOpenQueueClick: () -> Unit,
+    onOpenQuickFunctionsClick: () -> Unit
 ) {
     val currentTrack = displayedTrack
-
-    // ── 快捷功能与播放状态弹窗 ──────────────────────────────────────────────
-    var showQuickFunctionsDialog by remember { mutableStateOf(false) }
-    var showPlaybackStatusDialog by remember { mutableStateOf(false) }
-    var showUsbExclusiveDialog by remember { mutableStateOf(false) }
-
-    val isUsbExclusiveMode by playerState.isUsbExclusiveMode.collectAsState()
-    val connectedUsbDeviceName by playerState.connectedUsbDeviceName.collectAsState()
-    val usbUacVersion by playerState.usbUacVersion.collectAsState()
-    val usbDeviceDetails by playerState.usbDeviceDetails.collectAsState()
-    val loudnessState by playerState.loudnessState.collectAsState()
-
-    if (showQuickFunctionsDialog) {
-        QuickFunctionsDialog(
-            isUsbExclusive = isUsbExclusiveMode,
-            usbDeviceName = connectedUsbDeviceName,
-            uacVersion = usbUacVersion,
-            loudnessState = loudnessState,
-            blurCoverBg = blurCoverBg,
-            palette = palette,
-            onDismiss = { showQuickFunctionsDialog = false },
-            onShowStatusClick = { showPlaybackStatusDialog = true },
-            onShowUsbExclusiveClick = { showUsbExclusiveDialog = true },
-            onToggleLoudness = {
-                playerController.setVolumeNormalizationEnabled(!loudnessState.isEnabled)
-            },
-            onToggleBlurCoverBg = {
-                ThemePrefs.playerBlurCoverBackground = !blurCoverBg
-            },
-            onAddToPlaylistClick = onAddToPlaylistClick
-        )
-    }
-
-    if (showUsbExclusiveDialog) {
-        UsbExclusiveDialog(
-            isExclusive = isUsbExclusiveMode,
-            usbDeviceName = connectedUsbDeviceName,
-            uacVersion = usbUacVersion,
-            deviceDetails = usbDeviceDetails,
-            palette = palette,
-            onToggleExclusive = { enabled ->
-                playerController.setUsbExclusiveMode(enabled)
-            },
-            onDismiss = { showUsbExclusiveDialog = false }
-        )
-    }
-
-    if (showPlaybackStatusDialog) {
-        val audioFormatInfo by playerState.audioFormatInfo.collectAsState()
-        PlaybackStatusDialog(
-            media = currentTrack,
-            audioFormatInfo = audioFormatInfo,
-            isUsbExclusive = isUsbExclusiveMode,
-            usbDeviceName = connectedUsbDeviceName,
-            uacVersion = usbUacVersion,
-            loudnessState = loudnessState,
-            palette = palette,
-            onDismiss = { showPlaybackStatusDialog = false }
-        )
-    }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1067,7 +833,7 @@ private fun PlayerMainContentView(
                 }
 
                 Surface(
-                    onClick = { showQuickFunctionsDialog = true },
+                    onClick = onOpenQuickFunctionsClick,
                     shape = RoundedCornerShape(16.dp),
                     color = Color.Transparent,
                     modifier = Modifier
@@ -1645,455 +1411,6 @@ private fun PlayerMainContentView(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 独立播放队列视图 (PLAY QUEUE)
-// ─────────────────────────────────────────────────────────────────────────────
-@Composable
-private fun SaltPlayQueueView(
-    playerState: PlayerState,
-    playerController: PlayerController,
-    displayedTrack: PlayableMedia?,
-    palette: PlayerExpressivePalette,
-    blurCoverBg: Boolean,
-    currentPullOffsetPx: () -> Float = { 0f },
-    onPullDelta: (Float) -> Unit = {},
-    onPullSettle: (Float) -> Unit = {},
-    onDismiss: () -> Unit
-) {
-    val currentTrack = displayedTrack
-    val isPlaying by playerState.isPlaying.collectAsState()
-    val playlist by playerState.playlist.collectAsState()
-    val currentIndex by playerState.currentIndex.collectAsState()
-    val repeatMode by playerState.repeatMode.collectAsState()
-    val shuffleEnabled by playerState.shuffleEnabled.collectAsState()
-    val infinitePlayMode by playerState.infinitePlayMode.collectAsState()
-    val isFetchingRecommendations by playerState.isFetchingRecommendations.collectAsState()
-
-    val coverUrl = currentTrack?.coverUrl
-    val headerDraggableState = rememberDraggableState { deltaY ->
-        onPullDelta(deltaY)
-    }
-    val queueNestedScrollConnection = remember(currentPullOffsetPx, onPullDelta, onPullSettle) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                val offset = currentPullOffsetPx()
-                if (offset > 0f && available.y != 0f) {
-                    val consumedY = if (available.y < 0f) {
-                        maxOf(available.y, -offset)
-                    } else {
-                        available.y
-                    }
-                    onPullDelta(consumedY)
-                    return Offset(0f, consumedY)
-                }
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource
-            ): Offset {
-                if (source == NestedScrollSource.UserInput && available.y > 0f) {
-                    onPullDelta(available.y)
-                    return Offset(0f, available.y)
-                }
-                return Offset.Zero
-            }
-
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                if (currentPullOffsetPx() > 0f) {
-                    onPullSettle(available.y)
-                    return available
-                }
-                return Velocity.Zero
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (currentPullOffsetPx() > 0f) {
-                    onPullSettle(available.y)
-                    return available
-                }
-                return Velocity.Zero
-            }
-        }
-    }
-
-    Box(modifier = Modifier.fillMaxSize().background(palette.effectiveBackgroundColor)) {
-        PlayerBackgroundLayer(
-            coverUrl = coverUrl,
-            blurCoverBg = blurCoverBg,
-            palette = palette
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-                .padding(horizontal = 20.dp)
-        ) {
-            // ── 顶部可下拉收起区域（提示条 + 迷你卡片 + 队列 Header）───────────
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .draggable(
-                        orientation = Orientation.Vertical,
-                        state = headerDraggableState,
-                        onDragStopped = { velocity -> onPullSettle(velocity) }
-                    )
-            ) {
-                Spacer(Modifier.height(8.dp))
-
-                // ── 下滑/点击返回提示栏 ───────────────────────────────────────────
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .testTag("play_queue_pull_handle")
-                        .semantics { contentDescription = "下滑或点击返回播放界面" }
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onDismiss
-                        )
-                        .padding(vertical = 8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(
-                            modifier = Modifier
-                                .width(36.dp)
-                                .height(4.dp)
-                                .clip(CircleShape)
-                                .background(palette.secondaryTextColor.copy(alpha = 0.5f))
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "下滑此处返回播放界面",
-                            fontSize = 12.sp,
-                            color = palette.secondaryTextColor,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                // ── 顶部当前播放 Mini 卡片 ─────────────────────────────────────────
-                Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = palette.cardSurfaceColor.copy(alpha = 0.90f),
-                border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.35f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(palette.secondaryButtonContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (coverUrl != null) {
-                            AsyncImage(
-                                model = coverUrl,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Icon(
-                                painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
-                                contentDescription = null,
-                                tint = palette.onSecondaryButton,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.width(12.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = currentTrack?.title ?: "未在播放",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = palette.primaryTextColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = buildString {
-                                append(currentTrack?.artist ?: "未知歌手")
-                                if (!currentTrack?.album.isNullOrBlank()) append(" - ${currentTrack?.album}")
-                            },
-                            fontSize = 12.sp,
-                            color = palette.secondaryTextColor,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { playerController.togglePlayPause() },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                contentDescription = "播放/暂停",
-                                tint = palette.playedLyricColor,
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = { playerController.skipToNext() },
-                            modifier = Modifier.size(48.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.SkipNext,
-                                contentDescription = "下一首",
-                                tint = palette.primaryTextColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // ── 队列 Header 栏 ─────────────────────────────────────────────
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "${if (playlist.isNotEmpty()) currentIndex + 1 else 0} / ${playlist.size}",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = palette.secondaryTextColor
-                )
-
-                Spacer(Modifier.weight(1f))
-
-                Text(
-                    text = if (infinitePlayMode.isActive) "∞ ${infinitePlayMode.label}" else "播放队列",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = palette.primaryTextColor,
-                    letterSpacing = 0.5.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 200.dp)
-                )
-
-                if (isFetchingRecommendations) {
-                    Spacer(Modifier.width(6.dp))
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(12.dp),
-                        strokeWidth = 1.5.dp,
-                        color = palette.playedLyricColor
-                    )
-                }
-
-                Spacer(Modifier.weight(1f))
-
-                if (infinitePlayMode.isActive) {
-                    TextButton(
-                        onClick = { playerController.disableInfinitePlayback() },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                    ) {
-                        Text(
-                            text = "退出漫游",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = palette.playedLyricColor
-                        )
-                    }
-                } else {
-                    TextButton(
-                        onClick = { /* Keep queue */ },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-                    ) {
-                        Text(
-                            text = "队列",
-                            fontSize = 12.sp,
-                            color = palette.secondaryTextColor
-                        )
-                    }
-                }
-            }
-
-                Spacer(Modifier.height(8.dp))
-            }
-
-            // ── 队列曲目列表 ───────────────────────────────────────────────
-            if (playlist.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .draggable(
-                            orientation = Orientation.Vertical,
-                            state = headerDraggableState,
-                            onDragStopped = { velocity -> onPullSettle(velocity) }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "播放队列为空",
-                        fontSize = 14.sp,
-                        color = palette.secondaryTextColor
-                    )
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .nestedScroll(queueNestedScrollConnection),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(vertical = 4.dp)
-                ) {
-                    itemsIndexed(playlist) { index, media ->
-                        val isSelected = index == currentIndex
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = if (isSelected) palette.secondaryButtonContainer else Color.Transparent,
-                            border = if (isSelected) BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.5f)) else null,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { playerController.skipToIndex(index) }
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = media.title,
-                                        fontSize = 15.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) palette.onSecondaryButton else palette.primaryTextColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(Modifier.height(3.dp))
-                                    Text(
-                                        text = buildString {
-                                            append(media.artist)
-                                            if (media.album.isNotBlank()) append(" - ${media.album}")
-                                        },
-                                        fontSize = 12.sp,
-                                        color = if (isSelected) palette.onSecondaryButton.copy(alpha = 0.8f) else palette.secondaryTextColor,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                if (isSelected) {
-                                    Spacer(Modifier.width(8.dp))
-                                    Icon(
-                                        Icons.Rounded.Equalizer,
-                                        contentDescription = "正在播放",
-                                        tint = palette.onSecondaryButton,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            // ── 底部播放模式 Toggle 按钮 ────────────────────────────────────
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                val isInfinite = infinitePlayMode.isActive
-                val modeText = when {
-                    isInfinite -> "无限模式"
-                    shuffleEnabled -> "随机播放"
-                    repeatMode == RepeatMode.ONE -> "单曲循环"
-                    else -> "顺序播放"
-                }
-
-                Surface(
-                    onClick = {
-                        if (!isInfinite) {
-                            if (shuffleEnabled) {
-                                playerController.toggleShuffle()
-                                playerController.setRepeatMode(RepeatMode.OFF)
-                            } else when (repeatMode) {
-                                RepeatMode.OFF -> playerController.setRepeatMode(RepeatMode.ONE)
-                                RepeatMode.ONE -> {
-                                    playerController.setRepeatMode(RepeatMode.OFF)
-                                    playerController.toggleShuffle()
-                                }
-                                else -> playerController.setRepeatMode(RepeatMode.OFF)
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(22.dp),
-                    color = palette.secondaryButtonContainer,
-                    border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.4f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (isInfinite) {
-                            Text(
-                                text = "∞",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = palette.onSecondaryButton,
-                                modifier = Modifier.semantics {
-                                    contentDescription = "无限模式"
-                                }
-                            )
-                        } else {
-                            val modeIcon = when {
-                                shuffleEnabled -> Icons.Rounded.Shuffle
-                                repeatMode == RepeatMode.ONE -> Icons.Rounded.RepeatOne
-                                else -> Icons.AutoMirrored.Rounded.ArrowForward
-                            }
-                            Icon(
-                                modeIcon,
-                                contentDescription = modeText,
-                                tint = palette.onSecondaryButton,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = modeText,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = palette.onSecondaryButton
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 全屏歌词视图：
 // - 已播放歌词（前序歌词行 index < currentIndex 与当前行已播放部分）使用强调色 palette.playedLyricColor
 // - 未播放歌词（后续歌词行 index > currentIndex 与当前行未播放部分）使用纯黑或纯白 palette.unplayedLyricColor
@@ -2340,10 +1657,230 @@ private fun formatTime(millis: Long): String {
 }
 
 @Composable
-private fun QuickFunctionsDialog(
+private fun SaltQuickFunctionsView(
+    displayedTrack: PlayableMedia?,
     isUsbExclusive: Boolean,
     usbDeviceName: String?,
     uacVersion: String? = null,
+    usbDeviceDetails: Akari.NCM.player.core.UsbDeviceDetails? = null,
+    loudnessState: Akari.NCM.player.core.loudness.LoudnessNormalizationState,
+    blurCoverBg: Boolean,
+    palette: PlayerExpressivePalette,
+    currentPullOffsetPx: () -> Float = { 0f },
+    onPullDelta: (Float) -> Unit = {},
+    onPullSettle: (Float) -> Unit = {},
+    onDismiss: () -> Unit,
+    onShowStatusClick: () -> Unit,
+    onShowUsbExclusiveClick: () -> Unit,
+    onToggleLoudness: () -> Unit,
+    onToggleBlurCoverBg: () -> Unit,
+    onAddToPlaylistClick: () -> Unit
+) {
+    val coverUrl = displayedTrack?.coverUrl
+    val headerDraggableState = rememberDraggableState { deltaY ->
+        onPullDelta(deltaY)
+    }
+    val nestedScrollConnection = rememberDrawerNestedScrollConnection(
+        currentPullOffsetPx = currentPullOffsetPx,
+        onPullDelta = onPullDelta,
+        onPullSettle = onPullSettle
+    )
+
+    Box(modifier = Modifier.fillMaxSize().background(palette.effectiveBackgroundColor)) {
+        PlayerBackgroundLayer(
+            coverUrl = coverUrl,
+            blurCoverBg = blurCoverBg,
+            palette = palette
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .padding(horizontal = 20.dp)
+        ) {
+            // ── 顶部可下拉收起区域（提示条 + 当前曲目卡片 + Header）───────────
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .draggable(
+                        orientation = Orientation.Vertical,
+                        state = headerDraggableState,
+                        onDragStopped = { velocity -> onPullSettle(velocity) }
+                    )
+            ) {
+                Spacer(Modifier.height(8.dp))
+
+                DrawerPullHandle(
+                    hintText = "下滑此处返回播放界面",
+                    contentDesc = "下滑或点击返回播放界面",
+                    handleTestTag = "quick_functions_pull_handle",
+                    palette = palette,
+                    onDismiss = onDismiss
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = palette.cardSurfaceColor.copy(alpha = 0.90f),
+                    border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(palette.secondaryButtonContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (coverUrl != null) {
+                                AsyncImage(
+                                    model = coverUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Icon(
+                                    painter = androidx.compose.ui.res.painterResource(id = Akari.NCM.player.R.drawable.ic_ame_status),
+                                    contentDescription = null,
+                                    tint = palette.onSecondaryButton,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = displayedTrack?.title ?: "未在播放",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.primaryTextColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = buildString {
+                                    append(displayedTrack?.artist ?: "未知歌手")
+                                    if (!displayedTrack?.album.isNullOrBlank()) append(" - ${displayedTrack?.album}")
+                                },
+                                fontSize = 12.sp,
+                                color = palette.secondaryTextColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "快捷功能与外观",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = palette.primaryTextColor,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "播放器",
+                        fontSize = 12.sp,
+                        color = palette.secondaryTextColor
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+            }
+
+            // ── 快捷功能卡片列表 ───────────────────────────────────────────────
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .nestedScroll(nestedScrollConnection)
+                    .padding(vertical = 4.dp)
+            ) {
+                QuickFunctionsCards(
+                    isUsbExclusive = isUsbExclusive,
+                    usbDeviceName = usbDeviceName,
+                    uacVersion = uacVersion,
+                    usbDeviceDetails = usbDeviceDetails,
+                    loudnessState = loudnessState,
+                    blurCoverBg = blurCoverBg,
+                    palette = palette,
+                    onDismiss = onDismiss,
+                    onShowStatusClick = onShowStatusClick,
+                    onShowUsbExclusiveClick = onShowUsbExclusiveClick,
+                    onToggleLoudness = onToggleLoudness,
+                    onToggleBlurCoverBg = onToggleBlurCoverBg,
+                    onAddToPlaylistClick = onAddToPlaylistClick
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // ── 底部收起胶囊按钮 ────────────────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    onClick = onDismiss,
+                    shape = RoundedCornerShape(22.dp),
+                    color = palette.secondaryButtonContainer,
+                    border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.KeyboardArrowDown,
+                            contentDescription = "收起快捷菜单",
+                            tint = palette.onSecondaryButton,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "收起菜单",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.onSecondaryButton
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuickFunctionsCards(
+    isUsbExclusive: Boolean,
+    usbDeviceName: String?,
+    uacVersion: String? = null,
+    usbDeviceDetails: Akari.NCM.player.core.UsbDeviceDetails? = null,
     loudnessState: Akari.NCM.player.core.loudness.LoudnessNormalizationState,
     blurCoverBg: Boolean,
     palette: PlayerExpressivePalette,
@@ -2354,204 +1891,222 @@ private fun QuickFunctionsDialog(
     onToggleBlurCoverBg: () -> Unit,
     onAddToPlaylistClick: () -> Unit
 ) {
+    val surfaceColor = palette.cardSurfaceColor.copy(alpha = 0.85f)
+    val cardBorder = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.35f))
     val cardText = ensureContrast(palette.primaryTextColor, palette.cardSurfaceColor, 4.5f)
     val cardSubText = ensureContrast(palette.secondaryTextColor, palette.cardSurfaceColor, 3.8f)
 
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(28.dp),
-            color = palette.cardSurfaceColor,
-            border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.4f)),
-            modifier = Modifier.fillMaxWidth()
+    // ── 播放页模糊封面背景切换开关 ──
+    Surface(
+        onClick = onToggleBlurCoverBg,
+        shape = RoundedCornerShape(16.dp),
+        color = surfaceColor,
+        border = cardBorder,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("quick_toggle_blur_cover_bg")
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(
-                modifier = Modifier.padding(22.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("快捷功能与外观", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = cardText)
-                    IconButton(onClick = onDismiss, modifier = Modifier.offset(x = 8.dp)) {
-                        Icon(Icons.Rounded.Close, contentDescription = "关闭", tint = cardSubText)
-                    }
-                }
+            Icon(
+                if (blurCoverBg) Icons.Rounded.BlurOn else Icons.Rounded.BlurOff,
+                contentDescription = null,
+                tint = palette.playedLyricColor,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("模糊歌曲封面背景", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                Text(
+                    if (blurCoverBg) "已开启 · 使用高斯模糊歌曲封面作为播放页背景"
+                    else "已关闭 · 使用当前应用背景色（取色背景或纯黑/纯白）",
+                    fontSize = 12.sp,
+                    color = cardSubText
+                )
+            }
+            Switch(
+                checked = blurCoverBg,
+                onCheckedChange = { onToggleBlurCoverBg() },
+                modifier = Modifier.testTag("switch_player_blur_cover_bg")
+            )
+        }
+    }
 
-                Spacer(Modifier.height(14.dp))
+    Surface(
+        onClick = {
+            onDismiss()
+            onShowStatusClick()
+        },
+        shape = RoundedCornerShape(16.dp),
+        color = surfaceColor,
+        border = cardBorder,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("播放状态", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                Text("查看实际比特率、采样率、位深及存储信息", fontSize = 12.sp, color = cardSubText)
+            }
+        }
+    }
 
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.verticalScroll(rememberScrollState())
-                ) {
-                    // ── 播放页模糊封面背景切换开关 ──
-                    Surface(
-                        onClick = onToggleBlurCoverBg,
-                        shape = RoundedCornerShape(16.dp),
-                        color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("quick_toggle_blur_cover_bg")
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                if (blurCoverBg) Icons.Rounded.BlurOn else Icons.Rounded.BlurOff,
-                                contentDescription = null,
-                                tint = palette.playedLyricColor,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("模糊歌曲封面背景", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+    val hasDevice = !usbDeviceName.isNullOrBlank()
+    val hasUsbPermission = usbDeviceDetails?.hasPermission == true
+    val isUsbExclusiveActive = isUsbExclusive && hasDevice && hasUsbPermission
+    val isUsbPendingPermission = isUsbExclusive && hasDevice && !hasUsbPermission
+
+    Surface(
+        onClick = {
+            onDismiss()
+            onShowUsbExclusiveClick()
+        },
+        shape = RoundedCornerShape(16.dp),
+        color = surfaceColor,
+        border = cardBorder,
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("quick_card_usb_exclusive")
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.Usb, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("独占 USB 通道", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                    when {
+                        isUsbExclusiveActive -> {
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = palette.primaryButtonContainer
+                            ) {
                                 Text(
-                                    if (blurCoverBg) "已开启 · 使用高斯模糊歌曲封面作为播放页背景"
-                                    else "已关闭 · 使用当前应用背景色（取色背景或纯黑/纯白）",
-                                    fontSize = 12.sp,
-                                    color = cardSubText
+                                    "ON",
+                                    fontSize = 10.sp,
+                                    color = palette.onPrimaryButton,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                                 )
                             }
-                            Switch(
-                                checked = blurCoverBg,
-                                onCheckedChange = { onToggleBlurCoverBg() },
-                                modifier = Modifier.testTag("switch_player_blur_cover_bg")
-                            )
                         }
-                    }
-
-                    Surface(
-                        onClick = {
-                            onDismiss()
-                            onShowStatusClick()
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text("播放状态", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
-                                Text("查看实际比特率、采样率、位深及存储信息", fontSize = 12.sp, color = cardSubText)
-                            }
-                        }
-                    }
-
-                    Surface(
-                        onClick = {
-                            onDismiss()
-                            onShowUsbExclusiveClick()
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.Usb, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("独占 USB 通道", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
-                                    if (isUsbExclusive && !usbDeviceName.isNullOrBlank()) {
-                                        Spacer(Modifier.width(6.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = palette.primaryButtonContainer
-                                        ) {
-                                            Text(
-                                                "ON",
-                                                fontSize = 10.sp,
-                                                color = palette.onPrimaryButton,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                                val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""
-                                val subText = when {
-                                    isUsbExclusive && !usbDeviceName.isNullOrBlank() -> "已独占绑定: $usbDeviceName$uacTag"
-                                    !usbDeviceName.isNullOrBlank() -> "已检测到: $usbDeviceName$uacTag (点击配置)"
-                                    else -> "基于方案三实现硬件接口排他独占与直通"
-                                }
-                                Text(subText, fontSize = 12.sp, color = cardSubText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        }
-                    }
-
-                    Surface(
-                        onClick = onToggleLoudness,
-                        shape = RoundedCornerShape(16.dp),
-                        color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("音量均衡 (EBU R128)", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
-                                    if (loudnessState.isEnabled) {
-                                        Spacer(Modifier.width(6.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(6.dp),
-                                            color = palette.primaryButtonContainer
-                                        ) {
-                                            Text(
-                                                "ON",
-                                                fontSize = 10.sp,
-                                                color = palette.onPrimaryButton,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                                            )
-                                        }
-                                    }
-                                }
+                        isUsbPendingPermission -> {
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = palette.secondaryButtonContainer,
+                                modifier = Modifier.testTag("badge_usb_pending_permission")
+                            ) {
                                 Text(
-                                    loudnessState.statusSummary,
-                                    fontSize = 12.sp,
-                                    color = cardSubText,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    "待授权",
+                                    fontSize = 10.sp,
+                                    color = palette.onSecondaryButton,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        isUsbExclusive -> {
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = palette.secondaryButtonContainer
+                            ) {
+                                Text(
+                                    "待接入",
+                                    fontSize = 10.sp,
+                                    color = palette.onSecondaryButton,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                                 )
                             }
                         }
                     }
+                }
+                val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""
+                val subText = when {
+                    isUsbExclusiveActive -> "已独占绑定: $usbDeviceName$uacTag"
+                    isUsbPendingPermission -> "待授权: 请确认 USB 权限以启用独占 ($usbDeviceName$uacTag)"
+                    isUsbExclusive -> "开关已开启 · 等待 USB 声卡接入"
+                    hasDevice -> "已检测到: $usbDeviceName$uacTag (点击配置)"
+                    else -> "基于方案三实现硬件接口排他独占与直通"
+                }
+                Text(subText, fontSize = 12.sp, color = cardSubText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
 
-                    Surface(
-                        onClick = {
-                            onDismiss()
-                            onAddToPlaylistClick()
-                        },
-                        shape = RoundedCornerShape(16.dp),
-                        color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
+    Surface(
+        onClick = onToggleLoudness,
+        shape = RoundedCornerShape(16.dp),
+        color = surfaceColor,
+        border = cardBorder,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("音量均衡 (EBU R128)", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                    if (loudnessState.isEnabled) {
+                        Spacer(Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = palette.primaryButtonContainer
                         ) {
-                            Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text("添加到歌单", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
-                                Text("将当前歌曲添加至自定义本地或云端歌单", fontSize = 12.sp, color = cardSubText)
-                            }
+                            Text(
+                                "ON",
+                                fontSize = 10.sp,
+                                color = palette.onPrimaryButton,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                            )
                         }
                     }
                 }
+                Text(
+                    loudnessState.statusSummary,
+                    fontSize = 12.sp,
+                    color = cardSubText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+
+    Surface(
+        onClick = {
+            onDismiss()
+            onAddToPlaylistClick()
+        },
+        shape = RoundedCornerShape(16.dp),
+        color = surfaceColor,
+        border = cardBorder,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text("添加到歌单", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                Text("将当前歌曲添加至自定义本地或云端歌单", fontSize = 12.sp, color = cardSubText)
             }
         }
     }
@@ -2565,9 +2120,13 @@ private fun UsbExclusiveDialog(
     deviceDetails: Akari.NCM.player.core.UsbDeviceDetails?,
     palette: PlayerExpressivePalette,
     onToggleExclusive: (Boolean) -> Unit,
+    onRequestPermission: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val hasDevice = !usbDeviceName.isNullOrBlank()
+    val hasPermission = deviceDetails?.hasPermission == true
+    val isExclusiveActive = isExclusive && hasDevice && hasPermission
+    val isPendingPermission = isExclusive && hasDevice && !hasPermission
     val isUac2 = uacVersion?.contains("2.0") == true
     val isUac3 = uacVersion?.contains("3.0") == true
     val cardText = ensureContrast(palette.primaryTextColor, palette.cardSurfaceColor, 4.5f)
@@ -2612,8 +2171,12 @@ private fun UsbExclusiveDialog(
                             Text("启用 USB 硬件独占", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = cardText)
                             Spacer(Modifier.height(2.dp))
                             Text(
-                                if (hasDevice) "基于 USB Host 接口抢占 · 绕过 AudioFlinger 混音"
-                                else "未检测到 USB Audio 连入设备",
+                                when {
+                                    isPendingPermission -> "待授权 · 尚未获得 USB 访问权限，独占尚未生效"
+                                    isExclusiveActive -> "已启用 · 基于 USB Host 绕过 AudioFlinger 混音"
+                                    hasDevice -> "基于 USB Host 接口抢占 · 绕过 AudioFlinger 混音"
+                                    else -> "未检测到 USB Audio 连入设备"
+                                },
                                 fontSize = 12.sp,
                                 color = cardSubText
                             )
@@ -2621,8 +2184,43 @@ private fun UsbExclusiveDialog(
                         Switch(
                             checked = isExclusive,
                             onCheckedChange = { onToggleExclusive(it) },
-                            enabled = hasDevice || isExclusive
+                            enabled = hasDevice || isExclusive,
+                            modifier = Modifier.testTag("switch_usb_exclusive")
                         )
+                    }
+                }
+
+                if (isPendingPermission) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = palette.secondaryButtonContainer.copy(alpha = 0.65f),
+                        border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("usb_pending_permission_banner")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "待授权：系统尚未授予此 USB 声卡硬件访问权限，当前仍使用系统音频路由。",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = cardText
+                            )
+                            FilledTonalButton(
+                                onClick = onRequestPermission,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("btn_request_usb_permission")
+                            ) {
+                                Icon(Icons.Rounded.Usb, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("申请 USB 硬件权限", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
                     }
                 }
 
@@ -2699,14 +2297,15 @@ private fun UsbExclusiveDialog(
                                     )
                                 }
                                 val statusText = when {
-                                    isExclusive && hasDevice -> "独占状态: 🟢 硬件独占直通生效中 (Bit-Perfect Direct)"
+                                    isExclusiveActive -> "独占状态: 🟢 硬件独占直通生效中 (Bit-Perfect Direct)"
+                                    isPendingPermission -> "独占状态: 🟠 待授权 · 等待授予 USB 硬件访问权限（尚未启用独占）"
                                     isExclusive -> "独占状态: 🟡 等待 USB DAC 硬件接入"
                                     else -> "独占状态: ⚪ 系统共享音频路由"
                                 }
                                 Text(
                                     statusText,
                                     fontSize = 11.sp,
-                                    color = if (isExclusive && hasDevice) palette.playedLyricColor else cardSubText
+                                    color = if (isExclusiveActive) palette.playedLyricColor else cardSubText
                                 )
                             }
                         }
@@ -2728,6 +2327,7 @@ private fun PlaybackStatusDialog(
     isUsbExclusive: Boolean = false,
     usbDeviceName: String? = null,
     uacVersion: String? = null,
+    hasUsbPermission: Boolean = false,
     loudnessState: Akari.NCM.player.core.loudness.LoudnessNormalizationState,
     palette: PlayerExpressivePalette,
     onDismiss: () -> Unit
@@ -2816,7 +2416,12 @@ private fun PlaybackStatusDialog(
                 }
                 if (isUsbExclusive && !usbDeviceName.isNullOrBlank()) {
                     val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""
-                    InfoRow("输出通道", "USB 硬件独占直通 · $usbDeviceName$uacTag", cardSubText, cardText)
+                    val routeValue = if (hasUsbPermission) {
+                        "USB 硬件独占直通 · $usbDeviceName$uacTag"
+                    } else {
+                        "系统共享音频路由 · $usbDeviceName$uacTag (USB 独占待授权)"
+                    }
+                    InfoRow("输出通道", routeValue, cardSubText, cardText)
                 }
                 HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
                 InfoRow("实时比特率", bitrateText, cardSubText, cardText)

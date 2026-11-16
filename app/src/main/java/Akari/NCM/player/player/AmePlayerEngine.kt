@@ -289,8 +289,12 @@ class AmePlayerEngine @Inject constructor(
     private val resolvedDetailsCache = ConcurrentHashMap<String, Akari.NCM.player.api.ResolvedSongUrl>()
     private val inflightUrlFetches = ConcurrentHashMap<String, Deferred<Akari.NCM.player.api.ResolvedSongUrl?>>()
 
+    @Volatile
+    private var isAudioCacheInitialized = false
+
     // Disk Cache for online audio streaming (500MB max)
     private val audioCache: SimpleCache by lazy {
+        isAudioCacheInitialized = true
         val cacheDir = File(context.cacheDir, "online_audio_cache")
         SimpleCache(cacheDir, LeastRecentlyUsedCacheEvictor(500 * 1024 * 1024L))
     }
@@ -315,9 +319,9 @@ class AmePlayerEngine @Inject constructor(
         val idx = _currentIndex.value.coerceIn(0, items.lastIndex)
         val sourceType = _playlistSourceType.value.name
         runCatching {
-            val dtos = items.take(500).map { PlayableMediaDTO.fromPlayableMedia(it) }
+            val dtos = items.map { PlayableMediaDTO.fromPlayableMedia(it) }
             ThemePrefs.lastPlaybackPlaylistJson = playbackPersistJson.encodeToString(dtos)
-            ThemePrefs.lastPlaybackIndex = idx.coerceAtMost(dtos.lastIndex)
+            ThemePrefs.lastPlaybackIndex = idx
             ThemePrefs.lastPlaybackSourceType = sourceType
         }
     }
@@ -336,9 +340,9 @@ class AmePlayerEngine @Inject constructor(
 
             _playlistSourceType.value = savedSource
             mediaMap.clear()
-            val mediaItems = items.map { media ->
+            val mediaItems = items.mapIndexed { index, media ->
                 mediaMap[media.id] = media
-                buildMediaItem(media)
+                buildMediaItem(media, includeLocalArtworkBytes = (index == savedIndex))
             }
             val restoredMedia = items[savedIndex]
             _playlist.value = items
@@ -386,12 +390,14 @@ class AmePlayerEngine @Inject constructor(
             .setEnableAudioTrackPlaybackParams(false)
             .build()
 
-        val isUsbExclusive = usbAudioManager.isExclusiveModeEnabled.value
+        val isUsbExclusiveActive = usbAudioManager.isExclusiveModeEnabled.value &&
+            usbAudioManager.connectedUsbDevice.value != null &&
+            (usbAudioManager.usbDeviceDetails.value?.hasPermission == true)
         val finalAudioSink = com.decent.usbaudio.UsbAudioSink(
             delegate = defaultAudioSink,
             context = context,
             config = com.decent.usbaudio.UsbAudioSinkConfig(
-                bitPerfectEnabled = isUsbExclusive,
+                bitPerfectEnabled = isUsbExclusiveActive,
                 forceRouteToSpeaker = true
             ),
             loudnessAudioProcessor = loudnessAudioProcessor
@@ -734,9 +740,11 @@ class AmePlayerEngine @Inject constructor(
         })
 
         val currentDevice = usbAudioManager.connectedUsbDevice.value
-        val isExclusive = usbAudioManager.isExclusiveModeEnabled.value
+        val isExclusiveActive = usbAudioManager.isExclusiveModeEnabled.value &&
+            currentDevice != null &&
+            (usbAudioManager.usbDeviceDetails.value?.hasPermission == true)
         finalAudioSink.setExclusiveVolume(_volume.value)
-        if (isExclusive) {
+        if (isExclusiveActive) {
             player.setPreferredAudioDevice(null)
         } else if (currentDevice != null) {
             player.setPreferredAudioDevice(currentDevice)
@@ -1807,7 +1815,7 @@ class AmePlayerEngine @Inject constructor(
             is PlayableMedia.Online -> PlaylistSourceType.ONLINE
             is PlayableMedia.LocalNcm -> PlaylistSourceType.LOCAL
         }
-        val mediaItem = buildMediaItem(media)
+        val mediaItem = buildMediaItem(media, includeLocalArtworkBytes = true)
         mediaMap[media.id] = media
         _playlist.value = listOf(media)
         _currentIndex.value = 0
@@ -1850,12 +1858,12 @@ class AmePlayerEngine @Inject constructor(
         mediaMap.clear()
         resolvedUrlCache.clear()
         resolvedDetailsCache.clear()
-        val mediaItems = items.map { media ->
+        val safeStartIndex = if (items.isEmpty()) 0 else startIndex.coerceIn(0, items.size - 1)
+        val mediaItems = items.mapIndexed { index, media ->
             mediaMap[media.id] = media
-            buildMediaItem(media)
+            buildMediaItem(media, includeLocalArtworkBytes = (index == safeStartIndex))
         }
         _playlist.value = items
-        val safeStartIndex = if (items.isEmpty()) 0 else startIndex.coerceIn(0, items.size - 1)
         val startMedia = items.getOrNull(safeStartIndex)
         _currentMedia.value = startMedia
         _currentIndex.value = safeStartIndex
@@ -2430,6 +2438,10 @@ class AmePlayerEngine @Inject constructor(
         applyLoudnessNormalization()
     }
 
+    override fun requestUsbPermission() {
+        usbAudioManager.requestUsbPermissionForCurrentDevice()
+    }
+
     override fun setUsbExclusiveMode(enabled: Boolean) {
         ensureActive()
         if (enabled) {
@@ -2455,9 +2467,9 @@ class AmePlayerEngine @Inject constructor(
         isExclusive: Boolean,
         hasPermission: Boolean = usbAudioManager.usbDeviceDetails.value?.hasPermission == true
     ) {
-        val enableBitPerfect = isExclusive && device != null
+        val enableBitPerfect = isExclusive && device != null && hasPermission
         usbAudioSink?.setBitPerfectEnabled(enableBitPerfect)
-        if (isExclusive && device != null) {
+        if (enableBitPerfect && device != null) {
             val uac = usbAudioManager.uacVersion.value ?: "UAC"
             AppLogger.i("[AME_USB_AUDIO]", ">>> Applying USB Exclusive Routing to device: '${device.productName}' ($uac, id=${device.id}, type=${device.type}, hasPerm=$hasPermission)")
             // 禁止 DefaultAudioSink 将硬件路径抢占至 USB DAC：独占通道由 UsbAudioSink 通过 usbdevfs 接管
@@ -2468,12 +2480,14 @@ class AmePlayerEngine @Inject constructor(
                 .setAllowedCapturePolicy(C.ALLOW_CAPTURE_BY_NONE)
                 .build()
             exoPlayer.setAudioAttributes(audioAttributes, false)
-            if (hasPermission) {
-                usbAudioSink?.onUsbPermissionGranted()
-            }
+            usbAudioSink?.onUsbPermissionGranted()
             applyEffectiveVolume()
         } else {
-            AppLogger.i("[AME_USB_AUDIO]", ">>> Reverting USB Audio routing to default (isExclusive=$isExclusive, device=${device?.productName})")
+            if (isExclusive && device != null && !hasPermission) {
+                AppLogger.i("[AME_USB_AUDIO]", ">>> USB Exclusive switch ON for '${device.productName}', awaiting hardware USB permission before enabling bit-perfect routing")
+            } else {
+                AppLogger.i("[AME_USB_AUDIO]", ">>> Reverting USB Audio routing to default (isExclusive=$isExclusive, device=${device?.productName})")
+            }
             if (device != null) {
                 AppLogger.i("[AME_USB_AUDIO]", ">>> Routing standard AudioTrack to USB device: '${device.productName}'")
                 exoPlayer.setPreferredAudioDevice(device)
@@ -2518,6 +2532,9 @@ class AmePlayerEngine @Inject constructor(
         usbAudioSink?.release()
         usbAudioSink = null
         runCatching { exoPlayer.release() }
+        if (isAudioCacheInitialized) {
+            runCatching { audioCache.release() }
+        }
         mediaMap.clear()
         resolvedUrlCache.clear()
         resolvedDetailsCache.clear()
@@ -2525,14 +2542,17 @@ class AmePlayerEngine @Inject constructor(
 
     // --- Helpers ---
 
-    private fun buildMediaItem(media: PlayableMedia): MediaItem {
+    private fun buildMediaItem(
+        media: PlayableMedia,
+        includeLocalArtworkBytes: Boolean = false
+    ): MediaItem {
         val uriStr = if (media is PlayableMedia.Online) {
             "https://music.126.net/ncm/${media.id}"
         } else {
             media.encodeUri()
         }
 
-        val localCoverBytes = if (media is PlayableMedia.LocalNcm) {
+        val localCoverBytes = if (includeLocalArtworkBytes && media is PlayableMedia.LocalNcm) {
             val cachedFile = File(File(context.cacheDir, "covers"), "${media.id}.jpg")
             if (cachedFile.exists()) runCatching { cachedFile.readBytes() }.getOrNull() else null
         } else null
