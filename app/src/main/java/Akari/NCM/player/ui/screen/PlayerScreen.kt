@@ -34,7 +34,10 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -65,8 +68,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -79,6 +86,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
@@ -87,6 +95,7 @@ import coil.imageLoader
 import coil.request.ImageRequest
 import coil.size.Size
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -240,9 +249,26 @@ fun PlayerScreen(
         showPlayQueuePage = false
     }
 
+    val queueScope = rememberCoroutineScope()
+    val queuePullOffsetPx = remember { Animatable(0f) }
+    var isQueueDismissedByPullDown by remember { mutableStateOf(false) }
+    var queueContainerHeightPx by remember { mutableFloatStateOf(0f) }
+    val queueFallbackHeightPx = with(density) { 640.dp.toPx() }
+    val effectiveQueueHeightPx = queueContainerHeightPx.takeIf { it > 0f } ?: queueFallbackHeightPx
+    val pullDismissFraction = (queuePullOffsetPx.value / effectiveQueueHeightPx).coerceIn(0f, 1f)
+
+    LaunchedEffect(showPlayQueuePage) {
+        if (showPlayQueuePage) {
+            isQueueDismissedByPullDown = false
+            queuePullOffsetPx.snapTo(0f)
+        }
+    }
+
     val effectiveQueueProgress = (
-        queueProgress * (1f - PredictiveBackEasing.transform(queueBackState.progress.coerceIn(0f, 1f)) * 0.85f)
-    ).coerceIn(0f, 1f)
+        queueProgress *
+            (1f - PredictiveBackEasing.transform(queueBackState.progress.coerceIn(0f, 1f)) * 0.85f) *
+            (1f - pullDismissFraction)
+        ).coerceIn(0f, 1f)
 
     Box(
         modifier = Modifier
@@ -398,7 +424,7 @@ fun PlayerScreen(
                 initialOffsetY = { fullHeight -> fullHeight },
                 animationSpec = tween(450, easing = EaseInOut)
             ) + fadeIn(tween(300)),
-            exit = if (queueBackState.isDismissedByGesture) {
+            exit = if (queueBackState.isDismissedByGesture || isQueueDismissedByPullDown) {
                 ExitTransition.None
             } else {
                 slideOutVertically(
@@ -407,10 +433,64 @@ fun PlayerScreen(
                 ) + fadeOut(tween(300))
             }
         ) {
+            val handleQueuePullDelta: (Float) -> Unit = { deltaY ->
+                val nextOffset = (queuePullOffsetPx.value + deltaY).coerceAtLeast(0f)
+                queueScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    queuePullOffsetPx.snapTo(nextOffset)
+                }
+            }
+            val handleQueuePullSettle: (Float) -> Unit = { velocityY ->
+                queueScope.launch {
+                    val currentOffset = queuePullOffsetPx.value
+                    val distanceThresholdPx = with(density) { 108.dp.toPx() }
+                    val velocityThresholdPx = with(density) { 650.dp.toPx() }
+                    val minDragForFlingPx = with(density) { 20.dp.toPx() }
+                    val shouldDismiss = currentOffset >= distanceThresholdPx ||
+                        (velocityY >= velocityThresholdPx && currentOffset >= minDragForFlingPx)
+                    if (shouldDismiss) {
+                        queuePullOffsetPx.animateTo(
+                            targetValue = effectiveQueueHeightPx,
+                            initialVelocity = velocityY.coerceAtLeast(0f),
+                            animationSpec = tween(durationMillis = 220, easing = FastOutLinearInEasing)
+                        )
+                        isQueueDismissedByPullDown = true
+                        showPlayQueuePage = false
+                    } else if (currentOffset > 0.5f) {
+                        queuePullOffsetPx.animateTo(
+                            targetValue = 0f,
+                            initialVelocity = velocityY,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            )
+                        )
+                    } else {
+                        queuePullOffsetPx.snapTo(0f)
+                    }
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .onSizeChanged { queueContainerHeightPx = it.height.toFloat() }
+                    .graphicsLayer {
+                        val offset = queuePullOffsetPx.value
+                        translationY = offset
+                        if (offset > 0.5f) {
+                            val fraction = (offset / effectiveQueueHeightPx).coerceIn(0f, 1f)
+                            val cornerFraction = (fraction * 3.5f).coerceIn(0f, 1f)
+                            shape = RoundedCornerShape(
+                                topStart = (28f * cornerFraction).dp,
+                                topEnd = (28f * cornerFraction).dp
+                            )
+                            clip = true
+                        } else {
+                            clip = false
+                        }
+                    }
                     .predictiveBackForeground(state = queueBackState, pullDownDp = 64f)
+                    .testTag("play_queue_sheet")
             ) {
                 SaltPlayQueueView(
                     playerState = playerState,
@@ -418,6 +498,9 @@ fun PlayerScreen(
                     displayedTrack = activeTrack,
                     palette = palette,
                     blurCoverBg = blurCoverBg,
+                    currentPullOffsetPx = { queuePullOffsetPx.value },
+                    onPullDelta = handleQueuePullDelta,
+                    onPullSettle = handleQueuePullSettle,
                     onDismiss = { showPlayQueuePage = false }
                 )
             }
@@ -1571,6 +1654,9 @@ private fun SaltPlayQueueView(
     displayedTrack: PlayableMedia?,
     palette: PlayerExpressivePalette,
     blurCoverBg: Boolean,
+    currentPullOffsetPx: () -> Float = { 0f },
+    onPullDelta: (Float) -> Unit = {},
+    onPullSettle: (Float) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val currentTrack = displayedTrack
@@ -1583,6 +1669,54 @@ private fun SaltPlayQueueView(
     val isFetchingRecommendations by playerState.isFetchingRecommendations.collectAsState()
 
     val coverUrl = currentTrack?.coverUrl
+    val headerDraggableState = rememberDraggableState { deltaY ->
+        onPullDelta(deltaY)
+    }
+    val queueNestedScrollConnection = remember(currentPullOffsetPx, onPullDelta, onPullSettle) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val offset = currentPullOffsetPx()
+                if (offset > 0f && available.y != 0f) {
+                    val consumedY = if (available.y < 0f) {
+                        maxOf(available.y, -offset)
+                    } else {
+                        available.y
+                    }
+                    onPullDelta(consumedY)
+                    return Offset(0f, consumedY)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source == NestedScrollSource.UserInput && available.y > 0f) {
+                    onPullDelta(available.y)
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (currentPullOffsetPx() > 0f) {
+                    onPullSettle(available.y)
+                    return available
+                }
+                return Velocity.Zero
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (currentPullOffsetPx() > 0f) {
+                    onPullSettle(available.y)
+                    return available
+                }
+                return Velocity.Zero
+            }
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(palette.effectiveBackgroundColor)) {
         PlayerBackgroundLayer(
@@ -1597,42 +1731,55 @@ private fun SaltPlayQueueView(
                 .systemBarsPadding()
                 .padding(horizontal = 20.dp)
         ) {
-            Spacer(Modifier.height(8.dp))
-
-            // ── 下滑/点击返回提示栏 ───────────────────────────────────────────
-            Box(
+            // ── 顶部可下拉收起区域（提示条 + 迷你卡片 + 队列 Header）───────────
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onDismiss
+                    .draggable(
+                        orientation = Orientation.Vertical,
+                        state = headerDraggableState,
+                        onDragStopped = { velocity -> onPullSettle(velocity) }
                     )
-                    .padding(vertical = 6.dp),
-                contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        modifier = Modifier
-                            .width(36.dp)
-                            .height(4.dp)
-                            .clip(CircleShape)
-                            .background(palette.secondaryTextColor.copy(alpha = 0.5f))
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "下滑此处返回播放界面",
-                        fontSize = 12.sp,
-                        color = palette.secondaryTextColor,
-                        fontWeight = FontWeight.Medium
-                    )
+                Spacer(Modifier.height(8.dp))
+
+                // ── 下滑/点击返回提示栏 ───────────────────────────────────────────
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("play_queue_pull_handle")
+                        .semantics { contentDescription = "下滑或点击返回播放界面" }
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onDismiss
+                        )
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier
+                                .width(36.dp)
+                                .height(4.dp)
+                                .clip(CircleShape)
+                                .background(palette.secondaryTextColor.copy(alpha = 0.5f))
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "下滑此处返回播放界面",
+                            fontSize = 12.sp,
+                            color = palette.secondaryTextColor,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
-            }
 
-            Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(8.dp))
 
-            // ── 顶部当前播放 Mini 卡片 ─────────────────────────────────────────
-            Surface(
+                // ── 顶部当前播放 Mini 卡片 ─────────────────────────────────────────
+                Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = palette.cardSurfaceColor.copy(alpha = 0.90f),
                 border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.35f)),
@@ -1785,14 +1932,20 @@ private fun SaltPlayQueueView(
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(8.dp))
+            }
 
             // ── 队列曲目列表 ───────────────────────────────────────────────
             if (playlist.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .draggable(
+                            orientation = Orientation.Vertical,
+                            state = headerDraggableState,
+                            onDragStopped = { velocity -> onPullSettle(velocity) }
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -1805,7 +1958,8 @@ private fun SaltPlayQueueView(
                 LazyColumn(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .nestedScroll(queueNestedScrollConnection),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(vertical = 4.dp)
                 ) {

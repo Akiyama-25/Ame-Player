@@ -112,6 +112,7 @@ class UsbAudioSink(
         val targetEncoding = if (enc != Format.NO_VALUE && enc != C.ENCODING_INVALID) enc else currentEncoding
         currentEncoding = targetEncoding
         handleBufferCallCount = 0
+        handledEndOfStream = false
         val sr = inputFormat.sampleRate.takeIf { it > 0 } ?: currentSampleRate
         val ch = inputFormat.channelCount.takeIf { it > 0 } ?: currentChannelCount
         currentSampleRate = sr
@@ -165,6 +166,7 @@ class UsbAudioSink(
     ): Boolean {
         val stream = usbAudioStream
         if (config.bitPerfectEnabled && stream?.isAlive == true) {
+            handledEndOfStream = false
             muteDelegateIfNeeded()
 
             if (usbStartMediaTimeNeedsInit) {
@@ -287,6 +289,7 @@ class UsbAudioSink(
     }
 
     override fun reset() {
+        handledEndOfStream = false
         super.reset()
     }
 
@@ -426,6 +429,7 @@ class UsbAudioSink(
 
         val stream = usbAudioStream
         usbAudioStream = null
+        handledEndOfStream = false
         activeSampleRate = 0
         activeChannelCount = 0
         activeEncoding = C.ENCODING_PCM_16BIT

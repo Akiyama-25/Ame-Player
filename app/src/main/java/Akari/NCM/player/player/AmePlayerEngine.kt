@@ -535,6 +535,7 @@ class AmePlayerEngine @Inject constructor(
         val player = ExoPlayer.Builder(context, audioOnlyFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
 
         // Audio offload disabled for maximum high-sample-rate stability (192kHz/384kHz)
@@ -553,8 +554,10 @@ class AmePlayerEngine @Inject constructor(
         }
         player.shuffleModeEnabled = _shuffleEnabled.value
         player.volume = _volume.value
-        // 在曲目自然结束并切换下一首时自动在曲间暂停，以便注入 1 秒等候窗口并完成首帧增益同步
-        player.pauseAtEndOfMediaItems = true
+        // 必须保持 false：若设为 true，ExoPlayer 会在当前曲目结尾触发 PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM 自动暂停，
+        // 不会自动推进到下一首，导致 onMediaItemTransition(AUTO/REPEAT) 永远无法触发、曲间自动续播失效。
+        // 1 秒曲间等候窗口由下方 onMediaItemTransition(AUTO/REPEAT) 在切换至下一首后主动接管暂停与恢复。
+        player.pauseAtEndOfMediaItems = false
 
         // Player listener
         player.addListener(object : Player.Listener {
@@ -562,6 +565,25 @@ class AmePlayerEngine @Inject constructor(
                 _isPlaying.value = isPlaying
                 AppLogger.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onIsPlayingChanged: $isPlaying")
                 syncIslandState()
+            }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                val reasonName = when (reason) {
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "USER_REQUEST"
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "AUDIO_FOCUS_LOSS"
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "AUDIO_BECOMING_NOISY"
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "REMOTE"
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "END_OF_MEDIA_ITEM"
+                    Player.PLAY_WHEN_READY_CHANGE_REASON_SUPPRESSED_TOO_LONG -> "SUPPRESSED_TOO_LONG"
+                    else -> "UNKNOWN($reason)"
+                }
+                AppLogger.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onPlayWhenReadyChanged: playWhenReady=$playWhenReady, reason=$reasonName")
+            }
+
+            override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
+                if (playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE) {
+                    AppLogger.w("[AME_ONLINE_PLAY]", ">>> ExoPlayer onPlaybackSuppressionReasonChanged: $playbackSuppressionReason")
+                }
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -644,9 +666,10 @@ class AmePlayerEngine @Inject constructor(
                     reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
                 ) {
                     if (player.playWhenReady) {
+                        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Auto-transition to '${currentMedia?.title ?: id}' (reason=$reason), pausing for 1s inter-track gap")
                         player.pause()
+                        startInterTrackWaitAndResume(currentMedia)
                     }
-                    startInterTrackWaitAndResume(currentMedia)
                 }
             }
 
