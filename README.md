@@ -5,20 +5,22 @@
 </div>
 
 <p align="center">
-  <img src="assets/screenshot_1.jpg" width="22%" />
-  <img src="assets/screenshot_2.jpg" width="22%" />
-  <img src="assets/screenshot_3.jpg" width="22%" />
-  <img src="assets/screenshot_4.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-05-54-142_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-06-07-283_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-06-37-325_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-06-54-447_Akari.NCM.player.jpg" width="22%" />
 </p>
 <p align="center">
-  <img src="assets/screenshot_5.jpg" width="22%" />
-  <img src="assets/screenshot_6.jpg" width="22%" />
-  <img src="assets/screenshot_7.png" width="22%" />
-  <img src="assets/screenshot_8.png" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-07-20-266_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-07-36-391_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-08-39-588_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-09-47-672_Akari.NCM.player.jpg" width="22%" />
 </p>
 <p align="center">
-  <img src="assets/Screenshot_2026-10-22-07-58-02-449_com.miui.home-edit.jpg" width="44%" />
-  <img src="assets/Screenshot_2026-10-22-07-57-50-136_com.miui.home-edit.jpg" width="44%" />
+  <img src="assets/Screenshot_2026-11-17-13-09-58-927_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-10-08-104_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-10-56-259_lockscreen.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-13-03-538_com.miui.home-edit.jpg" width="22%" />
 </p>
 
 - 部分截图来自早期开发版本
