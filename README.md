@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/icon.jpg" width="160" height="160" alt="AmePlayer Icon" style="border-radius: 50%" />
   <h1>AmePlayer</h1>
-  <p>基于 Jetpack Compose 与 Media3 (ExoPlayer) 构建的高品质 Android 音乐播放器，内置原生网易云音乐加密直连客户端，支持在线流媒体播放、本地音频管理与 NCM 加密文件解密，深度集成 Material 3 Adaptive 自适应布局、（实验性）系统级实况通知（灵动岛/流体云/超级岛）与 USB DAC 硬件直通输出。</p>
+  <p>基于 Jetpack Compose 与 Media3 (ExoPlayer) 构建的 Android 音乐播放器，内置原生网易云音乐加密直连客户端，支持在线流媒体播放、本地音频管理与 NCM 加密文件解密。</p>
 </div>
 
 <p align="center">
@@ -23,7 +23,6 @@
   <img src="assets/Screenshot_2026-11-17-13-13-03-538_com.miui.home-edit.jpg" width="22%" />
 </p>
 
-- 部分截图来自早期开发版本
 - HyperOS 上岛效果不代表实际效果，如需达到，请在设备安装 LSPosed 后，使用 [Hyper Helper](https://github.com/HowieHChen/XiaomiHelper) 修改
 
 ---
@@ -32,7 +31,7 @@
 
 - **端侧Netease API**：由 Kotlin 实现的协议加解密层（WeAPI / EAPI），无需自行搭建外部云端服务。支持扫码登录、云端歌单双向同步、每日推荐与全方位曲库搜索（单曲/专辑/歌手/歌词）。
 - **本地管理与 NCM 解密**：支持多本地目录批量扫描与智能歌曲匹配（ID / 文本双重比对），原生流式解密 `.ncm` 加密文件并自动补全元数据与双语歌词。
-- **（实验性）USB 硬件独占直通**：以方案三架构为基础，支持在界面中实时识别 USB DAC 硬件的 UAC 1.0 / UAC 2.0 传输协议；基于 Android USB Host 接口抢占排他性锁定音频传输端点，脱离系统 AudioFlinger 混音干扰并内置设备断开防爆音安全保护。
+- **USB 硬件独占直通**：以方案三架构为基础，支持在界面中实时识别 USB DAC 硬件的 UAC 1.0 / UAC 2.0 传输协议；基于 Android USB Host 接口抢占排他性锁定音频传输端点，脱离系统 AudioFlinger 混音干扰并内置设备断开防爆音安全保护。
 - **设计与交互**：Material 3 Adaptive 自适应布局（无缝适配竖屏、横屏、折叠屏及平板）、Monet 动态取色、系统级预测性返回手势（AOSP Predictive Back）跟手缩放与平滑转场动画。
 - **实况通知与（实验性）“灵动岛”**：适配 Xiaomi HyperOS（焦点通知/超级岛）、OPPO ColorOS（流体云）、vivo OriginOS（原子岛）、Samsung One UI（Now Bar）及 Flyme 状态栏实时歌词（设置中默认保持关闭，用户按需开启时申请对应权限）。
 - **在线播放音质与回退策略**：
@@ -84,7 +83,7 @@ cd Ame-Player
 ./gradlew assembleRelease -PcustomApplicationId=com.apple.android.music
 ```
 
-> **提示**：GitHub Actions 工作流（`.github/workflows/build-signed-apk.yml` 与 `release-signed-apk.yml`）依赖仓库配置的签名 Secrets，且运行在[Instabox](instabox.sh)上。若在 Fork 仓库中构建，需自行配置对应的签名变量，或使用未签名构建。
+> **提示**：GitHub Actions 工作流（`.github/workflows/build-signed-apk.yml` 与 `release-signed-apk.yml`）依赖仓库配置的签名 Secrets，且运行在[Instabox](instabox.sh)上。若在 Fork 仓库中构建，需自行修改构建设置，配置对应的签名变量，或使用未签名构建。
 
 ---
 
