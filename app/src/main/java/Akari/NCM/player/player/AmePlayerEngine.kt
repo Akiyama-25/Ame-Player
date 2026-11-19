@@ -125,6 +125,7 @@ class AmePlayerEngine @Inject constructor(
     private var loudnessJob: Job? = null
     private var interTrackWaitJob: Job? = null
     private var prefetchLoudnessJob: Job? = null
+    private var persistPlaylistJob: Job? = null
 
     @Volatile
     private var upcomingAverageLufs: Float? = null
@@ -313,16 +314,25 @@ class AmePlayerEngine @Inject constructor(
         startBackgroundObservers()
     }
 
-    private fun saveLastPlaybackState() {
+    private fun saveLastPlaybackState(savePlaylistItems: Boolean = true) {
         val items = _playlist.value
         if (items.isEmpty()) return
         val idx = _currentIndex.value.coerceIn(0, items.lastIndex)
         val sourceType = _playlistSourceType.value.name
         runCatching {
-            val dtos = items.map { PlayableMediaDTO.fromPlayableMedia(it) }
-            ThemePrefs.lastPlaybackPlaylistJson = playbackPersistJson.encodeToString(dtos)
             ThemePrefs.lastPlaybackIndex = idx
             ThemePrefs.lastPlaybackSourceType = sourceType
+        }
+        val shouldPersistList = savePlaylistItems || ThemePrefs.lastPlaybackPlaylistJson.isBlank()
+        if (!shouldPersistList) return
+
+        val snapshot = items.toList()
+        persistPlaylistJob?.cancel()
+        persistPlaylistJob = scope.launch(Dispatchers.IO) {
+            runCatching {
+                val dtos = snapshot.map { PlayableMediaDTO.fromPlayableMedia(it) }
+                ThemePrefs.lastPlaybackPlaylistJson = playbackPersistJson.encodeToString(dtos)
+            }
         }
     }
 
@@ -560,9 +570,7 @@ class AmePlayerEngine @Inject constructor(
         }
         player.shuffleModeEnabled = _shuffleEnabled.value
         player.volume = _volume.value
-        // 必须保持 false：若设为 true，ExoPlayer 会在当前曲目结尾触发 PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM 自动暂停，
-        // 不会自动推进到下一首，导致 onMediaItemTransition(AUTO/REPEAT) 永远无法触发、曲间自动续播失效。
-        // 1 秒曲间等候窗口由下方 onMediaItemTransition(AUTO/REPEAT) 在切换至下一首后主动接管暂停与恢复。
+        // 必须保持 false：让 ExoPlayer 在当前曲目自然播完时无缝自动推进到下一首，避免曲间音频输出中断
         player.pauseAtEndOfMediaItems = false
 
         // Player listener
@@ -640,13 +648,18 @@ class AmePlayerEngine @Inject constructor(
                 val currentMedia = id?.let { mediaMap[it] }
                 _currentMedia.value = currentMedia
                 _currentIndex.value = player.currentMediaItemIndex
+                _currentPositionMs.value = player.currentPosition.coerceAtLeast(0L)
                 _durationMs.value = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L
-                if (currentMedia != null) {
-                    saveLastPlaybackState()
+
+                // 优先同步预置音频处理器增益（利用预加载的下一曲响度，零延迟且无需暂停打断音频输出）
+                prepareLoudnessSync(currentMedia)
+                if (usbAudioManager.isExclusiveModeEnabled.value) {
+                    applyEffectiveVolume()
                 }
 
-                // 同步预置音频处理器增益，消除切歌后协程调度期间的未均衡音频泄漏
-                prepareLoudnessSync(currentMedia)
+                if (currentMedia != null) {
+                    saveLastPlaybackState(savePlaylistItems = false)
+                }
 
                 if (currentMedia is PlayableMedia.Online) {
                     val details = resolvedDetailsCache[currentMedia.id]
@@ -659,23 +672,32 @@ class AmePlayerEngine @Inject constructor(
                     updateAudioFormatFromExo(player.audioFormat)
                 }
 
+                // 自然切歌（上一首播完自动进入下一首 / 单曲循环重复）保持无缝连续输出：
+                // 不再强制调用 player.pause() 与 1s 等候 / 淡入静音，避免切歌后音频短暂暂停而播放状态继续推进
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+                ) {
+                    interTrackWaitJob?.cancel()
+                    interTrackWaitJob = null
+                    if (isInterTrackWaiting) {
+                        isInterTrackWaiting = false
+                        _loudnessState.value = _loudnessState.value.copy(isInterTrackWaiting = false)
+                    }
+                    if (!isFadingOut && fadeJob?.isActive != true && currentFadeMultiplier < 1.0f) {
+                        applyEffectiveVolume(1.0f)
+                    }
+                    AppLogger.i(
+                        "[AME_ONLINE_PLAY]",
+                        ">>> Seamless auto-transition to '${currentMedia?.title ?: id}' (reason=$reason), keeping continuous audio output"
+                    )
+                }
+
                 onTrackChanged(currentMedia)
                 applyLoudnessNormalization(currentMedia)
                 prefetchUpcomingTracksLoudness()
                 syncIslandState()
                 if (_infinitePlayMode.value.isActive) {
                     checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
-                }
-
-                // 自然切歌（上一首播完自动进入下一首 / 单曲循环重复）时执行 1 秒曲间等候窗口
-                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
-                    reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
-                ) {
-                    if (player.playWhenReady) {
-                        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Auto-transition to '${currentMedia?.title ?: id}' (reason=$reason), pausing for 1s inter-track gap")
-                        player.pause()
-                        startInterTrackWaitAndResume(currentMedia)
-                    }
                 }
             }
 
@@ -1449,6 +1471,7 @@ class AmePlayerEngine @Inject constructor(
             ?: _playlist.value.getOrNull(idx)
         _currentIndex.value = idx
         _currentMedia.value = targetMedia
+        _currentPositionMs.value = 0L
         prepareLoudnessSync(targetMedia)
         startInterTrackWaitAndResume(targetMedia)
     }
@@ -2335,7 +2358,7 @@ class AmePlayerEngine @Inject constructor(
     override fun skipToNext() {
         ensureActive()
         if (exoPlayer.hasNextMediaItem()) {
-            transitionToTrackWithGap { exoPlayer.seekToNext() }
+            transitionToTrackWithGap { exoPlayer.seekToNextMediaItem() }
             if (_infinitePlayMode.value.isActive) {
                 checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = false)
             }
@@ -2344,18 +2367,32 @@ class AmePlayerEngine @Inject constructor(
             AppLogger.i("AME_INFINITE_PLAY", ">>> skipToNext at end of infinite queue, triggering immediate fetch & advance")
             checkAndPrefetchInfiniteQueue(autoAdvanceWhenAppended = true)
         } else if (exoPlayer.mediaItemCount > 0) {
-            transitionToTrackWithGap { exoPlayer.seekToDefaultPosition(0) }
+            val timeline = exoPlayer.currentTimeline
+            val firstIdx = if (!timeline.isEmpty) {
+                timeline.getFirstWindowIndex(exoPlayer.shuffleModeEnabled)
+                    .takeIf { it != C.INDEX_UNSET } ?: 0
+            } else {
+                0
+            }
+            transitionToTrackWithGap { exoPlayer.seekToDefaultPosition(firstIdx) }
         }
     }
 
     override fun skipToPrevious() {
         ensureActive()
-        if (exoPlayer.currentPosition > 3000) {
-            exoPlayer.seekTo(0)
-        } else if (exoPlayer.hasPreviousMediaItem()) {
-            transitionToTrackWithGap { exoPlayer.seekToPrevious() }
+        if (exoPlayer.hasPreviousMediaItem()) {
+            // 直接使用 seekToPreviousMediaItem() 切至上一曲，避免 ExoPlayer seekToPrevious()
+            // 在播放进度超过 3 秒时先回退至当前曲目开头的问题
+            transitionToTrackWithGap { exoPlayer.seekToPreviousMediaItem() }
         } else if (exoPlayer.mediaItemCount > 0) {
-            val lastIdx = (exoPlayer.mediaItemCount - 1).coerceAtLeast(0)
+            val timeline = exoPlayer.currentTimeline
+            val lastIdx = if (!timeline.isEmpty) {
+                timeline.getLastWindowIndex(exoPlayer.shuffleModeEnabled)
+                    .takeIf { it != C.INDEX_UNSET }
+                    ?: (exoPlayer.mediaItemCount - 1).coerceAtLeast(0)
+            } else {
+                (exoPlayer.mediaItemCount - 1).coerceAtLeast(0)
+            }
             transitionToTrackWithGap { exoPlayer.seekToDefaultPosition(lastIdx) }
         }
     }
@@ -2513,6 +2550,7 @@ class AmePlayerEngine @Inject constructor(
         fadeJob?.cancel()
         interTrackWaitJob?.cancel()
         prefetchLoudnessJob?.cancel()
+        persistPlaylistJob?.cancel()
         scanJob?.cancel()
         loudnessJob?.cancel()
         inflightUrlFetches.values.forEach { it.cancel() }
