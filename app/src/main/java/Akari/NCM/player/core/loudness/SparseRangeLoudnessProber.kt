@@ -52,6 +52,42 @@ object SparseRangeLoudnessProber {
         val contentType: String?
     )
 
+    /**
+     * 随机偏移字节读取抽象（用于跳过 FLAC 大尺寸 PICTURE 块、定位 MP4 尾部 moov、跳过 MP3 大尺寸 ID3v2 封面）
+     */
+    fun interface RandomAccessByteReader {
+        fun readRange(offset: Long, length: Int): ByteArray?
+    }
+
+    fun byteArrayReader(bytes: ByteArray): RandomAccessByteReader = RandomAccessByteReader { offset, length ->
+        if (offset < 0L || length <= 0 || offset >= bytes.size) return@RandomAccessByteReader null
+        val start = offset.toInt()
+        val end = min(bytes.size, start + length)
+        if (end <= start) null else bytes.copyOfRange(start, end)
+    }
+
+    fun fileReader(file: java.io.File): RandomAccessByteReader = RandomAccessByteReader { offset, length ->
+        if (offset < 0L || length <= 0 || !file.exists() || offset >= file.length()) return@RandomAccessByteReader null
+        try {
+            java.io.RandomAccessFile(file, "r").use { raf ->
+                val avail = (raf.length() - offset).coerceAtLeast(0L)
+                val toRead = min(length.toLong(), avail).toInt()
+                if (toRead <= 0) return@RandomAccessByteReader null
+                val buf = ByteArray(toRead)
+                raf.seek(offset)
+                var total = 0
+                while (total < toRead) {
+                    val n = raf.read(buf, total, toRead - total)
+                    if (n <= 0) break
+                    total += n
+                }
+                if (total == toRead) buf else if (total > 0) buf.copyOf(total) else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     // =========================================================================
     // 1. FLAC STREAMINFO + SEEKTABLE 字节映射器
     // =========================================================================
@@ -120,11 +156,22 @@ object SparseRangeLoudnessProber {
 
         companion object {
             fun parse(headerBytes: ByteArray, totalFileSize: Long): FlacHeaderIndex? {
-                if (headerBytes.size < 42) return null
-                if (headerBytes[0] != 'f'.code.toByte() ||
-                    headerBytes[1] != 'L'.code.toByte() ||
-                    headerBytes[2] != 'a'.code.toByte() ||
-                    headerBytes[3] != 'C'.code.toByte()
+                return parse(byteArrayReader(headerBytes), totalFileSize)
+            }
+
+            /**
+             * 基于随机偏移读取器完整解析 FLAC 元数据链：
+             * - 遇到超大 PICTURE 块（如参考音频中 204KB 封面）时直接跳过其字节区间，不浪费下载流量；
+             * - 继续读取后续块头（如 VORBIS_COMMENT、PADDING、或位于封面之后的 SEEKTABLE）直至 isLast=true，
+             *   确保 [audioDataStartOffset] 字节零偏差，SEEKTABLE 100% 不遗漏。
+             */
+            fun parse(reader: RandomAccessByteReader, totalFileSize: Long): FlacHeaderIndex? {
+                val magic = reader.readRange(0L, 4) ?: return null
+                if (magic.size < 4 ||
+                    magic[0] != 'f'.code.toByte() ||
+                    magic[1] != 'L'.code.toByte() ||
+                    magic[2] != 'a'.code.toByte() ||
+                    magic[3] != 'C'.code.toByte()
                 ) {
                     return null
                 }
@@ -138,61 +185,65 @@ object SparseRangeLoudnessProber {
                 var maxFrameSize = 0
                 val seekPoints = mutableListOf<FlacSeekPoint>()
                 var audioDataStart = 4L
+                var blockGuard = 0
 
-                while (pos + 4L <= headerBytes.size) {
-                    val p = pos.toInt()
-                    val headerByte = headerBytes[p].toInt() and 0xFF
+                while (pos + 4L <= totalFileSize && blockGuard++ < 128) {
+                    val blkHdr = reader.readRange(pos, 4) ?: break
+                    if (blkHdr.size < 4) break
+                    val headerByte = blkHdr[0].toInt() and 0xFF
                     val isLast = (headerByte and 0x80) != 0
                     val blockType = headerByte and 0x7F
-                    val blockLen = ((headerBytes[p + 1].toInt() and 0xFF) shl 16) or
-                        ((headerBytes[p + 2].toInt() and 0xFF) shl 8) or
-                        (headerBytes[p + 3].toInt() and 0xFF)
+                    val blockLen = ((blkHdr[1].toInt() and 0xFF) shl 16) or
+                        ((blkHdr[2].toInt() and 0xFF) shl 8) or
+                        (blkHdr[3].toInt() and 0xFF)
                     val bodyStart = pos + 4L
                     val bodyEnd = bodyStart + blockLen
+                    if (bodyEnd > totalFileSize) break
 
-                    if (blockType == 0 && blockLen >= 34 && bodyEnd <= headerBytes.size) {
-                        val b = bodyStart.toInt()
-                        minFrameSize = ((headerBytes[b + 4].toInt() and 0xFF) shl 16) or
-                            ((headerBytes[b + 5].toInt() and 0xFF) shl 8) or
-                            (headerBytes[b + 6].toInt() and 0xFF)
-                        maxFrameSize = ((headerBytes[b + 7].toInt() and 0xFF) shl 16) or
-                            ((headerBytes[b + 8].toInt() and 0xFF) shl 8) or
-                            (headerBytes[b + 9].toInt() and 0xFF)
-                        sampleRate = ((headerBytes[b + 10].toInt() and 0xFF) shl 12) or
-                            ((headerBytes[b + 11].toInt() and 0xFF) shl 4) or
-                            ((headerBytes[b + 12].toInt() and 0xFF) ushr 4)
-                        channels = (((headerBytes[b + 12].toInt() and 0xFF) ushr 1) and 0x07) + 1
-                        bitsPerSample = ((((headerBytes[b + 12].toInt() and 0x01) shl 4) or
-                            ((headerBytes[b + 13].toInt() and 0xFF) ushr 4))) + 1
-                        val high4 = (headerBytes[b + 13].toInt() and 0x0F).toLong() shl 32
-                        val low32 = (((headerBytes[b + 14].toInt() and 0xFF).toLong() shl 24) or
-                            ((headerBytes[b + 15].toInt() and 0xFF).toLong() shl 16) or
-                            ((headerBytes[b + 16].toInt() and 0xFF).toLong() shl 8) or
-                            (headerBytes[b + 17].toInt() and 0xFF).toLong())
-                        totalSamples = high4 or low32
-                    } else if (blockType == 3 && blockLen >= 18 && bodyEnd <= headerBytes.size) {
-                        val count = blockLen / 18
-                        var sPos = bodyStart.toInt()
-                        for (i in 0 until count) {
-                            val sampleNum = readLongBE(headerBytes, sPos)
-                            val streamOff = readLongBE(headerBytes, sPos + 8)
-                            val numSamples = ((headerBytes[sPos + 16].toInt() and 0xFF) shl 8) or
-                                (headerBytes[sPos + 17].toInt() and 0xFF)
-                            // 跳过 placeholder seekpoint (0xFFFFFFFFFFFFFFFF)
-                            if (sampleNum != -1L && numSamples > 0) {
-                                seekPoints.add(FlacSeekPoint(sampleNum, streamOff, numSamples))
+                    if (blockType == 0 && blockLen >= 34) {
+                        val body = reader.readRange(bodyStart, 34)
+                        if (body != null && body.size >= 18) {
+                            minFrameSize = ((body[4].toInt() and 0xFF) shl 16) or
+                                ((body[5].toInt() and 0xFF) shl 8) or
+                                (body[6].toInt() and 0xFF)
+                            maxFrameSize = ((body[7].toInt() and 0xFF) shl 16) or
+                                ((body[8].toInt() and 0xFF) shl 8) or
+                                (body[9].toInt() and 0xFF)
+                            sampleRate = ((body[10].toInt() and 0xFF) shl 12) or
+                                ((body[11].toInt() and 0xFF) shl 4) or
+                                ((body[12].toInt() and 0xFF) ushr 4)
+                            channels = (((body[12].toInt() and 0xFF) ushr 1) and 0x07) + 1
+                            bitsPerSample = ((((body[12].toInt() and 0x01) shl 4) or
+                                ((body[13].toInt() and 0xFF) ushr 4))) + 1
+                            val high4 = (body[13].toInt() and 0x0F).toLong() shl 32
+                            val low32 = (((body[14].toInt() and 0xFF).toLong() shl 24) or
+                                ((body[15].toInt() and 0xFF).toLong() shl 16) or
+                                ((body[16].toInt() and 0xFF).toLong() shl 8) or
+                                (body[17].toInt() and 0xFF).toLong())
+                            totalSamples = high4 or low32
+                        }
+                    } else if (blockType == 3 && blockLen >= 18 && blockLen <= 512 * 1024) {
+                        val body = reader.readRange(bodyStart, blockLen)
+                        if (body != null && body.size >= 18) {
+                            val count = body.size / 18
+                            var sPos = 0
+                            for (i in 0 until count) {
+                                val sampleNum = readLongBE(body, sPos)
+                                val streamOff = readLongBE(body, sPos + 8)
+                                val numSamples = ((body[sPos + 16].toInt() and 0xFF) shl 8) or
+                                    (body[sPos + 17].toInt() and 0xFF)
+                                // 跳过 placeholder seekpoint (0xFFFFFFFFFFFFFFFF)
+                                if (sampleNum != -1L && numSamples > 0) {
+                                    seekPoints.add(FlacSeekPoint(sampleNum, streamOff, numSamples))
+                                }
+                                sPos += 18
                             }
-                            sPos += 18
                         }
                     }
 
                     pos = bodyEnd
                     audioDataStart = pos
                     if (isLast) break
-                    // 若超大 PICTURE 块跨越了初始缓冲，记录已推导的精确偏移并跳出循环
-                    if (pos + 4L > headerBytes.size) {
-                        break
-                    }
                 }
 
                 if (sampleRate <= 0 || totalSamples <= 0L) return null
@@ -245,19 +296,75 @@ object SparseRangeLoudnessProber {
         }
 
         companion object {
+            private const val MAX_MOOV_BYTES = 4 * 1024 * 1024 // 4MB 安全上限
+
             fun parse(data: ByteArray, totalFileSize: Long): Mp4BoxIndex? {
                 if (data.size < 16) return null
                 // 检测 ftyp 或直接 moov 盒
                 val moovBounds = findBox(data, 0, data.size, "moov") ?: return null
-                var cursor = moovBounds.first
-                val moovEnd = moovBounds.second
+                return parseMoovPayload(data, moovBounds.first, moovBounds.second, totalFileSize)
+            }
 
-                while (cursor + 8 <= moovEnd) {
-                    val box = readBoxHeader(data, cursor, moovEnd) ?: break
+            /**
+             * 基于随机偏移读取器定位并解析 MP4 / M4A 的 moov 原子（同时兼容前置 faststart 与尾部 moov）：
+             * 逐个跳过顶层 ftyp / free / mdat 原子（仅读取 16 字节盒头），定位到 moov 后拉取完整原子并解析 stts/stsc/stco/co64/stsz。
+             */
+            fun parse(reader: RandomAccessByteReader, totalFileSize: Long): Mp4BoxIndex? {
+                if (totalFileSize < 16L) return null
+                val headProbe = reader.readRange(0L, 16) ?: return null
+                if (headProbe.size < 8) return null
+                val firstType = String(headProbe, 4, 4, Charsets.US_ASCII)
+                if (firstType != "ftyp" && firstType != "moov" && firstType != "free" && firstType != "wide" && firstType != "mdat") {
+                    return null
+                }
+
+                var pos = 0L
+                var boxGuard = 0
+                while (pos + 8L <= totalFileSize && boxGuard++ < 64) {
+                    val hdr = reader.readRange(pos, 16) ?: break
+                    if (hdr.size < 8) break
+                    val size32 = readIntBE(hdr, 0).toLong() and 0xFFFFFFFFL
+                    val type = String(hdr, 4, 4, Charsets.US_ASCII)
+                    val headerLen: Long
+                    val boxSize: Long
+                    when (size32) {
+                        0L -> {
+                            headerLen = 8L
+                            boxSize = totalFileSize - pos
+                        }
+                        1L -> {
+                            if (hdr.size < 16) break
+                            headerLen = 16L
+                            boxSize = readLongBE(hdr, 8)
+                        }
+                        else -> {
+                            headerLen = 8L
+                            boxSize = size32
+                        }
+                    }
+                    if (boxSize < headerLen) break
+                    val boxEnd = min(totalFileSize, pos + boxSize)
+                    if (type == "moov") {
+                        val payloadLen = (boxEnd - (pos + headerLen)).coerceAtLeast(0L)
+                        if (payloadLen <= 0L || payloadLen > MAX_MOOV_BYTES) return null
+                        val moovPayload = reader.readRange(pos + headerLen, payloadLen.toInt()) ?: return null
+                        return parseMoovPayload(moovPayload, 0, moovPayload.size, totalFileSize)
+                    }
+                    if (boxEnd <= pos) break
+                    pos = boxEnd
+                }
+                return null
+            }
+
+            private fun parseMoovPayload(data: ByteArray, start: Int, end: Int, totalFileSize: Long): Mp4BoxIndex? {
+                var cursor = start
+                while (cursor + 8 <= end) {
+                    val box = readBoxHeader(data, cursor, end) ?: break
                     if (box.type == "trak") {
                         val parsed = parseAudioTrack(data, box.payloadStart, box.boxEnd, totalFileSize)
                         if (parsed != null) return parsed
                     }
+                    if (box.boxEnd <= cursor) break
                     cursor = box.boxEnd
                 }
                 return null
@@ -431,7 +538,8 @@ object SparseRangeLoudnessProber {
         val sampleRate: Int,
         val averageBitrateBps: Int,
         val durationMs: Long,
-        val xingToc: ByteArray? = null
+        val xingToc: ByteArray? = null,
+        val vbriCumulativeBytes: LongArray? = null
     ) {
         fun mapWindowToByteRange(startMs: Long, endMs: Long): ByteRange {
             val maxByte = (totalFileSize - 1L).coerceAtLeast(audioDataStartOffset)
@@ -440,16 +548,28 @@ object SparseRangeLoudnessProber {
 
             fun msToByte(ms: Long): Long {
                 if (durationMs <= 0L || audioBytes <= 0L) return audioDataStartOffset
-                val percent = (ms.toDouble() / durationMs.toDouble() * 100.0).coerceIn(0.0, 100.0)
+                val ratio = (ms.toDouble() / durationMs.toDouble()).coerceIn(0.0, 1.0)
                 val toc = xingToc
-                return if (toc != null && toc.size == 100) {
-                    val idx = percent.toInt().coerceIn(0, 99)
-                    val fa = (toc[idx].toInt() and 0xFF).toDouble()
-                    val fb = if (idx < 99) (toc[idx + 1].toInt() and 0xFF).toDouble() else 256.0
-                    val fx = fa + (fb - fa) * (percent - idx)
-                    audioDataStartOffset + ((fx / 256.0) * audioBytes).toLong()
-                } else {
-                    audioDataStartOffset + ((averageBitrateBps.toLong() * ms) / 8000L)
+                val vbri = vbriCumulativeBytes
+                return when {
+                    toc != null && toc.size == 100 -> {
+                        val percent = ratio * 100.0
+                        val idx = percent.toInt().coerceIn(0, 99)
+                        val fa = (toc[idx].toInt() and 0xFF).toDouble()
+                        val fb = if (idx < 99) (toc[idx + 1].toInt() and 0xFF).toDouble() else 256.0
+                        val fx = fa + (fb - fa) * (percent - idx)
+                        audioDataStartOffset + ((fx / 256.0) * audioBytes).toLong()
+                    }
+                    vbri != null && vbri.size >= 2 -> {
+                        val scaled = ratio * (vbri.size - 1)
+                        val idx = scaled.toInt().coerceIn(0, vbri.size - 2)
+                        val frac = scaled - idx
+                        val byteOffset = vbri[idx] + ((vbri[idx + 1] - vbri[idx]) * frac).toLong()
+                        audioDataStartOffset + byteOffset
+                    }
+                    else -> {
+                        audioDataStartOffset + ((averageBitrateBps.toLong() * ms) / 8000L)
+                    }
                 }
             }
 
@@ -463,8 +583,13 @@ object SparseRangeLoudnessProber {
                 0, 32000, 40000, 48000, 56000, 64000, 80000, 96000,
                 112000, 128000, 160000, 192000, 224000, 256000, 320000, 0
             )
+            private val MPEG2_L3_BITRATES = intArrayOf(
+                0, 8000, 16000, 24000, 32000, 40000, 48000, 56000,
+                64000, 80000, 96000, 112000, 128000, 144000, 160000, 0
+            )
             private val MPEG1_SAMPLE_RATES = intArrayOf(44100, 48000, 32000, 0)
             private val MPEG2_SAMPLE_RATES = intArrayOf(22050, 24000, 16000, 0)
+            private val MPEG25_SAMPLE_RATES = intArrayOf(11025, 12000, 8000, 0)
 
             /**
              * 查找下一个有效 MP3 帧头同步偏移（跳过首个不完整帧）
@@ -490,70 +615,126 @@ object SparseRangeLoudnessProber {
             }
 
             fun parse(headerBytes: ByteArray, totalFileSize: Long): Mp3HeaderIndex? {
-                if (headerBytes.size < 16) return null
-                var offset = 0
-                // 跳过 ID3v2 标签
-                if (headerBytes[0] == 'I'.code.toByte() &&
-                    headerBytes[1] == 'D'.code.toByte() &&
-                    headerBytes[2] == '3'.code.toByte()
+                return parse(byteArrayReader(headerBytes), totalFileSize)
+            }
+
+            /**
+             * 基于随机偏移读取器解析 MP3 头部：
+             * - 自动跳过任意长度 ID3v2 标签（如 > 64KB 嵌入式专辑封面）；
+             * - 同时支持 Xing / Info TOC 与 VBRI TOC 解析，缺省时按平均比特率计算字节偏移。
+             */
+            fun parse(reader: RandomAccessByteReader, totalFileSize: Long): Mp3HeaderIndex? {
+                val head10 = reader.readRange(0L, 10) ?: return null
+                if (head10.size < 4) return null
+                var baseOffset = 0L
+                if (head10.size >= 10 &&
+                    head10[0] == 'I'.code.toByte() &&
+                    head10[1] == 'D'.code.toByte() &&
+                    head10[2] == '3'.code.toByte()
                 ) {
-                    val tagSize = ((headerBytes[6].toInt() and 0x7F) shl 21) or
-                        ((headerBytes[7].toInt() and 0x7F) shl 14) or
-                        ((headerBytes[8].toInt() and 0x7F) shl 7) or
-                        (headerBytes[9].toInt() and 0x7F)
-                    offset = 10 + tagSize
+                    val tagSize = ((head10[6].toInt() and 0x7F) shl 21) or
+                        ((head10[7].toInt() and 0x7F) shl 14) or
+                        ((head10[8].toInt() and 0x7F) shl 7) or
+                        (head10[9].toInt() and 0x7F)
+                    val hasFooter = (head10[5].toInt() and 0x10) != 0
+                    baseOffset = 10L + tagSize.toLong() + if (hasFooter) 10L else 0L
                 }
-                if (offset + 4 > headerBytes.size) return null
+                if (baseOffset + 4L > totalFileSize) return null
 
-                val syncPos = findNextMp3FrameSync(headerBytes, offset)
-                if (syncPos < 0 || syncPos + 4 > headerBytes.size) return null
+                val probeChunk = reader.readRange(baseOffset, min(8192L, totalFileSize - baseOffset).toInt()) ?: return null
+                val syncRel = findNextMp3FrameSync(probeChunk, 0)
+                if (syncRel < 0 || syncRel + 4 > probeChunk.size) return null
 
-                val b1 = headerBytes[syncPos + 1].toInt() and 0xFF
-                val b2 = headerBytes[syncPos + 2].toInt() and 0xFF
-                val b3 = headerBytes[syncPos + 3].toInt() and 0xFF
-                val isMpeg1 = ((b1 ushr 3) and 0x03) == 3
+                val b1 = probeChunk[syncRel + 1].toInt() and 0xFF
+                val b2 = probeChunk[syncRel + 2].toInt() and 0xFF
+                val b3 = probeChunk[syncRel + 3].toInt() and 0xFF
+                val versionBits = (b1 ushr 3) and 0x03
+                val isMpeg1 = versionBits == 3
                 val bitrateIdx = (b2 ushr 4) and 0x0F
                 val srIdx = (b2 ushr 2) and 0x03
                 val isMono = ((b3 ushr 6) and 0x03) == 3
 
-                val sampleRate = if (isMpeg1) MPEG1_SAMPLE_RATES[srIdx] else MPEG2_SAMPLE_RATES[srIdx]
-                val headerBitrate = MPEG1_L3_BITRATES[bitrateIdx]
+                val sampleRate = when (versionBits) {
+                    3 -> MPEG1_SAMPLE_RATES[srIdx]
+                    2 -> MPEG2_SAMPLE_RATES[srIdx]
+                    0 -> MPEG25_SAMPLE_RATES[srIdx]
+                    else -> 0
+                }
+                val headerBitrate = if (isMpeg1) MPEG1_L3_BITRATES[bitrateIdx] else MPEG2_L3_BITRATES[bitrateIdx]
                 if (sampleRate <= 0 || headerBitrate <= 0) return null
 
+                val samplesPerFrame = if (isMpeg1) 1152L else 576L
                 val sideInfoSize = when {
                     isMpeg1 && isMono -> 17
                     isMpeg1 && !isMono -> 32
                     !isMpeg1 && isMono -> 9
                     else -> 17
                 }
-                val xingPos = syncPos + 4 + sideInfoSize
+                val xingPos = syncRel + 4 + sideInfoSize
                 var xingToc: ByteArray? = null
+                var vbriCumulativeBytes: LongArray? = null
                 var durationMs = 0L
 
-                if (xingPos + 12 <= headerBytes.size) {
-                    val tag = String(headerBytes, xingPos, 4, Charsets.US_ASCII)
+                // 1. 解析 Xing / Info 头部与 100 字节 TOC
+                if (xingPos + 12 <= probeChunk.size) {
+                    val tag = String(probeChunk, xingPos, 4, Charsets.US_ASCII)
                     if (tag == "Xing" || tag == "Info") {
-                        val flags = readIntBE(headerBytes, xingPos + 4)
+                        val flags = readIntBE(probeChunk, xingPos + 4)
                         var cursor = xingPos + 8
                         var totalFrames = 0L
-                        if ((flags and 0x01) != 0 && cursor + 4 <= headerBytes.size) {
-                            totalFrames = readIntBE(headerBytes, cursor).toLong() and 0xFFFFFFFFL
+                        if ((flags and 0x01) != 0 && cursor + 4 <= probeChunk.size) {
+                            totalFrames = readIntBE(probeChunk, cursor).toLong() and 0xFFFFFFFFL
                             cursor += 4
                         }
-                        if ((flags and 0x02) != 0 && cursor + 4 <= headerBytes.size) {
+                        if ((flags and 0x02) != 0 && cursor + 4 <= probeChunk.size) {
                             cursor += 4 // total bytes
                         }
-                        if ((flags and 0x04) != 0 && cursor + 100 <= headerBytes.size) {
-                            xingToc = headerBytes.copyOfRange(cursor, cursor + 100)
+                        if ((flags and 0x04) != 0 && cursor + 100 <= probeChunk.size) {
+                            xingToc = probeChunk.copyOfRange(cursor, cursor + 100)
                         }
                         if (totalFrames > 0L) {
-                            val samplesPerFrame = if (isMpeg1) 1152L else 576L
                             durationMs = (totalFrames * samplesPerFrame * 1000L) / sampleRate
                         }
                     }
                 }
 
-                val audioDataStart = syncPos.toLong()
+                // 2. 若无 Xing/Info，解析 Fraunhofer VBRI 头部与可变字节宽度 TOC（固定位于 syncPos + 4 + 32）
+                val vbriPos = syncRel + 4 + 32
+                if (xingToc == null && vbriPos + 26 <= probeChunk.size) {
+                    val vTag = String(probeChunk, vbriPos, 4, Charsets.US_ASCII)
+                    if (vTag == "VBRI") {
+                        val totalFrames = readIntBE(probeChunk, vbriPos + 14).toLong() and 0xFFFFFFFFL
+                        val tocEntries = ((probeChunk[vbriPos + 18].toInt() and 0xFF) shl 8) or
+                            (probeChunk[vbriPos + 19].toInt() and 0xFF)
+                        val tocScale = ((probeChunk[vbriPos + 20].toInt() and 0xFF) shl 8) or
+                            (probeChunk[vbriPos + 21].toInt() and 0xFF)
+                        val entryBytes = ((probeChunk[vbriPos + 22].toInt() and 0xFF) shl 8) or
+                            (probeChunk[vbriPos + 23].toInt() and 0xFF)
+                        if (totalFrames > 0L) {
+                            durationMs = (totalFrames * samplesPerFrame * 1000L) / sampleRate
+                        }
+                        val tocStart = vbriPos + 26
+                        if (tocEntries in 1..2048 && entryBytes in 1..4 && tocScale > 0 &&
+                            tocStart + tocEntries * entryBytes <= probeChunk.size
+                        ) {
+                            val cumulative = LongArray(tocEntries + 1)
+                            var acc = 0L
+                            var cursor = tocStart
+                            for (idx in 1..tocEntries) {
+                                var delta = 0L
+                                for (b in 0 until entryBytes) {
+                                    delta = (delta shl 8) or (probeChunk[cursor + b].toInt() and 0xFF).toLong()
+                                }
+                                acc += delta * tocScale.toLong()
+                                cumulative[idx] = acc
+                                cursor += entryBytes
+                            }
+                            vbriCumulativeBytes = cumulative
+                        }
+                    }
+                }
+
+                val audioDataStart = baseOffset + syncRel.toLong()
                 val audioBytes = (totalFileSize - audioDataStart).coerceAtLeast(0L)
                 if (durationMs <= 0L && audioBytes > 0L) {
                     durationMs = (audioBytes * 8000L) / headerBitrate
@@ -570,7 +751,8 @@ object SparseRangeLoudnessProber {
                     sampleRate = sampleRate,
                     averageBitrateBps = avgBitrate,
                     durationMs = durationMs,
-                    xingToc = xingToc
+                    xingToc = xingToc,
+                    vbriCumulativeBytes = vbriCumulativeBytes
                 )
             }
         }
@@ -675,6 +857,32 @@ object SparseRangeLoudnessProber {
         }
 
         override fun getSize(): Long = totalSize
+
+        /**
+         * 构造按需读取精确区间的 RandomAccessByteReader（优先命中缓存，否则仅拉取必要头部字节，不下载无关载荷）
+         */
+        fun asRandomAccessReader(): RandomAccessByteReader = RandomAccessByteReader { offset, length ->
+            if (closed || offset < 0L || length <= 0 || offset >= totalSize) return@RandomAccessByteReader null
+            val toRead = min(length.toLong(), totalSize - offset).toInt()
+            if (toRead <= 0) return@RandomAccessByteReader null
+            val out = ByteArray(toRead)
+            var copied = 0
+            var curPos = offset
+            while (copied < toRead && !closed) {
+                val hit = readFromCacheLocked(curPos, out, copied, toRead - copied)
+                if (hit > 0) {
+                    copied += hit
+                    curPos += hit
+                } else {
+                    val fetchLen = max(4096L, (toRead - copied).toLong())
+                    val fetchEnd = min(totalSize - 1L, curPos + fetchLen - 1L)
+                    if (!fetchAndStoreRange(curPos, fetchEnd)) {
+                        return@RandomAccessByteReader if (copied > 0) out.copyOf(copied) else null
+                    }
+                }
+            }
+            if (copied == toRead) out else if (copied > 0) out.copyOf(copied) else null
+        }
 
         override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
             if (closed) throw IOException("DataSource closed")

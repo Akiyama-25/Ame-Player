@@ -66,8 +66,22 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
     @Volatile
     var usbExclusiveBypass: Boolean = false
 
+    /**
+     * 是否允许纯流式播放满 18s 后自动转为静态锁定；
+     * 在完整的三级渐进架构下由 AmePlayerEngine 关闭，确保 Tier 3 始终保持 +2 dB 保守上限与非对称 AGC，
+     * 仅在 Tier 1 元数据或 Tier 2 11×3s / 全曲扫描完成后才解锁静态模式。
+     */
+    @Volatile
+    var allowStreamingAutoLock: Boolean = true
+
     @Volatile
     var currentMediaId: String? = null
+
+    val currentGainDbLive: Float
+        get() = currentGainDb.toFloat()
+
+    val isRealtimeAgcRunning: Boolean
+        get() = agcActive && !isFinalLocked
 
     @Volatile
     var staticGainDb: Float? = null
@@ -125,7 +139,8 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
     // 全局末端 4x 过采样 True Peak Limiter (5ms look-ahead, -1.0 dBTP ceiling, 75ms release)
     private var limiterRing = FloatArray(0)
     private var limiterReqGainRing = FloatArray(0)
-    private var limiterDequeIndices = IntArray(0)
+    private var limiterDequeFrames = LongArray(0)
+    private var limiterDequeValues = FloatArray(0)
     private var limiterDequeHead = 0
     private var limiterDequeTail = 0
     private var limiterRingFrames = 0
@@ -213,7 +228,8 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         limiterRingFrames = ((sampleRate.toLong() * LIMITER_LOOKAHEAD_MS) / 1000L).toInt().coerceAtLeast(1)
         limiterRing = FloatArray(limiterRingFrames * channels)
         limiterReqGainRing = FloatArray(limiterRingFrames) { 1.0f }
-        limiterDequeIndices = IntArray(limiterRingFrames + 1)
+        limiterDequeFrames = LongArray(limiterRingFrames + 2)
+        limiterDequeValues = FloatArray(limiterRingFrames + 2)
         limiterDequeHead = 0
         limiterDequeTail = 0
         limiterWriteFrame = 0
@@ -485,7 +501,7 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         val releaseAlpha = 1.0 - exp(-1.0 / (sampleRate * AGC_RELEASE_SEC))
         val surgeAlpha = 1.0 - exp(-1.0 / (sampleRate * 0.040)) // 40ms 快速能量包络，配合 60ms Look-ahead 预判突增
         val limReleaseCoeff = exp(-1.0 / (sampleRate * LIMITER_RELEASE_SEC)).toFloat()
-        val limAttackAlpha = (1.0 - exp(-1.0 / (sampleRate * 0.0012))).toFloat()
+        val limAttackAlpha = (1.0 - exp(-1.0 / (sampleRate * 0.0008))).toFloat()
 
         val shouldAnalyzeStream = !isFinalLocked && currentMediaId != null && s1Coeffs != null && s2Coeffs != null
         val c1 = s1Coeffs
@@ -640,38 +656,37 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         }
         limiterReqGainRing[slot] = reqGain
 
-        // 维护 5ms 窗口内的最小需求增益单调递增队列
-        val dequeCap = limiterDequeIndices.size
+        // 维护严格基于绝对帧号的 O(1) 5ms 滑动窗口最小需求增益单调递增队列（无环形槽位覆写冲突）
+        val curAbsFrame = limiterAbsoluteFrame
+        limiterAbsoluteFrame = curAbsFrame + 1L
+        val dequeCap = limiterDequeFrames.size
+        val windowStartFrame = curAbsFrame - limiterRingFrames.toLong() + 1L
+        while (limiterDequeHead != limiterDequeTail && limiterDequeFrames[limiterDequeHead] < windowStartFrame) {
+            limiterDequeHead = (limiterDequeHead + 1) % dequeCap
+        }
         while (limiterDequeHead != limiterDequeTail) {
             val prevTail = if (limiterDequeTail == 0) dequeCap - 1 else limiterDequeTail - 1
-            val prevSlot = limiterDequeIndices[prevTail]
-            if (limiterReqGainRing[prevSlot] >= reqGain) {
+            if (limiterDequeValues[prevTail] >= reqGain) {
                 limiterDequeTail = prevTail
             } else {
                 break
             }
         }
-        limiterDequeIndices[limiterDequeTail] = slot
+        limiterDequeFrames[limiterDequeTail] = curAbsFrame
+        limiterDequeValues[limiterDequeTail] = reqGain
         limiterDequeTail = (limiterDequeTail + 1) % dequeCap
 
         limiterWriteFrame++
         if (limiterWriteFrame >= limiterRingFrames) limiterWriteFrame = 0
         if (limiterFilledFrames < limiterRingFrames) limiterFilledFrames++
-        limiterAbsoluteFrame++
-
-        // 剔除已滑出 5ms 窗口的旧索引（刚好等于当前刚被覆写的下一个 slot，或超过窗长）
-        val oldestValidSlot = limiterWriteFrame
-        if (outReady && limiterDequeHead != limiterDequeTail && limiterDequeIndices[limiterDequeHead] == oldestValidSlot) {
-            limiterDequeHead = (limiterDequeHead + 1) % dequeCap
-        }
 
         val windowMinGain = if (limiterDequeHead != limiterDequeTail) {
-            limiterReqGainRing[limiterDequeIndices[limiterDequeHead]]
+            limiterDequeValues[limiterDequeHead]
         } else {
             reqGain
         }
 
-        // 前瞻快压 + 75ms 慢放 + 输出端硬兜底（确保输出真峰值严格 <= -1.0 dBTP）
+        // 前瞻快压（5ms 内平滑收敛至 windowMinGain）+ 75ms 慢放 + 输出端硬兜底（确保输出 4x 真峰值严格 <= -1.0 dBTP）
         val targetLimGain = min(windowMinGain, delayedReqGain)
         limiterGain = if (targetLimGain < limiterGain) {
             val stepped = limiterGain + (targetLimGain - limiterGain) * attackAlpha
@@ -761,7 +776,7 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
             } else if (!hasEmittedMidRefine && activeCount >= STAGE1_REFINE_BLOCKS) {
                 hasEmittedMidRefine = true
                 emitStreamingEstimate(streamingBlockEnergies.toList(), isFinal = false)
-            } else if (activeCount >= STAGE2_LOCK_BLOCKS && !isFinalLocked) {
+            } else if (allowStreamingAutoLock && activeCount >= STAGE2_LOCK_BLOCKS && !isFinalLocked) {
                 emitStreamingEstimate(streamingBlockEnergies.toList(), isFinal = true)
             }
         }

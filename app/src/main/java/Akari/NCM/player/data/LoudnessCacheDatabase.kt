@@ -26,7 +26,7 @@ class LoudnessCacheDatabase(
     companion object {
         private const val TAG = "AME_LOUDNESS_DB"
         const val DB_NAME = "ame_loudness_cache.db"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
         const val MAX_CACHE_ENTRIES = 10_000
 
         private const val TABLE_NAME = "loudness_cache"
@@ -83,7 +83,16 @@ class LoudnessCacheDatabase(
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // v1 initial schema
+        if (oldVersion < 2) {
+            // v2 完成了网易云 gain (-18.0 LUFS 基准) 与分音质 vd 标度校准，清理旧版未校准云端条目以便重新获取
+            runCatching {
+                db.delete(
+                    TABLE_NAME,
+                    "$COL_SOURCE IN (?, ?)",
+                    arrayOf(LoudnessSource.NETEASE_ONLINE.name, LoudnessSource.NETEASE_VD.name)
+                )
+            }
+        }
     }
 
     @Synchronized
@@ -285,7 +294,7 @@ class LoudnessCacheDatabase(
         val src = runCatching { LoudnessSource.valueOf(srcName) }.getOrDefault(LoudnessSource.BS1770_SCAN)
 
         val isLegacyZeroPlaceholder = src == LoudnessSource.NETEASE_ONLINE &&
-            abs(lufs + 14.0f) <= 0.0015f &&
+            (abs(lufs + 14.0f) <= 0.0015f || abs(lufs + 18.0f) <= 0.0015f) &&
             abs(peak - 1.0f) <= 0.001f
         if (isLegacyZeroPlaceholder || !src.isKnownValid) return null
 

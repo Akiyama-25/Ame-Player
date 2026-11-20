@@ -163,6 +163,10 @@ class LoudnessManager @Inject constructor(
 
         memoryCache[compositeKey] = data
         putMemoryIfHigherOrEqual(mediaId, data)
+        // 仅将已验证的 Tier 1 元数据、Tier 2 稀疏/全曲扫描与中段多点初判持久化至 SQLite；
+        // 避免将 0.8s 瞬时前奏初判 / 实时 AGC 中间态固化进 P0 数据库污染后续播放。
+        val shouldPersistToDb = data.source.isFinalLocked || data.source == LoudnessSource.FAST_PREVIEW_SCAN
+        if (!shouldPersistToDb) return
         try {
             cacheDb.put(
                 sourcePlatform = sourcePlatform,
@@ -204,14 +208,20 @@ class LoudnessManager @Inject constructor(
         val validGain = gainDb?.takeIf { !it.isNaN() && !it.isInfinite() && abs(it) > MIN_VALID_ONLINE_GAIN_DB }
         val validVd = vdDb?.takeIf { !it.isNaN() && !it.isInfinite() && abs(it) > MIN_VALID_ONLINE_GAIN_DB }
 
+        val chosenReferenceLufs: Float
         val chosenGainDb: Float
         val chosenSource: LoudnessSource
         when {
             validGain != null -> {
+                // 实测验证（ハテ -8.7 LUFS gain=-9.2841、Clair De Lune -22.6 LUFS gain=+4.68）：
+                // /song/url/v1 返回的 gain 参考基准为 -18.0 LUFS (ReplayGain 2.0 / BS.1770)
+                chosenReferenceLufs = NcmApi.NETEASE_GAIN_REFERENCE_LUFS
                 chosenGainDb = validGain
                 chosenSource = LoudnessSource.NETEASE_ONLINE
             }
             validVd != null -> {
+                // NcmApi.normalizeNeteaseVdToDb 已将 l/m/h/sq/hr/sk 及 je/jm/db 统一校准至 -14.0 LUFS 基准
+                chosenReferenceLufs = NcmApi.NETEASE_VD_REFERENCE_LUFS
                 chosenGainDb = validVd
                 chosenSource = LoudnessSource.NETEASE_VD
             }
@@ -229,8 +239,7 @@ class LoudnessManager @Inject constructor(
             return existing
         }
 
-        // 网易云音乐云端 gain / vd 参考基准为 -14.0 LUFS
-        val integrated = (-14.0f - chosenGainDb).coerceIn(-70.0f, 0.0f)
+        val integrated = (chosenReferenceLufs - chosenGainDb).coerceIn(-70.0f, 0.0f)
         val safePeak = peak?.takeIf { !it.isNaN() && !it.isInfinite() && it > 0.0001f } ?: 1.0f
         val data = LoudnessData(
             integratedLufs = integrated,

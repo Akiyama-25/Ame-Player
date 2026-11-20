@@ -605,4 +605,68 @@ class LoudnessAudioProcessorTest {
             measuredTruePeak <= 0.905f
         )
     }
+
+    @Test
+    fun `Tier3模拟参考音频ハテ10秒轻前奏骤升11LU爆发时严控正增益上限且全程不超负1dBTP`() {
+        val processor = LoudnessAudioProcessor()
+        processor.allowStreamingAutoLock = false
+        processor.isEnabled = true
+        processor.targetLufs = -14.0f
+        processor.peakLimitEnabled = true
+
+        val sr = 48000
+        processor.configure(AudioFormat(sr, 2, C.ENCODING_PCM_FLOAT))
+        processor.flush()
+        processor.resetForTrack("hate_dynamic_jump", null)
+
+        // 1. 模拟 10 秒安静前奏 (~-19.5 LUFS, amp ≈ 0.106)
+        val introFrames = sr * 10
+        val introBuf = ByteBuffer.allocateDirect(introFrames * 8).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until introFrames) {
+            val s = (0.106 * kotlin.math.sin(2.0 * kotlin.math.PI * 1000.0 * i / sr)).toFloat()
+            introBuf.putFloat(s)
+            introBuf.putFloat(s)
+        }
+        introBuf.flip()
+        processor.queueInput(introBuf)
+
+        // 前奏期间保守正向增益绝对不得超过 +2.0 dB (线性乘数 <= 1.259)
+        assertTrue(
+            "Tier 3 安静前奏正向增益不得超过 +2.0 dB，实际: ${processor.currentGainDbLive} dB",
+            processor.currentGainDbLive <= 2.05f
+        )
+        assertFalse("关闭 18s 盲锁时 Tier 3 不得在未知后文前锁定静态模式", processor.isFinalLocked)
+
+        // 2. 第 11 秒骤升 +12 LU 至极限高潮 (~-7.5 LUFS，含采样点间过冲 > +0.6 dBTP)
+        val burstFrames = sr * 2
+        val burstBuf = ByteBuffer.allocateDirect(burstFrames * 8).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until burstFrames) {
+            val s = if ((i / 2) % 2 == 0) 0.90f else -0.90f
+            burstBuf.putFloat(s)
+            burstBuf.putFloat(s)
+        }
+        burstBuf.flip()
+        processor.queueInput(burstBuf)
+
+        val out = processor.output
+        out.order(ByteOrder.LITTLE_ENDIAN)
+        val outL = FloatArray(burstFrames)
+        val outR = FloatArray(burstFrames)
+        for (i in 0 until burstFrames) {
+            outL[i] = out.float
+            outR[i] = out.float
+        }
+
+        // 前瞻非对称 AGC 应在 2 秒爆发期内迅速压低增益（至少衰减到 -4 dB 以下）
+        assertTrue(
+            "骤升爆发后 Tier 3 快压应迅速将增益压至 <= -4.0 dB，实际: ${processor.currentGainDbLive} dB",
+            processor.currentGainDbLive <= -4.0f
+        )
+        // 全程（包含爆发瞬间首帧）4x 真峰值严控在 -1.0 dBTP 附近不削波炸耳
+        val burstTruePeak = Akari.NCM.player.core.loudness.EbuR128Calculator.measureTruePeak4x(outL, outR)
+        assertTrue(
+            "骤升爆发全程 4x 过采样真峰值必须 <= 0.905 (-0.87 dBTP)，实际: $burstTruePeak",
+            burstTruePeak <= 0.905f
+        )
+    }
 }

@@ -331,29 +331,24 @@ class EbuR128CalculatorTest {
         assertTrue("参考音频文件应存在于工作区", refFile != null)
 
         val totalSize = refFile!!.length()
-        val headerBuf = ByteArray(65536)
-        refFile.inputStream().use { ins ->
-            var read = 0
-            while (read < headerBuf.size) {
-                val n = ins.read(headerBuf, read, headerBuf.size - read)
-                if (n <= 0) break
-                read += n
-            }
-        }
-
-        val flacIndex = SparseRangeLoudnessProber.FlacHeaderIndex.parse(headerBuf, totalSize)
+        val flacIndex = SparseRangeLoudnessProber.FlacHeaderIndex.parse(
+            SparseRangeLoudnessProber.fileReader(refFile),
+            totalSize
+        )
         assertTrue("应成功解析参考 FLAC 的 STREAMINFO 与 SEEKTABLE", flacIndex != null)
         assertEquals(48000, flacIndex!!.sampleRate)
         assertEquals(2, flacIndex.channels)
         assertEquals(16, flacIndex.bitsPerSample)
         assertTrue("总时长应约为 173.4s，实际: ${flacIndex.durationMs}", flacIndex.durationMs in 173_000L..174_000L)
-        assertTrue("应解析到 SEEKTABLE 定位点", flacIndex.seekPoints.size >= 50)
+        assertEquals("应跳过 204KB PICTURE 块并精确解析至音频帧起始偏移 211079", 211_079L, flacIndex.audioDataStartOffset)
+        assertEquals("应完整解析 87 个 SEEKTABLE 定位点", 87, flacIndex.seekPoints.size)
 
         val windows = EbuR128Calculator.planSparseSampleWindows(flacIndex.durationMs)
         var totalPlannedBytes = 0L
         var prevStart = -1L
         for (w in windows) {
             val byteRange = flacIndex.mapWindowToByteRange(w.startMs, w.endMs)
+            assertTrue("字节区段起点必须 >= 精确音频帧起始偏移 211079", byteRange.start >= 211_079L)
             assertTrue("字节区段长度必须 > 0", byteRange.endInclusive > byteRange.start)
             assertTrue("各稀疏片段起始字节偏移应单调递增", byteRange.start >= prevStart)
             prevStart = byteRange.start
@@ -361,6 +356,138 @@ class EbuR128CalculatorTest {
         }
         val trafficRatio = totalPlannedBytes.toDouble() / totalSize.toDouble()
         assertTrue("11×3s 稀疏拉取流量占比应显著低于完整文件 (期望 < 35%，实际 ${(trafficRatio * 100).toInt()}%)", trafficRatio < 0.35)
+    }
+
+    @Test
+    fun `测试MP4尾部moov定位与stts_stsc_stco_stsz字节区间映射`() {
+        fun putIntBE(out: java.io.ByteArrayOutputStream, v: Int) {
+            out.write((v ushr 24) and 0xFF)
+            out.write((v ushr 16) and 0xFF)
+            out.write((v ushr 8) and 0xFF)
+            out.write(v and 0xFF)
+        }
+        fun box(type: String, payload: ByteArray): ByteArray {
+            val out = java.io.ByteArrayOutputStream()
+            putIntBE(out, 8 + payload.size)
+            out.write(type.toByteArray(Charsets.US_ASCII))
+            out.write(payload)
+            return out.toByteArray()
+        }
+
+        // 构造含 10 个 1 秒样本的最小音轨 moov（总时长 10s，位于 120KB mdat 尾部之后）
+        val mdatStart = 24L
+        val mdatSize = 120_000
+        val hdlrPayload = ByteArray(16).also {
+            "soun".toByteArray(Charsets.US_ASCII).copyInto(it, 8)
+        }
+        val mdhdPayload = java.io.ByteArrayOutputStream().apply {
+            write(ByteArray(12)) // version=0, flags, creation, mod
+            putIntBE(this, 1000) // timescale = 1000
+            putIntBE(this, 10_000) // duration = 10s
+        }.toByteArray()
+        val sttsPayload = java.io.ByteArrayOutputStream().apply {
+            putIntBE(this, 0) // version/flags
+            putIntBE(this, 1) // entryCount
+            putIntBE(this, 10) // sampleCount
+            putIntBE(this, 1000) // sampleDelta (1s)
+        }.toByteArray()
+        val stscPayload = java.io.ByteArrayOutputStream().apply {
+            putIntBE(this, 0)
+            putIntBE(this, 1) // 1 entry
+            putIntBE(this, 1) // firstChunk
+            putIntBE(this, 1) // samplesPerChunk
+            putIntBE(this, 1) // sampleDescIdx
+        }.toByteArray()
+        val stszPayload = java.io.ByteArrayOutputStream().apply {
+            putIntBE(this, 0)
+            putIntBE(this, 10_000) // uniform sample size = 10KB
+            putIntBE(this, 10) // 10 samples
+        }.toByteArray()
+        val stcoPayload = java.io.ByteArrayOutputStream().apply {
+            putIntBE(this, 0)
+            putIntBE(this, 10)
+            for (i in 0 until 10) {
+                putIntBE(this, (mdatStart + 8 + i * 10_000).toInt())
+            }
+        }.toByteArray()
+
+        val stbl = box("stbl", box("stts", sttsPayload) + box("stsc", stscPayload) + box("stsz", stszPayload) + box("stco", stcoPayload))
+        val minf = box("minf", stbl)
+        val mdia = box("mdia", box("hdlr", hdlrPayload) + box("mdhd", mdhdPayload) + minf)
+        val trak = box("trak", mdia)
+        val moov = box("moov", trak)
+
+        val ftyp = box("ftyp", ByteArray(16))
+        val mdat = box("mdat", ByteArray(mdatSize - 8))
+        val fullMp4 = ftyp + mdat + moov
+
+        val index = SparseRangeLoudnessProber.Mp4BoxIndex.parse(
+            SparseRangeLoudnessProber.byteArrayReader(fullMp4),
+            fullMp4.size.toLong()
+        )
+        assertTrue("应跨越 120KB mdat 成功解析尾部 moov", index != null)
+        assertEquals(10_000L, index!!.durationMs)
+        val rangeMid = index.mapWindowToByteRange(4_000L, 7_000L)
+        assertEquals(mdatStart + 8 + 4 * 10_000, rangeMid.start)
+        assertTrue("映射区间应精确覆盖目标样本", rangeMid.endInclusive > rangeMid.start)
+    }
+
+    @Test
+    fun `测试MP3大尺寸ID3v2跳过与VBRI_TOC解析映射`() {
+        // 构造含 80KB ID3v2（大于 64KB 初始探测窗）+ 合法 MPEG1 Layer3 帧头 + Fraunhofer VBRI TOC 的虚拟 MP3
+        val id3PayloadSize = 80_000
+        val audioStart = 10 + id3PayloadSize
+        val totalSize = (audioStart + 1_000_000).toLong()
+        val headChunk = ByteArray(512)
+        // MPEG1 Layer3 128kbps 44.1kHz stereo frame header: FF FB 90 00
+        headChunk[0] = 0xFF.toByte()
+        headChunk[1] = 0xFB.toByte()
+        headChunk[2] = 0x90.toByte()
+        headChunk[3] = 0x00.toByte()
+        // VBRI header at offset 4 + 32 = 36
+        val v = 36
+        "VBRI".toByteArray(Charsets.US_ASCII).copyInto(headChunk, v)
+        // totalFrames at v+14 = 3828 (~100s at 44100Hz, 1152 samples/frame)
+        val frames = 3828
+        headChunk[v + 14] = ((frames ushr 24) and 0xFF).toByte()
+        headChunk[v + 15] = ((frames ushr 16) and 0xFF).toByte()
+        headChunk[v + 16] = ((frames ushr 8) and 0xFF).toByte()
+        headChunk[v + 17] = (frames and 0xFF).toByte()
+        // tocEntries = 4, tocScale = 1, entryBytes = 2, framesPerEntry = 957
+        headChunk[v + 18] = 0; headChunk[v + 19] = 4
+        headChunk[v + 20] = 0; headChunk[v + 21] = 1
+        headChunk[v + 22] = 0; headChunk[v + 23] = 2
+        // 4 entries of 25000 bytes each (100KB audio increments in TOC)
+        for (i in 0 until 4) {
+            val delta = 25000
+            headChunk[v + 26 + i * 2] = ((delta ushr 8) and 0xFF).toByte()
+            headChunk[v + 26 + i * 2 + 1] = (delta and 0xFF).toByte()
+        }
+
+        val id3Header = ByteArray(10)
+        "ID3".toByteArray(Charsets.US_ASCII).copyInto(id3Header, 0)
+        id3Header[3] = 3
+        id3Header[6] = ((id3PayloadSize ushr 21) and 0x7F).toByte()
+        id3Header[7] = ((id3PayloadSize ushr 14) and 0x7F).toByte()
+        id3Header[8] = ((id3PayloadSize ushr 7) and 0x7F).toByte()
+        id3Header[9] = (id3PayloadSize and 0x7F).toByte()
+
+        val reader = SparseRangeLoudnessProber.RandomAccessByteReader { offset, length ->
+            when {
+                offset == 0L -> id3Header.copyOfRange(0, minOf(length, id3Header.size))
+                offset == audioStart.toLong() -> headChunk.copyOfRange(0, minOf(length, headChunk.size))
+                else -> null
+            }
+        }
+
+        val mp3Idx = SparseRangeLoudnessProber.Mp3HeaderIndex.parse(reader, totalSize)
+        assertTrue("应跳过 80KB ID3v2 并成功解析 VBRI TOC", mp3Idx != null)
+        assertEquals(audioStart.toLong(), mp3Idx!!.audioDataStartOffset)
+        assertEquals(44100, mp3Idx.sampleRate)
+        assertTrue("应解析到 VBRI 累积字节表", mp3Idx.vbriCumulativeBytes != null && mp3Idx.vbriCumulativeBytes!!.size == 5)
+        assertTrue("VBRI 时长应约为 100s，实际: ${mp3Idx.durationMs}", mp3Idx.durationMs in 99_000L..101_000L)
+        val midRange = mp3Idx.mapWindowToByteRange(50_000L, 53_000L)
+        assertTrue("50% 位置映射偏移应围绕 audioStart + 50000 附近", midRange.start in (audioStart + 40_000L)..(audioStart + 55_000L))
     }
 
     @Test

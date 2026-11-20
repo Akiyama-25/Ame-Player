@@ -111,7 +111,11 @@ class AmePlayerEngine @Inject constructor(
     val islandManager = IslandLiveNotificationManager(context)
     private val lyricsManager = LyricsManager(context, ncmApi)
     val loudnessManager = LoudnessManager(context, ncmApi)
-    val loudnessAudioProcessor = LoudnessAudioProcessor()
+    val loudnessAudioProcessor = LoudnessAudioProcessor().apply {
+        // 完整三级架构下，Tier 3 保持保守正增益上限 + Look-ahead 非对称 AGC + Freeze Gate，
+        // 仅当 Tier 1 元数据或 Tier 2 11×3s / 全曲扫描完成时通过 handoffToStaticGain 锁定静态增益。
+        allowStreamingAutoLock = false
+    }
     var usbAudioSink: com.decent.usbaudio.UsbAudioSink? = null
 
     private val _loudnessState = MutableStateFlow(
@@ -814,6 +818,27 @@ class AmePlayerEngine @Inject constructor(
                     }
                     val lyricChanged = updateCurrentLyricForPosition(pos)
                     islandTickCounter++
+                    if (islandTickCounter % 5 == 0 &&
+                        ThemePrefs.volumeNormalizationEnabled &&
+                        !isUsbBitPerfectActive() &&
+                        loudnessAudioProcessor.isRealtimeAgcRunning &&
+                        currentMedia != null &&
+                        loudnessAudioProcessor.currentMediaId == currentMedia.id
+                    ) {
+                        val liveDb = loudnessAudioProcessor.currentGainDbLive
+                        val curState = _loudnessState.value
+                        if (kotlin.math.abs(curState.appliedGainDb - liveDb) >= 0.1f) {
+                            _loudnessState.value = curState.copy(
+                                appliedGainDb = liveDb,
+                                linearMultiplier = loudnessAudioProcessor.currentMultiplier,
+                                source = if (curState.source == LoudnessSource.DEFAULT_FALLBACK) {
+                                    LoudnessSource.REALTIME_AGC
+                                } else {
+                                    curState.source
+                                }
+                            )
+                        }
+                    }
                     if (isLiveIslandEnabled && (lyricChanged || islandTickCounter >= 20)) {
                         islandTickCounter = 0
                         syncIslandState()
@@ -1005,6 +1030,21 @@ class AmePlayerEngine @Inject constructor(
 
     private var scanJob: Job? = null
 
+    @Volatile
+    private var activeTier2ScanMediaId: String? = null
+
+    private fun resolveLocalFileSignature(media: PlayableMedia.LocalNcm): String {
+        val bytes = runCatching {
+            val uri = Uri.parse(media.uri)
+            if (uri.scheme == "content") {
+                context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
+            } else {
+                File(uri.path ?: media.uri).length()
+            }
+        }.getOrDefault(0L)
+        return if (bytes > 0L) "size:$bytes" else ""
+    }
+
     /**
      * 统一下载/解析在线曲目 URL 详情并自动去重并发请求
      */
@@ -1066,10 +1106,12 @@ class AmePlayerEngine @Inject constructor(
             usbExclusiveBypass = false
         )
         val details = resolvedDetailsCache[media.id]
+        val qLevel = if (media is PlayableMedia.LocalNcm) "local" else details?.level.orEmpty()
+        val fileSig = if (media is PlayableMedia.LocalNcm) resolveLocalFileSignature(media) else details?.fileSignature.orEmpty()
         val cached = loudnessManager.getCachedLoudnessSync(
             media = media,
-            qualityLevel = details?.level.orEmpty(),
-            fileSignature = details?.fileSignature.orEmpty()
+            qualityLevel = qLevel,
+            fileSignature = fileSig
         )
         if (cached != null) {
             loudnessAudioProcessor.resetForTrack(media.id, cached)
@@ -1093,8 +1135,13 @@ class AmePlayerEngine @Inject constructor(
      * - 若服务端不支持 HTTP Range 或失败，无缝交由 Tier 3 Look-ahead 非对称 AGC + Freeze Gate 兜底。
      */
     private fun scanTrackLoudnessTier2(media: PlayableMedia, deferForFirstFrame: Boolean) {
+        if (scanJob?.isActive == true && activeTier2ScanMediaId == media.id) {
+            return
+        }
         scanJob?.cancel()
+        activeTier2ScanMediaId = media.id
         scanJob = scope.launch(Dispatchers.IO) {
+            try {
             if (isUsbBitPerfectActive()) return@launch
 
             val platform: String
@@ -1104,6 +1151,7 @@ class AmePlayerEngine @Inject constructor(
                 is PlayableMedia.LocalNcm -> {
                     platform = LoudnessManager.PLATFORM_LOCAL
                     qualityLevel = "local"
+                    fileSignature = resolveLocalFileSignature(media)
                     media.uri
                 }
                 is PlayableMedia.Online -> {
@@ -1141,9 +1189,21 @@ class AmePlayerEngine @Inject constructor(
 
             if (dataSource.isNullOrBlank() || !isActive || loudnessAudioProcessor.isFinalLocked) return@launch
 
-            // 在线首帧缓冲让步：避免探测并发请求与 ExoPlayer 抢占首帧起播带宽
+            // 在线首帧缓冲优先策略（改善计划 §4.1）：优先保证播放缓冲区前 5 秒下载完成，
+            // 再以 3–4 并发 HTTP Range 请求拉取其余稀疏切片，避免阻塞首帧起播（最长等待 2.5s 防卡死）。
             if (deferForFirstFrame && media is PlayableMedia.Online) {
-                delay(350L)
+                val waitStart = SystemClock.elapsedRealtime()
+                while (isActive && SystemClock.elapsedRealtime() - waitStart < 2_500L) {
+                    val hasInitialBuffer = withContext(Dispatchers.Main) {
+                        if (_currentMedia.value?.id != media.id) return@withContext true
+                        val bufferedAhead = (exoPlayer.bufferedPosition - exoPlayer.currentPosition).coerceAtLeast(0L)
+                        val dur = exoPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0L } ?: 0L
+                        val targetAhead = if (dur in 1L..5_000L) (dur * 8 / 10).coerceAtLeast(1_000L) else 5_000L
+                        bufferedAhead >= targetAhead || exoPlayer.playbackState == Player.STATE_ENDED
+                    }
+                    if (hasInitialBuffer) break
+                    delay(120L)
+                }
             }
             if (!isActive || loudnessAudioProcessor.isFinalLocked || isUsbBitPerfectActive()) return@launch
 
@@ -1283,6 +1343,11 @@ class AmePlayerEngine @Inject constructor(
                 }
                 AppLogger.i("[AME_LOUDNESS]", "Tier 2 sparse range unavailable for '${media.title}', staying on Tier 3 Look-ahead AGC + Freeze Gate")
             }
+            } finally {
+                if (activeTier2ScanMediaId == media.id) {
+                    activeTier2ScanMediaId = null
+                }
+            }
         }
     }
 
@@ -1340,10 +1405,12 @@ class AmePlayerEngine @Inject constructor(
         loudnessJob?.cancel()
         loudnessJob = scope.launch {
             val details = resolvedDetailsCache[media.id]
+            val qLevel = if (media is PlayableMedia.LocalNcm) "local" else details?.level.orEmpty()
+            val fileSig = if (media is PlayableMedia.LocalNcm) resolveLocalFileSignature(media) else details?.fileSignature.orEmpty()
             val loudnessData = loudnessManager.getLoudness(
                 media = media,
-                qualityLevel = details?.level.orEmpty(),
-                fileSignature = details?.fileSignature.orEmpty()
+                qualityLevel = qLevel,
+                fileSignature = fileSig
             )
 
             if (loudnessData != null && loudnessData.source != LoudnessSource.DEFAULT_FALLBACK) {
@@ -1423,10 +1490,17 @@ class AmePlayerEngine @Inject constructor(
                         isInterTrackWaiting = isInterTrackWaiting
                     )
                 } else {
+                    val alreadyArmedTier3 = loudnessAudioProcessor.currentMediaId == media.id &&
+                        loudnessAudioProcessor.isRealtimeAgcRunning
+                    if (!alreadyArmedTier3) {
+                        loudnessAudioProcessor.resetForTrack(media.id, null)
+                    }
                     _loudnessState.value = LoudnessNormalizationState(
                         isEnabled = true,
                         targetLufs = targetLufs,
                         currentMediaTitle = media.title,
+                        appliedGainDb = if (alreadyArmedTier3) loudnessAudioProcessor.currentGainDbLive else 0f,
+                        linearMultiplier = if (alreadyArmedTier3) loudnessAudioProcessor.currentMultiplier else 1f,
                         isNegativeGainOnly = negativeGainOnly,
                         isBypassedForUsbExclusive = false,
                         source = LoudnessSource.REALTIME_AGC,
@@ -1435,7 +1509,6 @@ class AmePlayerEngine @Inject constructor(
                         prefetchedTotalCount = upcomingPrefetchedTotalCount,
                         isInterTrackWaiting = isInterTrackWaiting
                     )
-                    loudnessAudioProcessor.resetForTrack(media.id, null)
                 }
                 AppLogger.i("[AME_LOUDNESS]", "P0/Tier 1 miss for '${media.title}', launching Tier 2 11x3s sparse scan with Tier 3 Look-ahead AGC active")
                 scanTrackLoudnessTier2(media, deferForFirstFrame = media is PlayableMedia.Online)
@@ -1562,7 +1635,8 @@ class AmePlayerEngine @Inject constructor(
                             mediaId = track.id,
                             data = sparse,
                             sourcePlatform = LoudnessManager.PLATFORM_LOCAL,
-                            qualityLevel = "local"
+                            qualityLevel = "local",
+                            fileSignature = resolveLocalFileSignature(track)
                         )
                         resolved = sparse
                     }

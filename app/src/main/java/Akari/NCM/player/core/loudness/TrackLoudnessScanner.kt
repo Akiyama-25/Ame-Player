@@ -60,12 +60,14 @@ object TrackLoudnessScanner {
                 totalSize = probe.totalSize,
                 initialHeaderBytes = probe.initialBytes
             )
-            flacIndex = SparseRangeLoudnessProber.FlacHeaderIndex.parse(probe.initialBytes, probe.totalSize)
+            // 使用随机偏移读取器完整解析容器索引：自动跳过 FLAC 大封面、定位 MP4 尾部 moov、跳过 MP3 大 ID3v2 与 VBRI TOC
+            val headerReader = rangeSource.asRandomAccessReader()
+            flacIndex = SparseRangeLoudnessProber.FlacHeaderIndex.parse(headerReader, probe.totalSize)
             if (flacIndex == null) {
-                mp4Index = SparseRangeLoudnessProber.Mp4BoxIndex.parse(probe.initialBytes, probe.totalSize)
+                mp4Index = SparseRangeLoudnessProber.Mp4BoxIndex.parse(headerReader, probe.totalSize)
             }
             if (flacIndex == null && mp4Index == null) {
-                mp3Index = SparseRangeLoudnessProber.Mp3HeaderIndex.parse(probe.initialBytes, probe.totalSize)
+                mp3Index = SparseRangeLoudnessProber.Mp3HeaderIndex.parse(headerReader, probe.totalSize)
             }
         }
 
@@ -247,7 +249,8 @@ object TrackLoudnessScanner {
         shouldSeek: Boolean
     ): EbuR128Calculator.SparseSegmentResult? {
         if (shouldSeek) {
-            extractor.seekTo(window.startMs * 1000L, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+            // 使用 SEEK_TO_PREVIOUS_SYNC 确保定位不晚于窗口起点（防止尾段 Seg 10 向前跳越导致不足 3s）
+            extractor.seekTo(window.startMs * 1000L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             codec.flush()
         }
 
@@ -261,6 +264,9 @@ object TrackLoudnessScanner {
         } else {
             ((window.durationMs.coerceAtLeast(1000L) * sampleRate) / 1000L).toInt()
         }
+        val windowStartUs = if (shouldSeek && !window.isFullTrack) window.startMs * 1000L else 0L
+        val maxPreSkipFrames = sampleRate * 4 // 最多跳过 4s 预同步音频，防止异常时间戳死循环
+        var skippedPreFrames = 0
 
         var kL1_x1 = 0.0; var kL1_x2 = 0.0; var kL1_y1 = 0.0; var kL1_y2 = 0.0
         var kL2_x1 = 0.0; var kL2_x2 = 0.0; var kL2_y1 = 0.0; var kL2_y2 = 0.0
@@ -321,7 +327,23 @@ object TrackLoudnessScanner {
                     val bytesPerFrame = bytesPerSample * channelCount
                     val frames = if (bytesPerFrame > 0) bufferInfo.size / bytesPerFrame else 0
 
-                    for (f in 0 until frames) {
+                    // 若 SEEK_TO_PREVIOUS_SYNC 落在窗口起点之前，跳过窗口起点前的多余同步帧，使 3s 切片与目标时间窗精准对齐
+                    var startFrameInBuf = 0
+                    if (windowStartUs > 0L && decodedFrames == 0 && skippedPreFrames < maxPreSkipFrames) {
+                        val ptsUs = bufferInfo.presentationTimeUs
+                        if (ptsUs >= 0L && ptsUs < windowStartUs) {
+                            val deltaUs = windowStartUs - ptsUs
+                            val skipNeeded = ((deltaUs * sampleRate) / 1_000_000L).toInt()
+                            val allowedSkip = (maxPreSkipFrames - skippedPreFrames).coerceAtLeast(0)
+                            startFrameInBuf = minOf(frames, skipNeeded, allowedSkip)
+                            if (startFrameInBuf > 0) {
+                                outputBuffer.position(outputBuffer.position() + startFrameInBuf * bytesPerFrame)
+                                skippedPreFrames += startFrameInBuf
+                            }
+                        }
+                    }
+
+                    for (f in startFrameInBuf until frames) {
                         val sL = readNormalizedSample(outputBuffer, currentPcmEncoding)
                         val sR = if (channelCount > 1) readNormalizedSample(outputBuffer, currentPcmEncoding) else sL
                         for (c in 2 until channelCount) skipSample(outputBuffer, currentPcmEncoding)
@@ -379,31 +401,55 @@ object TrackLoudnessScanner {
     }
 
     /**
-     * 极速多点跳帧抽样扫描（兼容预热缓存与快速中段初判：20% / 40% / 60% / 80%）
+     * 极速多点跳帧抽样扫描（兼容预热缓存与快速中段初判：20% / 40% / 60% / 80%，在线直链优先复用 HTTP Range 并发拉取）
      */
     suspend fun scanTrackFast(
         context: Context,
         dataSource: String,
         headers: Map<String, String>? = null
     ): LoudnessData? = withContext(Dispatchers.IO) {
+        val isHttp = dataSource.startsWith("http://") || dataSource.startsWith("https://")
+        var rangeSource: SparseRangeLoudnessProber.SparseHttpRangeMediaDataSource? = null
+        var flacIndex: SparseRangeLoudnessProber.FlacHeaderIndex? = null
+        var mp4Index: SparseRangeLoudnessProber.Mp4BoxIndex? = null
+        var mp3Index: SparseRangeLoudnessProber.Mp3HeaderIndex? = null
+
+        if (isHttp) {
+            val probe = SparseRangeLoudnessProber.probeHttpRangeSupport(dataSource, headers)
+            if (probe != null) {
+                rangeSource = SparseRangeLoudnessProber.SparseHttpRangeMediaDataSource(
+                    url = dataSource,
+                    headers = headers,
+                    totalSize = probe.totalSize,
+                    initialHeaderBytes = probe.initialBytes
+                )
+                val reader = rangeSource.asRandomAccessReader()
+                flacIndex = SparseRangeLoudnessProber.FlacHeaderIndex.parse(reader, probe.totalSize)
+                if (flacIndex == null) mp4Index = SparseRangeLoudnessProber.Mp4BoxIndex.parse(reader, probe.totalSize)
+                if (flacIndex == null && mp4Index == null) mp3Index = SparseRangeLoudnessProber.Mp3HeaderIndex.parse(reader, probe.totalSize)
+            }
+        }
+
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         var mediaDataSource: MediaDataSource? = null
         try {
-            mediaDataSource = configureExtractor(context, extractor, dataSource, headers)
+            if (rangeSource != null) {
+                extractor.setDataSource(rangeSource)
+            } else {
+                mediaDataSource = configureExtractor(context, extractor, dataSource, headers)
+            }
             val selection = selectAudioTrack(extractor) ?: return@withContext null
             val audioFormat = selection.second
             val mime = audioFormat.getString(MediaFormat.KEY_MIME) ?: return@withContext null
-
-            codec = MediaCodec.createDecoderByType(mime)
-            codec.configure(audioFormat, null, null, 0)
-            codec.start()
 
             val sampleRate = getSampleRate(audioFormat)
             val channelCount = getChannelCount(audioFormat)
             val durationMs = if (audioFormat.containsKey(MediaFormat.KEY_DURATION)) {
                 audioFormat.getLong(MediaFormat.KEY_DURATION) / 1000L
-            } else 0L
+            } else {
+                flacIndex?.durationMs ?: mp4Index?.durationMs ?: mp3Index?.durationMs ?: 0L
+            }
 
             val windows = if (durationMs >= 12_000L) {
                 listOf(0.20f, 0.40f, 0.60f, 0.80f).mapIndexed { idx, ratio ->
@@ -413,6 +459,31 @@ object TrackLoudnessScanner {
             } else {
                 listOf(EbuR128Calculator.SparseSampleWindow(0, 0f, 0L, durationMs.coerceAtLeast(2400L)))
             }
+
+            val activeRangeSource = rangeSource
+            val activeFlacIndex = flacIndex
+            val activeMp4Index = mp4Index
+            val activeMp3Index = mp3Index
+            if (activeRangeSource != null && durationMs > 0L) {
+                val ranges = windows.map { w ->
+                    when {
+                        activeFlacIndex != null -> activeFlacIndex.mapWindowToByteRange(w.startMs, w.endMs)
+                        activeMp4Index != null -> activeMp4Index.mapWindowToByteRange(w.startMs, w.endMs)
+                        activeMp3Index != null -> activeMp3Index.mapWindowToByteRange(w.startMs, w.endMs)
+                        else -> {
+                            val size = activeRangeSource.size
+                            val s = ((size.toDouble() * w.startMs / durationMs).toLong() - 16_384L).coerceIn(0L, size - 1L)
+                            val e = ((size.toDouble() * w.endMs / durationMs).toLong() + 24_576L).coerceIn(s, size - 1L)
+                            SparseRangeLoudnessProber.ByteRange(s, e)
+                        }
+                    }
+                }
+                activeRangeSource.prefetchRangesConcurrently(ranges, maxConcurrency = 4)
+            }
+
+            codec = MediaCodec.createDecoderByType(mime)
+            codec.configure(audioFormat, null, null, 0)
+            codec.start()
 
             val segments = mutableListOf<EbuR128Calculator.SparseSegmentResult>()
             for ((idx, w) in windows.withIndex()) {
@@ -445,6 +516,7 @@ object TrackLoudnessScanner {
             runCatching { codec?.release() }
             runCatching { extractor.release() }
             runCatching { mediaDataSource?.close() }
+            runCatching { rangeSource?.close() }
         }
     }
 

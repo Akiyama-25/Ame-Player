@@ -68,6 +68,9 @@ class NcmApi @Inject constructor(
         coerceInputValues = true
     }
 
+    // 歌单/搜索/详情接口返回的基础档位 vd 机会缓存 (songId -> (field -> rawVd))，零额外请求提升 Tier 1 命中率
+    private val songDetailVdCache = java.util.concurrent.ConcurrentHashMap<String, Map<String, Double>>()
+
     @OptIn(DelicateCoroutinesApi::class)
     private val client = HttpClient(OkHttp) {
         install(ContentNegotiation) {
@@ -559,10 +562,19 @@ class NcmApi @Inject constructor(
     }
 
     /**
-     * 联合查询 /song/music/detail 与 /v3/song/detail 获取指定音质档位的 Volume Delta (dB)
+     * 联合查询 /song/music/detail 与 /v3/song/detail 获取指定音质档位的规范化 Volume Delta (dB, -14.0 LUFS 基准)
      */
     suspend fun getSongQualityVd(songId: String, qualityLevel: String?): Float? {
         val idLong = songId.toLongOrNull() ?: return null
+        val qLower = qualityLevel?.lowercase()
+        val needsHighSpecEndpoint = qLower in setOf("jymaster", "jyeffect", "sky", "dolby")
+
+        // 0. 优先尝试从已加载的歌曲详情缓存零延迟命中基础档位 vd (l/m/h/sq/hr)
+        if (!needsHighSpecEndpoint) {
+            songDetailVdCache[songId]?.let { cachedMap ->
+                extractQualityVdFromRawMap(cachedMap, qualityLevel)?.let { return it }
+            }
+        }
 
         // 1. 优先查询歌曲音质详情 (/song/music/detail，覆盖 l/m/h/sq/hr/je/jm/sk/db 高规格档位)
         if (isDirectMode) {
@@ -591,6 +603,11 @@ class NcmApi @Inject constructor(
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 AppLogger.d("AME_LOUDNESS", "Proxy /song/music/detail vd fetch failed for $songId: ${e.message}")
             }
+        }
+
+        // 若高规格接口未命中，再检查本地详情缓存兜底
+        songDetailVdCache[songId]?.let { cachedMap ->
+            extractQualityVdFromRawMap(cachedMap, qualityLevel)?.let { return it }
         }
 
         // 2. 回退查询歌曲基础详情 (/v3/song/detail，覆盖 l/m/h/sq/hr)
@@ -628,6 +645,11 @@ class NcmApi @Inject constructor(
 
     companion object {
         const val MIN_VALID_GAIN_OR_VD_DB = 0.001
+        const val NETEASE_GAIN_REFERENCE_LUFS = -18.0f     // 实测 /song/url/v1 gain 及 je/jm/db.vd 基准 (-18.0 LUFS)
+        const val NETEASE_VD_REFERENCE_LUFS = -14.0f       // 实测 l/m/h/sq/hr/sk.vd 基准 (-14.0 LUFS)
+
+        private val SCALED_1E4_VD_FIELDS = setOf("l", "m", "h", "sq", "hr")
+        private val REF_MINUS_18_VD_FIELDS = setOf("je", "jm", "db")
 
         /**
          * 校验网易云返回的 gain / vd 是否有效（剔除 null、NaN、0、-0.0、-2.0E-4 等 |v| <= 0.001 占位值）
@@ -638,23 +660,53 @@ class NcmApi @Inject constructor(
         }
 
         /**
-         * 校准网易云接口 vd（Volume Delta）字段至标准 dB 标度：
-         * - 标准接口返回直接 dB 浮点值（如 -4.62）
-         * - 兼容部分旧接口/封装返回的 1e-4 dB 整型（如 -46200）或 1e-2 dB（如 -462）
-         * - 过滤绝对值 <= 0.001 的未扫描占位值（0 / -0.0 / -2.0E-4）
+         * 校准网易云接口 vd（Volume Delta）字段至规范化 dB 标度（统一换算到 -14.0 LUFS 基准）：
+         * 实测验证结果（rN Frums - ハテ -8.7/-8.3 LUFS, The truth that you leave -11.6 LUFS, Clair De Lune -22.6 LUFS）：
+         * - 基础音质字段 (l/m/h/sq/hr)：网易云官方返回 1e-4 dB 缩放整型（如 -56512.0 = -5.6512 dB，+86800.0 = +8.6800 dB），
+         *   基准响度为 -14.0 LUFS（integratedLufs = -14.0 - vd/10000）；兼容代理/测试传入的浮点 dB 小数（如 -4.15）。
+         * - 高规格字段 (je/jm/db)：网易云返回直接浮点 dB（如 jm.vd = -9.6721），基准响度为 -18.0 LUFS，
+         *   统一折算为 -14.0 LUFS 基准（vdDbRef14 = rawDb + 4.0）以消除与基础档位之间的 4.0 dB 基准差。
+         * - 沉浸环绕声字段 (sk)：返回直接浮点 dB，基准响度为 -14.0 LUFS。
+         * - 严格过滤绝对值 <= 0.001 dB 的未扫描占位值（含 0 / -0.0 / -2.0E-4 / 整型 -2.0 等）。
          */
-        fun normalizeNeteaseVdToDb(rawVd: Double?): Float? {
-            if (!isValidNeteaseGainOrVd(rawVd)) return null
-            val v = rawVd!!
-            val calibrated = when {
-                kotlin.math.abs(v) <= 35.0 -> v
-                kotlin.math.abs(v) > 1000.0 && kotlin.math.abs(v) <= 350_000.0 -> v / 10_000.0
-                kotlin.math.abs(v) > 35.0 && kotlin.math.abs(v) <= 1000.0 -> v / 100.0
+        fun normalizeNeteaseVdToDb(rawVd: Double?, field: String? = null): Float? {
+            if (rawVd == null || rawVd.isNaN() || rawVd.isInfinite()) return null
+            val fieldLower = field?.lowercase()
+            val isScaledField = fieldLower == null || fieldLower in SCALED_1E4_VD_FIELDS
+            val isPureInteger = rawVd == kotlin.math.floor(rawVd)
+
+            val rawDb = when {
+                kotlin.math.abs(rawVd) > 35.0 && kotlin.math.abs(rawVd) <= 350_000.0 -> rawVd / 10_000.0
+                kotlin.math.abs(rawVd) <= 35.0 -> {
+                    // 对 l/m/h/sq/hr 字段，网易云官方永远返回 1e-4 dB 整型（如 -2.0 代表 -0.0002 dB 占位值）；
+                    // 仅保留非整型浮点 dB（兼容代理/已转换数据），整型小值按 1e-4 dB 缩放到 dB 后再做 > 0.001 过滤。
+                    if (fieldLower != null && isScaledField && isPureInteger) {
+                        rawVd / 10_000.0
+                    } else {
+                        rawVd
+                    }
+                }
                 else -> return null
             }
-            if (kotlin.math.abs(calibrated) <= MIN_VALID_GAIN_OR_VD_DB) return null
-            if (calibrated < -30.0 || calibrated > 24.0) return null
-            return calibrated.toFloat()
+
+            if (kotlin.math.abs(rawDb) <= MIN_VALID_GAIN_OR_VD_DB) return null
+
+            // 将 -18.0 LUFS 基准的 je/jm/db 统一折算为 -14.0 LUFS 基准（-14 - (rawDb + 4) == -18 - rawDb）
+            val ref14Db = if (fieldLower != null && fieldLower in REF_MINUS_18_VD_FIELDS) {
+                rawDb + (NETEASE_VD_REFERENCE_LUFS - NETEASE_GAIN_REFERENCE_LUFS).toDouble()
+            } else {
+                rawDb
+            }
+            if (ref14Db < -30.0 || ref14Db > 24.0) return null
+            return ref14Db.toFloat()
+        }
+
+        /**
+         * 直接将指定音质档位的原始 vd 校准为真实综合响度 (LUFS)
+         */
+        fun calibrateNeteaseVdToLufs(rawVd: Double?, field: String? = null): Float? {
+            val ref14Db = normalizeNeteaseVdToDb(rawVd, field) ?: return null
+            return (NETEASE_VD_REFERENCE_LUFS - ref14Db).coerceIn(-70.0f, 0.0f)
         }
 
         /**
@@ -701,7 +753,16 @@ class NcmApi @Inject constructor(
             for (field in qualityFieldSearchOrder(qualityLevel)) {
                 val qualityObj = container[field]?.asJsonObjectOrNull ?: continue
                 val rawVd = qualityObj["vd"]?.jsonPrimitive?.doubleOrNull
-                val normalized = normalizeNeteaseVdToDb(rawVd)
+                val normalized = normalizeNeteaseVdToDb(rawVd, field)
+                if (normalized != null) return normalized
+            }
+            return null
+        }
+
+        private fun extractQualityVdFromRawMap(rawVds: Map<String, Double>, qualityLevel: String?): Float? {
+            for (field in qualityFieldSearchOrder(qualityLevel)) {
+                val rawVd = rawVds[field] ?: continue
+                val normalized = normalizeNeteaseVdToDb(rawVd, field)
                 if (normalized != null) return normalized
             }
             return null
@@ -2041,6 +2102,21 @@ data class NcmPlaylistDetailResult(
                 ?: json["alias"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.firstOrNull { it.isNotBlank() }
             val transName = json["tns"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.firstOrNull { it.isNotBlank() }
                 ?: json["transNames"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }?.firstOrNull { it.isNotBlank() }
+
+            // 机会缓存歌曲详情中携带的分音质 vd（l/m/h/sq/hr），供 Tier 1 零额外请求复用
+            val vds = HashMap<String, Double>(5)
+            for (f in listOf("l", "m", "h", "sq", "hr")) {
+                val vdVal = json[f]?.asJsonObjectOrNull?.get("vd")?.jsonPrimitive?.doubleOrNull
+                if (vdVal != null && !vdVal.isNaN() && !vdVal.isInfinite()) {
+                    vds[f] = vdVal
+                }
+            }
+            if (vds.isNotEmpty()) {
+                if (songDetailVdCache.size > 4000) {
+                    songDetailVdCache.clear()
+                }
+                songDetailVdCache[id.toString()] = vds
+            }
 
             PlayableMedia.Online(
                 id = id.toString(),
