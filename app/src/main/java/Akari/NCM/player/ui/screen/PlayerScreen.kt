@@ -9,7 +9,9 @@ import Akari.NCM.player.core.PlayerState
 import Akari.NCM.player.core.RepeatMode
 import Akari.NCM.player.data.LyricResult
 import Akari.NCM.player.data.LyricsManager
+import Akari.NCM.player.data.PlaylistManager
 import Akari.NCM.player.data.ThemePrefs
+import android.widget.Toast
 import Akari.NCM.player.ui.component.AdaptiveButtonGroup
 import Akari.NCM.player.ui.component.AdaptiveButtonSpec
 import Akari.NCM.player.ui.component.ExpressiveButtonStyle
@@ -119,12 +121,14 @@ fun PlayerScreen(
     playerState: PlayerState,
     playerController: PlayerController,
     ncmApi: NcmApi,
+    playlistManager: PlaylistManager? = null,
     onBackClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit,
     onToggleQueueClick: () -> Unit
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
+    val effectivePlaylistManager = playlistManager ?: remember(context) { PlaylistManager(context) }
     val rawTrack by playerState.currentMedia.collectAsState()
     val (activeTrack, palette, blurCoverBg) = rememberPlayerCoverPalette(rawTrack)
 
@@ -151,14 +155,13 @@ fun PlayerScreen(
 
     var showPlayQueuePage by remember { mutableStateOf(false) }
     var showQuickFunctionsPage by remember { mutableStateOf(false) }
-    var showPlaybackStatusDialog by remember { mutableStateOf(false) }
-    var showUsbExclusiveDialog by remember { mutableStateOf(false) }
 
     val isUsbExclusiveMode by playerState.isUsbExclusiveMode.collectAsState()
     val connectedUsbDeviceName by playerState.connectedUsbDeviceName.collectAsState()
     val usbUacVersion by playerState.usbUacVersion.collectAsState()
     val usbDeviceDetails by playerState.usbDeviceDetails.collectAsState()
     val loudnessState by playerState.loudnessState.collectAsState()
+    val audioFormatInfo by playerState.audioFormatInfo.collectAsState()
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
@@ -260,7 +263,7 @@ fun PlayerScreen(
             )
         }
 
-        // ── 4. 快捷功能抽屉视图（与播放列表统一样式）───────────────────────
+        // ── 4. 快捷功能抽屉视图（与播放列表统一样式，内联二级菜单展开）───────────────────────
         if (isLandscape && showQuickFunctionsPage) {
             ModalBottomSheet(
                 onDismissRequest = { showQuickFunctionsPage = false },
@@ -286,23 +289,29 @@ fun PlayerScreen(
                         modifier = Modifier.verticalScroll(rememberScrollState())
                     ) {
                         QuickFunctionsCards(
+                            displayedTrack = activeTrack,
+                            audioFormatInfo = audioFormatInfo,
                             isUsbExclusive = isUsbExclusiveMode,
                             usbDeviceName = connectedUsbDeviceName,
                             uacVersion = usbUacVersion,
                             usbDeviceDetails = usbDeviceDetails,
                             loudnessState = loudnessState,
                             blurCoverBg = blurCoverBg,
+                            playlistManager = effectivePlaylistManager,
+                            ncmApi = ncmApi,
                             palette = palette,
-                            onDismiss = { showQuickFunctionsPage = false },
-                            onShowStatusClick = { showPlaybackStatusDialog = true },
-                            onShowUsbExclusiveClick = { showUsbExclusiveDialog = true },
+                            onToggleUsbExclusive = { enabled ->
+                                playerController.setUsbExclusiveMode(enabled)
+                            },
+                            onRequestUsbPermission = {
+                                playerController.requestUsbPermission()
+                            },
                             onToggleLoudness = {
                                 playerController.setVolumeNormalizationEnabled(!loudnessState.isEnabled)
                             },
                             onToggleBlurCoverBg = {
                                 ThemePrefs.playerBlurCoverBackground = !blurCoverBg
-                            },
-                            onAddToPlaylistClick = onAddToPlaylistClick
+                            }
                         )
                     }
                 }
@@ -316,60 +325,34 @@ fun PlayerScreen(
         ) {
             SaltQuickFunctionsView(
                 displayedTrack = activeTrack,
+                audioFormatInfo = audioFormatInfo,
                 isUsbExclusive = isUsbExclusiveMode,
                 usbDeviceName = connectedUsbDeviceName,
                 uacVersion = usbUacVersion,
                 usbDeviceDetails = usbDeviceDetails,
                 loudnessState = loudnessState,
                 blurCoverBg = blurCoverBg,
+                playlistManager = effectivePlaylistManager,
+                ncmApi = ncmApi,
                 palette = palette,
                 currentPullOffsetPx = { quickFunctionsDrawerState.pullOffsetPx.value },
                 onPullDelta = quickFunctionsDrawerState.onPullDelta,
                 onPullSettle = quickFunctionsDrawerState.onPullSettle,
                 onDismiss = { showQuickFunctionsPage = false },
-                onShowStatusClick = { showPlaybackStatusDialog = true },
-                onShowUsbExclusiveClick = { showUsbExclusiveDialog = true },
+                onToggleUsbExclusive = { enabled ->
+                    playerController.setUsbExclusiveMode(enabled)
+                },
+                onRequestUsbPermission = {
+                    playerController.requestUsbPermission()
+                },
                 onToggleLoudness = {
                     playerController.setVolumeNormalizationEnabled(!loudnessState.isEnabled)
                 },
                 onToggleBlurCoverBg = {
                     ThemePrefs.playerBlurCoverBackground = !blurCoverBg
-                },
-                onAddToPlaylistClick = onAddToPlaylistClick
+                }
             )
         }
-    }
-
-    if (showUsbExclusiveDialog) {
-        UsbExclusiveDialog(
-            isExclusive = isUsbExclusiveMode,
-            usbDeviceName = connectedUsbDeviceName,
-            uacVersion = usbUacVersion,
-            deviceDetails = usbDeviceDetails,
-            palette = palette,
-            onToggleExclusive = { enabled ->
-                playerController.setUsbExclusiveMode(enabled)
-            },
-            onRequestPermission = {
-                playerController.requestUsbPermission()
-            },
-            onDismiss = { showUsbExclusiveDialog = false }
-        )
-    }
-
-    if (showPlaybackStatusDialog) {
-        val audioFormatInfo by playerState.audioFormatInfo.collectAsState()
-        PlaybackStatusDialog(
-            media = activeTrack,
-            audioFormatInfo = audioFormatInfo,
-            isUsbExclusive = isUsbExclusiveMode,
-            usbDeviceName = connectedUsbDeviceName,
-            uacVersion = usbUacVersion,
-            hasUsbPermission = usbDeviceDetails?.hasPermission == true,
-            loudnessState = loudnessState,
-            palette = palette,
-            onDismiss = { showPlaybackStatusDialog = false }
-        )
     }
 }
 
@@ -1656,25 +1639,33 @@ private fun formatTime(millis: Long): String {
     return String.format("%02d:%02d", totalSeconds / 60, totalSeconds % 60)
 }
 
+private enum class QuickSubMenu {
+    PLAYBACK_STATUS,
+    USB_EXCLUSIVE,
+    ADD_TO_PLAYLIST
+}
+
 @Composable
 private fun SaltQuickFunctionsView(
     displayedTrack: PlayableMedia?,
+    audioFormatInfo: Akari.NCM.player.core.AudioFormatInfo,
     isUsbExclusive: Boolean,
     usbDeviceName: String?,
     uacVersion: String? = null,
     usbDeviceDetails: Akari.NCM.player.core.UsbDeviceDetails? = null,
     loudnessState: Akari.NCM.player.core.loudness.LoudnessNormalizationState,
     blurCoverBg: Boolean,
+    playlistManager: PlaylistManager,
+    ncmApi: NcmApi,
     palette: PlayerExpressivePalette,
     currentPullOffsetPx: () -> Float = { 0f },
     onPullDelta: (Float) -> Unit = {},
     onPullSettle: (Float) -> Unit = {},
     onDismiss: () -> Unit,
-    onShowStatusClick: () -> Unit,
-    onShowUsbExclusiveClick: () -> Unit,
+    onToggleUsbExclusive: (Boolean) -> Unit,
+    onRequestUsbPermission: () -> Unit,
     onToggleLoudness: () -> Unit,
-    onToggleBlurCoverBg: () -> Unit,
-    onAddToPlaylistClick: () -> Unit
+    onToggleBlurCoverBg: () -> Unit
 ) {
     val coverUrl = displayedTrack?.coverUrl
     val headerDraggableState = rememberDraggableState { deltaY ->
@@ -1809,7 +1800,7 @@ private fun SaltQuickFunctionsView(
                 Spacer(Modifier.height(8.dp))
             }
 
-            // ── 快捷功能卡片列表 ───────────────────────────────────────────────
+            // ── 快捷功能卡片列表（支持内联二级菜单展开）─────────────────────────────────
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier
@@ -1820,19 +1811,21 @@ private fun SaltQuickFunctionsView(
                     .padding(vertical = 4.dp)
             ) {
                 QuickFunctionsCards(
+                    displayedTrack = displayedTrack,
+                    audioFormatInfo = audioFormatInfo,
                     isUsbExclusive = isUsbExclusive,
                     usbDeviceName = usbDeviceName,
                     uacVersion = uacVersion,
                     usbDeviceDetails = usbDeviceDetails,
                     loudnessState = loudnessState,
                     blurCoverBg = blurCoverBg,
+                    playlistManager = playlistManager,
+                    ncmApi = ncmApi,
                     palette = palette,
-                    onDismiss = onDismiss,
-                    onShowStatusClick = onShowStatusClick,
-                    onShowUsbExclusiveClick = onShowUsbExclusiveClick,
+                    onToggleUsbExclusive = onToggleUsbExclusive,
+                    onRequestUsbPermission = onRequestUsbPermission,
                     onToggleLoudness = onToggleLoudness,
-                    onToggleBlurCoverBg = onToggleBlurCoverBg,
-                    onAddToPlaylistClick = onAddToPlaylistClick
+                    onToggleBlurCoverBg = onToggleBlurCoverBg
                 )
             }
 
@@ -1877,26 +1870,34 @@ private fun SaltQuickFunctionsView(
 
 @Composable
 private fun QuickFunctionsCards(
+    displayedTrack: PlayableMedia?,
+    audioFormatInfo: Akari.NCM.player.core.AudioFormatInfo,
     isUsbExclusive: Boolean,
     usbDeviceName: String?,
     uacVersion: String? = null,
     usbDeviceDetails: Akari.NCM.player.core.UsbDeviceDetails? = null,
     loudnessState: Akari.NCM.player.core.loudness.LoudnessNormalizationState,
     blurCoverBg: Boolean,
+    playlistManager: PlaylistManager,
+    ncmApi: NcmApi,
     palette: PlayerExpressivePalette,
-    onDismiss: () -> Unit,
-    onShowStatusClick: () -> Unit,
-    onShowUsbExclusiveClick: () -> Unit,
+    onToggleUsbExclusive: (Boolean) -> Unit,
+    onRequestUsbPermission: () -> Unit,
     onToggleLoudness: () -> Unit,
-    onToggleBlurCoverBg: () -> Unit,
-    onAddToPlaylistClick: () -> Unit
+    onToggleBlurCoverBg: () -> Unit
 ) {
     val surfaceColor = palette.cardSurfaceColor.copy(alpha = 0.85f)
     val cardBorder = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.35f))
     val cardText = ensureContrast(palette.primaryTextColor, palette.cardSurfaceColor, 4.5f)
     val cardSubText = ensureContrast(palette.secondaryTextColor, palette.cardSurfaceColor, 3.8f)
 
-    // ── 播放页模糊封面背景切换开关 ──
+    var expandedSubMenu by remember { mutableStateOf<QuickSubMenu?>(null) }
+
+    fun toggleSubMenu(target: QuickSubMenu) {
+        expandedSubMenu = if (expandedSubMenu == target) null else target
+    }
+
+    // ── 1. 播放页模糊封面背景切换开关 ──
     Surface(
         onClick = onToggleBlurCoverBg,
         shape = RoundedCornerShape(16.dp),
@@ -1907,7 +1908,10 @@ private fun QuickFunctionsCards(
             .testTag("quick_toggle_blur_cover_bg")
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -1934,126 +1938,203 @@ private fun QuickFunctionsCards(
         }
     }
 
+    // ── 2. 播放状态（二级菜单内联展开）──
+    val isStatusExpanded = expandedSubMenu == QuickSubMenu.PLAYBACK_STATUS
+    val statusChevronRotation by animateFloatAsState(
+        targetValue = if (isStatusExpanded) 180f else 0f,
+        animationSpec = tween(220),
+        label = "StatusChevronRotation"
+    )
     Surface(
-        onClick = {
-            onDismiss()
-            onShowStatusClick()
-        },
         shape = RoundedCornerShape(16.dp),
         color = surfaceColor,
         border = cardBorder,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text("播放状态", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
-                Text("查看实际比特率、采样率、位深及存储信息", fontSize = 12.sp, color = cardSubText)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .clickable { toggleSubMenu(QuickSubMenu.PLAYBACK_STATUS) }
+                    .padding(14.dp)
+                    .testTag("quick_card_playback_status"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("播放状态", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                    Text("查看实际比特率、采样率、位深、响度与通道信息", fontSize = 12.sp, color = cardSubText)
+                }
+                Icon(
+                    imageVector = Icons.Rounded.ExpandMore,
+                    contentDescription = if (isStatusExpanded) "收起播放状态" else "展开播放状态",
+                    tint = cardSubText,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer { rotationZ = statusChevronRotation }
+                )
+            }
+
+            AnimatedVisibility(
+                visible = isStatusExpanded,
+                enter = expandVertically(tween(240)) + fadeIn(tween(200)),
+                exit = shrinkVertically(tween(200)) + fadeOut(tween(160))
+            ) {
+                PlaybackStatusSubMenuContent(
+                    media = displayedTrack,
+                    audioFormatInfo = audioFormatInfo,
+                    isUsbExclusive = isUsbExclusive,
+                    usbDeviceName = usbDeviceName,
+                    uacVersion = uacVersion,
+                    hasUsbPermission = usbDeviceDetails?.hasPermission == true,
+                    loudnessState = loudnessState,
+                    cardText = cardText,
+                    cardSubText = cardSubText
+                )
             }
         }
     }
 
+    // ── 3. 独占 USB 通道（二级菜单内联展开 + 重写说明）──
     val hasDevice = !usbDeviceName.isNullOrBlank()
     val hasUsbPermission = usbDeviceDetails?.hasPermission == true
     val isUsbExclusiveActive = isUsbExclusive && hasDevice && hasUsbPermission
     val isUsbPendingPermission = isUsbExclusive && hasDevice && !hasUsbPermission
+    val isUsbExpanded = expandedSubMenu == QuickSubMenu.USB_EXCLUSIVE
+    val usbChevronRotation by animateFloatAsState(
+        targetValue = if (isUsbExpanded) 180f else 0f,
+        animationSpec = tween(220),
+        label = "UsbChevronRotation"
+    )
 
     Surface(
-        onClick = {
-            onDismiss()
-            onShowUsbExclusiveClick()
-        },
         shape = RoundedCornerShape(16.dp),
         color = surfaceColor,
         border = cardBorder,
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("quick_card_usb_exclusive")
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Rounded.Usb, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("独占 USB 通道", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
-                    when {
-                        isUsbExclusiveActive -> {
-                            Spacer(Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = palette.primaryButtonContainer
-                            ) {
-                                Text(
-                                    "ON",
-                                    fontSize = 10.sp,
-                                    color = palette.onPrimaryButton,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                                )
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .clickable { toggleSubMenu(QuickSubMenu.USB_EXCLUSIVE) }
+                    .padding(14.dp)
+                    .testTag("quick_card_usb_exclusive"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.Usb, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("独占 USB 通道", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                        when {
+                            isUsbExclusiveActive -> {
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = palette.primaryButtonContainer
+                                ) {
+                                    Text(
+                                        "ON",
+                                        fontSize = 10.sp,
+                                        color = palette.onPrimaryButton,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                    )
+                                }
                             }
-                        }
-                        isUsbPendingPermission -> {
-                            Spacer(Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = palette.secondaryButtonContainer,
-                                modifier = Modifier.testTag("badge_usb_pending_permission")
-                            ) {
-                                Text(
-                                    "待授权",
-                                    fontSize = 10.sp,
-                                    color = palette.onSecondaryButton,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                                )
+                            isUsbPendingPermission -> {
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = palette.secondaryButtonContainer,
+                                    modifier = Modifier.testTag("badge_usb_pending_permission")
+                                ) {
+                                    Text(
+                                        "待授权",
+                                        fontSize = 10.sp,
+                                        color = palette.onSecondaryButton,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                    )
+                                }
                             }
-                        }
-                        isUsbExclusive -> {
-                            Spacer(Modifier.width(6.dp))
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = palette.secondaryButtonContainer
-                            ) {
-                                Text(
-                                    "待接入",
-                                    fontSize = 10.sp,
-                                    color = palette.onSecondaryButton,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                                )
+                            isUsbExclusive -> {
+                                Spacer(Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = palette.secondaryButtonContainer
+                                ) {
+                                    Text(
+                                        "待接入",
+                                        fontSize = 10.sp,
+                                        color = palette.onSecondaryButton,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                    )
+                                }
                             }
                         }
                     }
+                    val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""
+                    val subText = when {
+                        isUsbExclusiveActive -> "已独占绑定: $usbDeviceName$uacTag"
+                        isUsbPendingPermission -> "待授权: 请确认 USB 权限以启用独占 ($usbDeviceName$uacTag)"
+                        isUsbExclusive -> "开关已开启 · 等待 USB DAC 声卡接入"
+                        hasDevice -> "已检测到: $usbDeviceName$uacTag (点击展开配置)"
+                        else -> "绕过系统混音与重采样，直连 USB DAC 实现无损源码输出"
+                    }
+                    Text(subText, fontSize = 12.sp, color = cardSubText, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""
-                val subText = when {
-                    isUsbExclusiveActive -> "已独占绑定: $usbDeviceName$uacTag"
-                    isUsbPendingPermission -> "待授权: 请确认 USB 权限以启用独占 ($usbDeviceName$uacTag)"
-                    isUsbExclusive -> "开关已开启 · 等待 USB 声卡接入"
-                    hasDevice -> "已检测到: $usbDeviceName$uacTag (点击配置)"
-                    else -> "基于方案三实现硬件接口排他独占与直通"
-                }
-                Text(subText, fontSize = 12.sp, color = cardSubText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    imageVector = Icons.Rounded.ExpandMore,
+                    contentDescription = if (isUsbExpanded) "收起独占 USB 通道" else "展开独占 USB 通道",
+                    tint = cardSubText,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer { rotationZ = usbChevronRotation }
+                )
+            }
+
+            AnimatedVisibility(
+                visible = isUsbExpanded,
+                enter = expandVertically(tween(240)) + fadeIn(tween(200)),
+                exit = shrinkVertically(tween(200)) + fadeOut(tween(160))
+            ) {
+                UsbExclusiveSubMenuContent(
+                    isExclusive = isUsbExclusive,
+                    usbDeviceName = usbDeviceName,
+                    uacVersion = uacVersion,
+                    deviceDetails = usbDeviceDetails,
+                    palette = palette,
+                    cardText = cardText,
+                    cardSubText = cardSubText,
+                    onToggleExclusive = onToggleUsbExclusive,
+                    onRequestPermission = onRequestUsbPermission
+                )
             }
         }
     }
 
+    // ── 4. 音量均衡快捷开关 ──
     Surface(
         onClick = onToggleLoudness,
         shape = RoundedCornerShape(16.dp),
         color = surfaceColor,
         border = cardBorder,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("quick_card_loudness")
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(Icons.Rounded.GraphicEq, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
@@ -2061,7 +2142,21 @@ private fun QuickFunctionsCards(
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("音量均衡 (EBU R128)", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
-                    if (loudnessState.isEnabled) {
+                    if (loudnessState.isBypassedForUsbExclusive) {
+                        Spacer(Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = palette.secondaryButtonContainer
+                        ) {
+                            Text(
+                                "已旁路",
+                                fontSize = 10.sp,
+                                color = palette.onSecondaryButton,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                            )
+                        }
+                    } else if (loudnessState.isEnabled) {
                         Spacer(Modifier.width(6.dp))
                         Surface(
                             shape = RoundedCornerShape(6.dp),
@@ -2088,40 +2183,74 @@ private fun QuickFunctionsCards(
         }
     }
 
+    // ── 5. 添加到歌单（二级菜单内联展开）──
+    val isPlaylistExpanded = expandedSubMenu == QuickSubMenu.ADD_TO_PLAYLIST
+    val playlistChevronRotation by animateFloatAsState(
+        targetValue = if (isPlaylistExpanded) 180f else 0f,
+        animationSpec = tween(220),
+        label = "PlaylistChevronRotation"
+    )
     Surface(
-        onClick = {
-            onDismiss()
-            onAddToPlaylistClick()
-        },
         shape = RoundedCornerShape(16.dp),
         color = surfaceColor,
         border = cardBorder,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text("添加到歌单", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
-                Text("将当前歌曲添加至自定义本地或云端歌单", fontSize = 12.sp, color = cardSubText)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .clickable { toggleSubMenu(QuickSubMenu.ADD_TO_PLAYLIST) }
+                    .padding(14.dp)
+                    .testTag("quick_card_add_to_playlist"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Rounded.PlaylistAdd, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("添加到歌单", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = cardText)
+                    Text("将当前歌曲添加至自定义本地或云端歌单", fontSize = 12.sp, color = cardSubText)
+                }
+                Icon(
+                    imageVector = Icons.Rounded.ExpandMore,
+                    contentDescription = if (isPlaylistExpanded) "收起添加到歌单" else "展开添加到歌单",
+                    tint = cardSubText,
+                    modifier = Modifier
+                        .size(22.dp)
+                        .graphicsLayer { rotationZ = playlistChevronRotation }
+                )
+            }
+
+            AnimatedVisibility(
+                visible = isPlaylistExpanded,
+                enter = expandVertically(tween(240)) + fadeIn(tween(200)),
+                exit = shrinkVertically(tween(200)) + fadeOut(tween(160))
+            ) {
+                AddToPlaylistSubMenuContent(
+                    song = displayedTrack,
+                    playlistManager = playlistManager,
+                    ncmApi = ncmApi,
+                    palette = palette,
+                    cardText = cardText,
+                    cardSubText = cardSubText
+                )
             }
         }
     }
 }
 
 @Composable
-private fun UsbExclusiveDialog(
+private fun UsbExclusiveSubMenuContent(
     isExclusive: Boolean,
     usbDeviceName: String?,
     uacVersion: String?,
     deviceDetails: Akari.NCM.player.core.UsbDeviceDetails?,
     palette: PlayerExpressivePalette,
+    cardText: Color,
+    cardSubText: Color,
     onToggleExclusive: (Boolean) -> Unit,
-    onRequestPermission: () -> Unit,
-    onDismiss: () -> Unit
+    onRequestPermission: () -> Unit
 ) {
     val hasDevice = !usbDeviceName.isNullOrBlank()
     val hasPermission = deviceDetails?.hasPermission == true
@@ -2129,199 +2258,179 @@ private fun UsbExclusiveDialog(
     val isPendingPermission = isExclusive && hasDevice && !hasPermission
     val isUac2 = uacVersion?.contains("2.0") == true
     val isUac3 = uacVersion?.contains("3.0") == true
-    val cardText = ensureContrast(palette.primaryTextColor, palette.cardSurfaceColor, 4.5f)
-    val cardSubText = ensureContrast(palette.secondaryTextColor, palette.cardSurfaceColor, 3.8f)
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            AdaptiveButtonGroup(
-                buttons = listOf(
-                    AdaptiveButtonSpec(
-                        text = "完成",
-                        onClick = onDismiss,
-                        style = ExpressiveButtonStyle.FILLED,
-                        containerColor = palette.primaryButtonContainer,
-                        contentColor = palette.onPrimaryButton
+    Column(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, end = 14.dp, bottom = 14.dp)
+            .testTag("quick_submenu_usb_exclusive")
+    ) {
+        HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
+
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("启用 USB 硬件独占", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = cardText)
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        when {
+                            isPendingPermission -> "待授权 · 尚未获得 USB 访问权限，独占尚未生效"
+                            isExclusiveActive -> "已启用 · 已绕过系统混音直连 USB DAC，自动旁路音量均衡 DSP"
+                            hasDevice -> "直接接管 USB DAC 输出通道，绕过系统混音与重采样；开启后自动旁路音量均衡"
+                            else -> "连接 USB DAC 或小尾巴后，可绕过 Android 系统重采样实现无损源码直通"
+                        },
+                        fontSize = 12.sp,
+                        color = cardSubText
                     )
-                ),
-                backgroundForContrast = palette.cardSurfaceColor
-            )
-        },
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Usb, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
+                }
                 Spacer(Modifier.width(8.dp))
-                Text("USB 硬件独占直通", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = cardText)
+                Switch(
+                    checked = isExclusive,
+                    onCheckedChange = { onToggleExclusive(it) },
+                    enabled = hasDevice || isExclusive,
+                    modifier = Modifier.testTag("switch_usb_exclusive")
+                )
             }
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = palette.secondaryButtonContainer.copy(alpha = 0.45f),
-                    modifier = Modifier.fillMaxWidth()
+        }
+
+        if (isPendingPermission) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = palette.secondaryButtonContainer.copy(alpha = 0.65f),
+                border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.5f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("usb_pending_permission_banner")
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                    Text(
+                        "待授权：系统尚未授予此 USB 声卡硬件访问权限，当前仍使用系统音频路由。",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = cardText
+                    )
+                    FilledTonalButton(
+                        onClick = onRequestPermission,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("btn_request_usb_permission")
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("启用 USB 硬件独占", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = cardText)
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                when {
-                                    isPendingPermission -> "待授权 · 尚未获得 USB 访问权限，独占尚未生效"
-                                    isExclusiveActive -> "已启用 · 基于 USB Host 绕过 AudioFlinger 混音"
-                                    hasDevice -> "基于 USB Host 接口抢占 · 绕过 AudioFlinger 混音"
-                                    else -> "未检测到 USB Audio 连入设备"
-                                },
-                                fontSize = 12.sp,
-                                color = cardSubText
-                            )
-                        }
-                        Switch(
-                            checked = isExclusive,
-                            onCheckedChange = { onToggleExclusive(it) },
-                            enabled = hasDevice || isExclusive,
-                            modifier = Modifier.testTag("switch_usb_exclusive")
+                        Icon(Icons.Rounded.Usb, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("申请 USB 硬件权限", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = palette.secondaryButtonContainer.copy(alpha = 0.30f),
+            border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.45f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (hasDevice) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
+                        contentDescription = null,
+                        tint = palette.playedLyricColor,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            if (hasDevice) "已识别 USB 音频硬件" else "尚未接入 USB 声卡",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = cardText
+                        )
+                        Text(
+                            if (hasDevice) {
+                                val mfg = deviceDetails?.manufacturerName?.takeIf { it.isNotBlank() }
+                                if (mfg != null) "$mfg · $usbDeviceName" else (usbDeviceName ?: "未知 USB 音频设备")
+                            } else "请插紧 USB 耳放/小尾巴或检查 Type-C 连接",
+                            fontSize = 12.sp,
+                            color = cardSubText
                         )
                     }
                 }
 
-                if (isPendingPermission) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = palette.secondaryButtonContainer.copy(alpha = 0.65f),
-                        border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.5f)),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("usb_pending_permission_banner")
+                if (hasDevice) {
+                    HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = palette.primaryButtonContainer
                         ) {
                             Text(
-                                "待授权：系统尚未授予此 USB 声卡硬件访问权限，当前仍使用系统音频路由。",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = cardText
+                                text = uacVersion ?: "UAC 1.0 / 2.0",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = palette.onPrimaryButton,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                             )
-                            FilledTonalButton(
-                                onClick = onRequestPermission,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(min = 48.dp)
-                                    .testTag("btn_request_usb_permission")
-                            ) {
-                                Icon(Icons.Rounded.Usb, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("申请 USB 硬件权限", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            }
                         }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = when {
+                                isUac2 -> "高速异步等时传输 (支持 192kHz+ 及 Hi-Res)"
+                                isUac3 -> "新一代低功耗音频协议"
+                                else -> "标准音频模式 (最高 96kHz / 24-bit)"
+                            },
+                            fontSize = 11.sp,
+                            color = cardSubText
+                        )
                     }
-                }
 
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = palette.secondaryButtonContainer.copy(alpha = 0.30f),
-                    border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.45f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                if (hasDevice) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
-                                contentDescription = null,
-                                tint = palette.playedLyricColor,
-                                modifier = Modifier.size(20.dp)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (deviceDetails != null && (deviceDetails.vendorId > 0 || deviceDetails.productId > 0)) {
+                            Text(
+                                "硬件标识: ${deviceDetails.formattedVidPid}",
+                                fontSize = 11.sp,
+                                color = cardSubText
                             )
-                            Spacer(Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    if (hasDevice) "已识别 USB 音频硬件" else "尚未接入 USB 声卡",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = cardText
-                                )
-                                Text(
-                                    if (hasDevice) {
-                                        val mfg = deviceDetails?.manufacturerName?.takeIf { it.isNotBlank() }
-                                        if (mfg != null) "$mfg · $usbDeviceName" else (usbDeviceName ?: "未知 USB 音频设备")
-                                    } else "请插紧 USB 耳放/小尾巴或检查 Type-C 连接",
-                                    fontSize = 12.sp,
-                                    color = cardSubText
-                                )
-                            }
                         }
-
-                        if (hasDevice) {
-                            HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = palette.primaryButtonContainer
-                                ) {
-                                    Text(
-                                        text = uacVersion ?: "UAC 1.0 / 2.0",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = palette.onPrimaryButton,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                    )
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = when {
-                                        isUac2 -> "高速异步等时传输 (支持 192kHz+ 及 Hi-Res)"
-                                        isUac3 -> "新一代低功耗音频协议"
-                                        else -> "标准音频模式 (最高 96kHz / 24-bit)"
-                                    },
-                                    fontSize = 11.sp,
-                                    color = cardSubText
-                                )
-                            }
-
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                if (deviceDetails != null && (deviceDetails.vendorId > 0 || deviceDetails.productId > 0)) {
-                                    Text(
-                                        "硬件标识: ${deviceDetails.formattedVidPid}",
-                                        fontSize = 11.sp,
-                                        color = cardSubText
-                                    )
-                                }
-                                val statusText = when {
-                                    isExclusiveActive -> "独占状态: 🟢 硬件独占直通生效中 (Bit-Perfect Direct)"
-                                    isPendingPermission -> "独占状态: 🟠 待授权 · 等待授予 USB 硬件访问权限（尚未启用独占）"
-                                    isExclusive -> "独占状态: 🟡 等待 USB DAC 硬件接入"
-                                    else -> "独占状态: ⚪ 系统共享音频路由"
-                                }
-                                Text(
-                                    statusText,
-                                    fontSize = 11.sp,
-                                    color = if (isExclusiveActive) palette.playedLyricColor else cardSubText
-                                )
-                            }
+                        val statusText = when {
+                            isExclusiveActive -> "独占状态: 🟢 硬件独占直通生效中 (Bit-Perfect · 音量均衡已旁路)"
+                            isPendingPermission -> "独占状态: 🟠 待授权 · 等待授予 USB 硬件访问权限（尚未启用独占）"
+                            isExclusive -> "独占状态: 🟡 等待 USB DAC 硬件接入"
+                            else -> "独占状态: ⚪ 系统共享音频路由"
                         }
+                        Text(
+                            statusText,
+                            fontSize = 11.sp,
+                            color = if (isExclusiveActive) palette.playedLyricColor else cardSubText
+                        )
                     }
                 }
             }
-        },
-        containerColor = palette.cardSurfaceColor,
-        titleContentColor = cardText,
-        textContentColor = cardText
-    )
+        }
+    }
 }
 
 @SuppressLint("DefaultLocale")
 @Composable
-private fun PlaybackStatusDialog(
+private fun PlaybackStatusSubMenuContent(
     media: PlayableMedia?,
     audioFormatInfo: Akari.NCM.player.core.AudioFormatInfo,
     isUsbExclusive: Boolean = false,
@@ -2329,136 +2438,321 @@ private fun PlaybackStatusDialog(
     uacVersion: String? = null,
     hasUsbPermission: Boolean = false,
     loudnessState: Akari.NCM.player.core.loudness.LoudnessNormalizationState,
-    palette: PlayerExpressivePalette,
-    onDismiss: () -> Unit
+    cardText: Color,
+    cardSubText: Color
 ) {
     val context = LocalContext.current
-    if (media == null) return
 
-    val cardText = ensureContrast(palette.primaryTextColor, palette.cardSurfaceColor, 4.5f)
-    val cardSubText = ensureContrast(palette.secondaryTextColor, palette.cardSurfaceColor, 3.8f)
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, end = 14.dp, bottom = 14.dp)
+            .testTag("quick_submenu_playback_status")
+    ) {
+        HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
 
-    val isLocal = media.isLocal
-    val sourceText = if (isLocal) {
-        "本地存储 (Local)"
-    } else {
-        val qLabel = audioFormatInfo.qualityLevel?.let { Akari.NCM.player.core.QualityLevel.fromValue(it).label }
-        if (!qLabel.isNullOrBlank()) "云端在线 (Cloud) · $qLabel" else "云端在线 (Cloud)"
-    }
-
-    val fileSizeText = remember(media, audioFormatInfo.fileSizeBytes) {
-        val bytes = if (media is PlayableMedia.LocalNcm) {
-            runCatching {
-                val uri = android.net.Uri.parse(media.uri)
-                if (uri.scheme == "content") {
-                    context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
-                } else {
-                    java.io.File(uri.path ?: "").length()
-                }
-            }.getOrDefault(0L)
-        } else {
-            audioFormatInfo.fileSizeBytes
+        if (media == null) {
+            Text("当前未加载任何曲目", fontSize = 13.sp, color = cardSubText)
+            return
         }
-        if (bytes > 0) {
-            val mb = bytes / (1024f * 1024f)
-            if (mb >= 1.0f) String.format("%.2f MB (%d 字节)", mb, bytes)
-            else String.format("%.1f KB (%d 字节)", bytes / 1024f, bytes)
-        } else if (media is PlayableMedia.LocalNcm) "未知" else null
-    }
 
-    val sampleRateText = if (audioFormatInfo.sampleRateHz > 0) {
-        val khz = audioFormatInfo.sampleRateHz / 1000f
-        String.format("%.1f kHz", khz)
-    } else "44.1 kHz"
+        val isLocal = media.isLocal
+        val sourceText = if (isLocal) {
+            "本地存储 (Local)"
+        } else {
+            val qLabel = audioFormatInfo.qualityLevel?.let { Akari.NCM.player.core.QualityLevel.fromValue(it).label }
+            if (!qLabel.isNullOrBlank()) "云端在线 (Cloud) · $qLabel" else "云端在线 (Cloud)"
+        }
 
-    val bitrateText = if (audioFormatInfo.bitrateKbps > 0) {
-        "${audioFormatInfo.bitrateKbps} kbps"
-    } else "标准 / 动态比特率"
-
-    val bitDepthText = "${audioFormatInfo.bitDepthBits}-bit"
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            AdaptiveButtonGroup(
-                buttons = listOf(
-                    AdaptiveButtonSpec(
-                        text = "确定",
-                        onClick = onDismiss,
-                        style = ExpressiveButtonStyle.FILLED,
-                        containerColor = palette.primaryButtonContainer,
-                        contentColor = palette.onPrimaryButton
-                    )
-                ),
-                backgroundForContrast = palette.cardSurfaceColor
-            )
-        },
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Equalizer, contentDescription = null, tint = palette.playedLyricColor, modifier = Modifier.size(24.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("播放状态与音频信息", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = cardText)
-            }
-        },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
-                InfoRow("歌曲名称", media.title, cardSubText, cardText)
-                InfoRow("艺术家", media.artist, cardSubText, cardText)
-                InfoRow("专辑名称", media.album, cardSubText, cardText)
-                HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
-                InfoRow("音频来源", sourceText, cardSubText, cardText)
-                if (fileSizeText != null) {
-                    val sizeLabel = if (isLocal) "本地文件大小" else "音频文件大小"
-                    InfoRow(sizeLabel, fileSizeText, cardSubText, cardText)
-                }
-                if (isUsbExclusive && !usbDeviceName.isNullOrBlank()) {
-                    val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""
-                    val routeValue = if (hasUsbPermission) {
-                        "USB 硬件独占直通 · $usbDeviceName$uacTag"
+        val fileSizeText = remember(media, audioFormatInfo.fileSizeBytes) {
+            val bytes = if (media is PlayableMedia.LocalNcm) {
+                runCatching {
+                    val uri = android.net.Uri.parse(media.uri)
+                    if (uri.scheme == "content") {
+                        context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
                     } else {
-                        "系统共享音频路由 · $usbDeviceName$uacTag (USB 独占待授权)"
+                        java.io.File(uri.path ?: "").length()
                     }
-                    InfoRow("输出通道", routeValue, cardSubText, cardText)
-                }
-                HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
-                InfoRow("实时比特率", bitrateText, cardSubText, cardText)
-                InfoRow("采样率 / 位深", "$sampleRateText  ·  $bitDepthText", cardSubText, cardText)
-                if (!audioFormatInfo.mimeType.isNullOrBlank()) {
-                    InfoRow("音频编码格式", audioFormatInfo.mimeType, cardSubText, cardText)
-                }
-                HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
-                val normStatus = if (loudnessState.isEnabled) {
-                    val gainStr = if (loudnessState.appliedGainDb >= 0) "+${String.format("%.1f", loudnessState.appliedGainDb)}" else String.format("%.1f", loudnessState.appliedGainDb)
-                    val peakStr = if (loudnessState.isPeakLimited) " (触发 -1.0 dBTP 防过载压制)" else ""
-                    val waitStr = if (loudnessState.isInterTrackWaiting) " [1s 曲间校准等候中]" else ""
-                    "已生效 (${loudnessState.source.label}) · 增益: $gainStr dB (基准: ${loudnessState.targetLufs} LUFS)$peakStr$waitStr"
-                } else "未开启"
-                InfoRow("音量均衡状态 (EBU R128)", normStatus, cardSubText, cardText)
-                if (loudnessState.sourceLoudnessLufs != null) {
-                    val peakText = if (loudnessState.sourcePeakDb != null) String.format(" · 峰值: %.1f dBFS", loudnessState.sourcePeakDb) else ""
-                    val srcText = loudnessState.source.label
-                    InfoRow("曲目综合响度", String.format("%.1f LUFS%s (%s)", loudnessState.sourceLoudnessLufs, peakText, srcText), cardSubText, cardText)
-                }
-                if (loudnessState.isEnabled && loudnessState.prefetchedTotalCount > 0) {
-                    val avgText = loudnessState.upcomingAverageLufs?.let {
-                        String.format(" · 平均 %.1f LUFS", it)
-                    } ?: ""
-                    InfoRow(
-                        "未来队列预计算 (最多 3 首)",
-                        "已缓存 ${loudnessState.prefetchedCount}/${loudnessState.prefetchedTotalCount} 首$avgText",
-                        cardSubText,
-                        cardText
+                }.getOrDefault(0L)
+            } else {
+                audioFormatInfo.fileSizeBytes
+            }
+            if (bytes > 0) {
+                val mb = bytes / (1024f * 1024f)
+                if (mb >= 1.0f) String.format("%.2f MB (%d 字节)", mb, bytes)
+                else String.format("%.1f KB (%d 字节)", bytes / 1024f, bytes)
+            } else if (media is PlayableMedia.LocalNcm) "未知" else null
+        }
+
+        val sampleRateText = if (audioFormatInfo.sampleRateHz > 0) {
+            String.format("%.1f kHz", audioFormatInfo.sampleRateHz / 1000f)
+        } else "44.1 kHz"
+
+        val bitrateText = if (audioFormatInfo.bitrateKbps > 0) {
+            "${audioFormatInfo.bitrateKbps} kbps"
+        } else "标准 / 动态比特率"
+
+        val bitDepthText = "${audioFormatInfo.bitDepthBits}-bit"
+
+        InfoRow("歌曲名称", media.title, cardSubText, cardText)
+        InfoRow("艺术家", media.artist, cardSubText, cardText)
+        InfoRow("专辑名称", media.album, cardSubText, cardText)
+        HorizontalDivider(color = cardSubText.copy(alpha = 0.16f))
+        InfoRow("音频来源", sourceText, cardSubText, cardText)
+        if (fileSizeText != null) {
+            val sizeLabel = if (isLocal) "本地文件大小" else "音频文件大小"
+            InfoRow(sizeLabel, fileSizeText, cardSubText, cardText)
+        }
+        if (isUsbExclusive && !usbDeviceName.isNullOrBlank()) {
+            val uacTag = if (!uacVersion.isNullOrBlank() && uacVersion != "未连接") " ($uacVersion)" else ""
+            val routeValue = if (hasUsbPermission) {
+                "USB 硬件独占直通 · $usbDeviceName$uacTag"
+            } else {
+                "系统共享音频路由 · $usbDeviceName$uacTag (USB 独占待授权)"
+            }
+            InfoRow("输出通道", routeValue, cardSubText, cardText)
+        }
+        HorizontalDivider(color = cardSubText.copy(alpha = 0.16f))
+        InfoRow("实时比特率", bitrateText, cardSubText, cardText)
+        InfoRow("采样率 / 位深", "$sampleRateText  ·  $bitDepthText", cardSubText, cardText)
+        if (!audioFormatInfo.mimeType.isNullOrBlank()) {
+            InfoRow("音频编码格式", audioFormatInfo.mimeType, cardSubText, cardText)
+        }
+        HorizontalDivider(color = cardSubText.copy(alpha = 0.16f))
+        val normStatus = when {
+            loudnessState.isBypassedForUsbExclusive -> "USB 独占已自动旁路（源码直通 Bit-Perfect）"
+            loudnessState.isEnabled -> {
+                val gainStr = if (loudnessState.appliedGainDb >= 0) "+${String.format("%.1f", loudnessState.appliedGainDb)}" else String.format("%.1f", loudnessState.appliedGainDb)
+                val peakStr = if (loudnessState.isPeakLimited) " · 触发 -1.0 dBTP 限幅" else ""
+                val negStr = if (loudnessState.isNegativeGainOnly) " · 仅降不升" else ""
+                val waitStr = if (loudnessState.isInterTrackWaiting) " [曲间校准中]" else ""
+                "${loudnessState.source.tierLabel} · ${loudnessState.source.label} · 增益: $gainStr dB (目标: ${loudnessState.targetLufs} LUFS)$negStr$peakStr$waitStr"
+            }
+            else -> "未开启"
+        }
+        InfoRow("音量均衡状态 (EBU R128)", normStatus, cardSubText, cardText)
+        if (!loudnessState.isBypassedForUsbExclusive && loudnessState.sourceLoudnessLufs != null) {
+            val peakText = if (loudnessState.sourcePeakDb != null) String.format(" · 真峰值: %.1f dBTP", loudnessState.sourcePeakDb) else ""
+            InfoRow(
+                "曲目综合响度",
+                String.format("%.1f LUFS%s (%s)", loudnessState.sourceLoudnessLufs, peakText, loudnessState.source.label),
+                cardSubText,
+                cardText
+            )
+        }
+        if (loudnessState.isEnabled && !loudnessState.isBypassedForUsbExclusive && loudnessState.prefetchedTotalCount > 0) {
+            val avgText = loudnessState.upcomingAverageLufs?.let {
+                String.format(" · 平均 %.1f LUFS", it)
+            } ?: ""
+            InfoRow(
+                "未来队列预计算 (最多 3 首)",
+                "已缓存 ${loudnessState.prefetchedCount}/${loudnessState.prefetchedTotalCount} 首$avgText",
+                cardSubText,
+                cardText
+            )
+        }
+    }
+}
+
+@Composable
+private fun AddToPlaylistSubMenuContent(
+    song: PlayableMedia?,
+    playlistManager: PlaylistManager,
+    ncmApi: NcmApi,
+    palette: PlayerExpressivePalette,
+    cardText: Color,
+    cardSubText: Color
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val playlists by playlistManager.playlists.collectAsState()
+    var showInlineCreate by remember { mutableStateOf(false) }
+    var newPlaylistName by remember { mutableStateOf("") }
+    var lastAddedPlaylistName by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, end = 14.dp, bottom = 14.dp)
+            .testTag("quick_submenu_add_to_playlist")
+    ) {
+        HorizontalDivider(color = cardSubText.copy(alpha = 0.2f))
+
+        if (song == null) {
+            Text("当前未播放任何曲目", fontSize = 13.sp, color = cardSubText)
+            return
+        }
+
+        if (lastAddedPlaylistName != null) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = palette.primaryButtonContainer.copy(alpha = 0.22f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("quick_playlist_added_banner")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Rounded.CheckCircle,
+                        contentDescription = null,
+                        tint = palette.playedLyricColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "已添加至「$lastAddedPlaylistName」",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = cardText
                     )
                 }
             }
-        },
-        containerColor = palette.cardSurfaceColor,
-        titleContentColor = cardText,
-        textContentColor = cardText
-    )
+        }
+
+        Surface(
+            onClick = { showInlineCreate = !showInlineCreate },
+            shape = RoundedCornerShape(12.dp),
+            color = palette.primaryButtonContainer,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .testTag("quick_playlist_create_toggle")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    if (showInlineCreate) Icons.Rounded.Close else Icons.Rounded.Add,
+                    contentDescription = "新建歌单",
+                    tint = palette.onPrimaryButton,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (showInlineCreate) "收起新建歌单" else "新建歌单并添加",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = palette.onPrimaryButton
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showInlineCreate,
+            enter = expandVertically(tween(200)) + fadeIn(tween(180)),
+            exit = shrinkVertically(tween(180)) + fadeOut(tween(140))
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = newPlaylistName,
+                    onValueChange = { newPlaylistName = it },
+                    placeholder = { Text("输入新歌单名称", fontSize = 13.sp, color = cardSubText) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("quick_playlist_name_input")
+                )
+                FilledTonalButton(
+                    onClick = {
+                        val trimmed = newPlaylistName.trim()
+                        if (trimmed.isNotEmpty()) {
+                            val created = playlistManager.createPlaylist(trimmed)
+                            playlistManager.addSongToPlaylist(created.id, song)
+                            lastAddedPlaylistName = created.name
+                            newPlaylistName = ""
+                            showInlineCreate = false
+                            Toast.makeText(context, "已创建并添加到「${created.name}」", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = newPlaylistName.isNotBlank(),
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("quick_playlist_create_confirm")
+                ) {
+                    Text("添加", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        if (playlists.isEmpty()) {
+            Text(
+                "暂无自建歌单，点击上方新建歌单即可添加",
+                fontSize = 12.sp,
+                color = cardSubText,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                playlists.forEach { playlist ->
+                    Surface(
+                        onClick = {
+                            playlistManager.addSongToPlaylist(playlist.id, song)
+                            if (playlist.ncmPlaylistId != null) {
+                                scope.launch(Dispatchers.IO) {
+                                    ncmApi.updatePlaylistTracks("add", playlist.ncmPlaylistId, song.id)
+                                }
+                            }
+                            lastAddedPlaylistName = playlist.name
+                            Toast.makeText(context, "已添加到「${playlist.name}」", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = palette.secondaryButtonContainer.copy(alpha = 0.35f),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .testTag("quick_playlist_item_${playlist.id}")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Rounded.QueueMusic,
+                                contentDescription = null,
+                                tint = palette.playedLyricColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    playlist.name,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = cardText,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    "${playlist.songs.size} 首歌曲",
+                                    fontSize = 11.sp,
+                                    color = cardSubText
+                                )
+                            }
+                            Icon(
+                                Icons.Rounded.AddCircleOutline,
+                                contentDescription = "添加到 ${playlist.name}",
+                                tint = cardSubText,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

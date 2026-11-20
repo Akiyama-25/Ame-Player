@@ -27,6 +27,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.media3.common.util.UnstableApi
@@ -267,17 +268,18 @@ class QueueQuickFunctionsAndUsbStateUiTest {
             composeTestRule.onAllNodesWithText("已独占绑定: MOONDROP Dawn Pro (UAC 2.0)").fetchSemanticsNodes().size
         )
 
-        // Open USB Exclusive configuration dialog and verify pending permission banner & action button
+        // Expand USB Exclusive inline secondary menu and verify pending permission banner & action button (drawer stays open)
         composeTestRule.onNodeWithTag("quick_card_usb_exclusive").performClick()
         composeTestRule.mainClock.advanceTimeBy(600)
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithTag("usb_pending_permission_banner").assertIsDisplayed()
-        composeTestRule.onNodeWithText("待授权 · 尚未获得 USB 访问权限，独占尚未生效").assertIsDisplayed()
-        composeTestRule.onNodeWithText("独占状态: 🟠 待授权 · 等待授予 USB 硬件访问权限（尚未启用独占）").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("quick_functions_sheet", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithTag("usb_pending_permission_banner", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("待授权 · 尚未获得 USB 访问权限，独占尚未生效", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("独占状态: 🟠 待授权 · 等待授予 USB 硬件访问权限（尚未启用独占）", useUnmergedTree = true).assertIsDisplayed()
         assertEquals(
             0,
-            composeTestRule.onAllNodesWithText("独占状态: 🟢 硬件独占直通生效中 (Bit-Perfect Direct)").fetchSemanticsNodes().size
+            composeTestRule.onAllNodesWithText("独占状态: 🟢 硬件独占直通生效中", substring = true, useUnmergedTree = true).fetchSemanticsNodes().size
         )
 
         composeTestRule.onNodeWithTag("btn_request_usb_permission").performClick()
@@ -325,5 +327,67 @@ class QueueQuickFunctionsAndUsbStateUiTest {
             0,
             composeTestRule.onAllNodesWithTag("badge_usb_pending_permission", useUnmergedTree = true).fetchSemanticsNodes().size
         )
+    }
+
+    @Test
+    @Config(qualifiers = "w400dp-h1200dp")
+    fun testQuickFunctions_secondaryMenusExpandInlineWithoutClosingDrawer_andUsbCopyRewritten() {
+        val fakePlayer = FakePlayerStateController(sampleTrack)
+        val playlistManager = Akari.NCM.player.data.PlaylistManager(context)
+
+        composeTestRule.setContent {
+            PlayerScreen(
+                playerState = fakePlayer,
+                playerController = fakePlayer,
+                ncmApi = ncmApi,
+                playlistManager = playlistManager,
+                onBackClick = {},
+                onAddToPlaylistClick = {},
+                onToggleQueueClick = {}
+            )
+        }
+        composeTestRule.waitForIdle()
+
+        // 打开快捷功能抽屉
+        composeTestRule.onNodeWithTag("btn_quick_functions").performClick()
+        composeTestRule.mainClock.advanceTimeBy(600)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("quick_functions_sheet", useUnmergedTree = true).assertIsDisplayed()
+
+        // 1. 验证重写的 USB 独占说明：不再包含内部开发术语 "方案三"
+        assertEquals(
+            0,
+            composeTestRule.onAllNodesWithText("方案三", substring = true).fetchSemanticsNodes().size
+        )
+        composeTestRule.onNodeWithText("绕过系统混音与重采样，直连 USB DAC 实现无损源码输出").assertIsDisplayed()
+
+        // 2. 点击「播放状态」：二级菜单内联展开，快捷功能抽屉保持打开
+        composeTestRule.onNodeWithTag("quick_card_playback_status").performClick()
+        composeTestRule.mainClock.advanceTimeBy(400)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("quick_functions_sheet", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithTag("quick_submenu_playback_status", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("音量均衡状态 (EBU R128)", useUnmergedTree = true).assertIsDisplayed()
+
+        // 3. 点击「独占 USB 通道」：切换到 USB 独占二级菜单，抽屉保持打开
+        composeTestRule.onNodeWithTag("quick_card_usb_exclusive").performScrollTo().performClick()
+        composeTestRule.mainClock.advanceTimeBy(400)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("quick_functions_sheet", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithTag("quick_submenu_usb_exclusive", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("switch_usb_exclusive", useUnmergedTree = true).assertIsDisplayed()
+
+        // 4. 点击「添加到歌单」：二级菜单内联展开，支持直接新建歌单并添加歌曲，抽屉仍保持打开
+        composeTestRule.onNodeWithTag("quick_card_add_to_playlist").performScrollTo().performClick()
+        composeTestRule.mainClock.advanceTimeBy(400)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("quick_functions_sheet", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithTag("quick_submenu_add_to_playlist", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("quick_playlist_create_toggle").performScrollTo().performClick()
+        composeTestRule.mainClock.advanceTimeBy(300)
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("quick_playlist_name_input").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("quick_functions_sheet", useUnmergedTree = true).assertIsDisplayed()
     }
 }

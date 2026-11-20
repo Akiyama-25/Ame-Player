@@ -1083,6 +1083,7 @@ fun MainScreen(
                     playerState = playerEngine,
                     playerController = playerEngine,
                     ncmApi = ncmApi,
+                    playlistManager = playlistManager,
                     onBackClick = { showPlayerScreen = false },
                     onAddToPlaylistClick = { songToAddToPlaylist = currentMedia },
                     onToggleQueueClick = {

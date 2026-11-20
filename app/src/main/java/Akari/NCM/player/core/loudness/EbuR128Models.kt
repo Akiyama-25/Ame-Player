@@ -4,25 +4,39 @@ import androidx.compose.runtime.Stable
 import kotlinx.serialization.Serializable
 
 /**
- * 音频响度特征来源
+ * 音频响度特征来源（三级渐进式音量均衡架构）
  */
 enum class LoudnessSource(val label: String, val priority: Int) {
-    NETEASE_ONLINE("云端特征", 4),         // 网易云 API 返回的有效非零 gain/peak 响度元数据
-    REPLAYGAIN_TAG("本地标签", 4),         // 本地音频内嵌的 ReplayGain / R128 / SoundCheck 标签
-    BS1770_SCAN("BS.1770 全曲锁定", 5),    // 双阶段第二阶段：基于 ITU-R BS.1770-4 全曲门控积分锁定并缓存
-    FAST_PREVIEW_SCAN("极速初判", 3),      // 双阶段第一阶段：多点跳帧极速抽样 (20%/45%/70%)
-    INTRO_PREVIEW_SCAN("前奏初判", 2),     // 首段流式或全曲扫描初期 (~1s) 单点初判，不可覆盖多点抽样
-    QUEUE_AVERAGE("队列均值预补偿", 1),     // 基于未来 3 首预计算平均响度的先验初始补偿
-    DEFAULT_FALLBACK("基准兜底", 0);       // 默认平准电平
+    NETEASE_ONLINE("云端特征", 4),           // Tier 1: /song/url/v1 有效非零 gain/peak
+    NETEASE_VD("云端音质特征", 4),           // Tier 1: /song/detail 或 /song/music/detail 分音质 vd
+    REPLAYGAIN_TAG("本地标签", 4),           // Tier 1: 本地音频内嵌 ReplayGain / R128 / SoundCheck 标签
+    SPARSE_RANGE_SCAN("11×3s 稀疏抽样", 5),  // Tier 2: 11段×3秒等距稀疏抽样 + 双重门控 + P75 锚点锁定
+    BS1770_SCAN("BS.1770 全曲锁定", 5),      // Tier 2: 短曲或本地全曲完整 ITU-R BS.1770-4 门控积分锁定
+    FAST_PREVIEW_SCAN("极速初判", 3),        // Tier 2 过渡: 20%/40%/60%/80% 中段优先初判
+    REALTIME_AGC("实时流式兜底", 2),         // Tier 3: 保守正向增益上限 + Look-ahead 非对称 AGC + Freeze Gate
+    INTRO_PREVIEW_SCAN("前奏初判", 2),       // 兼容早期流式初判来源
+    QUEUE_AVERAGE("队列均值预补偿", 1),       // 未来队列均值先验参考
+    DEFAULT_FALLBACK("基准兜底", 0);         // 默认平准电平
 
     val isKnownValid: Boolean
         get() = this != DEFAULT_FALLBACK
 
     val isFinalLocked: Boolean
-        get() = this == NETEASE_ONLINE || this == REPLAYGAIN_TAG || this == BS1770_SCAN
+        get() = this == NETEASE_ONLINE ||
+            this == NETEASE_VD ||
+            this == REPLAYGAIN_TAG ||
+            this == SPARSE_RANGE_SCAN ||
+            this == BS1770_SCAN
 
     val isMultiPointOrLocked: Boolean
         get() = isFinalLocked || this == FAST_PREVIEW_SCAN
+
+    val tierLabel: String
+        get() = when (this) {
+            NETEASE_ONLINE, NETEASE_VD, REPLAYGAIN_TAG -> "Tier 1 · 元数据直读"
+            SPARSE_RANGE_SCAN, BS1770_SCAN, FAST_PREVIEW_SCAN -> "Tier 2 · 稀疏/离线扫描"
+            REALTIME_AGC, INTRO_PREVIEW_SCAN, QUEUE_AVERAGE, DEFAULT_FALLBACK -> "Tier 3 · 实时流式兜底"
+        }
 }
 
 /**
@@ -32,7 +46,7 @@ enum class LoudnessSource(val label: String, val priority: Int) {
 @Stable
 data class LoudnessData(
     val integratedLufs: Float,                                // 综合响度 (LUFS / LKFS)
-    val truePeak: Float = 1.0f,                               // 线性真实峰值 (1.0 = 0 dBFS)
+    val truePeak: Float = 1.0f,                               // 线性真实峰值 (1.0 = 0 dBTP, 4x 过采样可 > 1.0)
     val source: LoudnessSource = LoudnessSource.DEFAULT_FALLBACK
 ) {
     val peakDb: Float
@@ -56,11 +70,15 @@ data class LoudnessNormalizationState(
     val upcomingAverageLufs: Float? = null,
     val prefetchedCount: Int = 0,
     val prefetchedTotalCount: Int = 0,
-    val isInterTrackWaiting: Boolean = false
+    val isInterTrackWaiting: Boolean = false,
+    val isNegativeGainOnly: Boolean = false,
+    val isBypassedForUsbExclusive: Boolean = false
 ) {
     val statusSummary: String
         get() = if (!isEnabled) {
             "未启用"
+        } else if (isBypassedForUsbExclusive) {
+            "USB 独占源码旁路 (Bit-Perfect)"
         } else if (isInterTrackWaiting) {
             if (sourceLoudnessLufs != null) {
                 String.format("曲间等候 (1s) · 已就绪 %.1f LUFS", sourceLoudnessLufs)
@@ -68,7 +86,10 @@ data class LoudnessNormalizationState(
                 "曲间等候 (1s) · 响度计算中..."
             }
         } else if (sourceLoudnessLufs == null) {
-            if (upcomingAverageLufs != null) {
+            if (source == LoudnessSource.REALTIME_AGC) {
+                val gainSign = if (appliedGainDb >= 0) "+" else ""
+                String.format("实时兜底 · 增益: %s%.1f dB", gainSign, appliedGainDb)
+            } else if (upcomingAverageLufs != null) {
                 String.format("队列均值预热 (%.1f LUFS)", upcomingAverageLufs)
             } else {
                 "标准电平 (0.0 dB)"
@@ -76,12 +97,15 @@ data class LoudnessNormalizationState(
         } else {
             val gainSign = if (appliedGainDb >= 0) "+" else ""
             val peakTag = if (isPeakLimited) " · 防过载压制" else ""
+            val negOnlyTag = if (isNegativeGainOnly && appliedGainDb >= -0.05f) " · 仅降不升" else ""
             val stageTag = when (source) {
                 LoudnessSource.FAST_PREVIEW_SCAN,
                 LoudnessSource.INTRO_PREVIEW_SCAN -> " · 初判"
+                LoudnessSource.REALTIME_AGC -> " · 实时兜底"
+                LoudnessSource.SPARSE_RANGE_SCAN -> " · 11×3s"
                 LoudnessSource.QUEUE_AVERAGE -> " · 队列均值"
                 else -> ""
             }
-            String.format("%.1f LUFS -> 增益: %s%.1f dB%s%s", sourceLoudnessLufs, gainSign, appliedGainDb, peakTag, stageTag)
+            String.format("%.1f LUFS -> 增益: %s%.1f dB%s%s%s", sourceLoudnessLufs, gainSign, appliedGainDb, peakTag, negOnlyTag, stageTag)
         }
 }

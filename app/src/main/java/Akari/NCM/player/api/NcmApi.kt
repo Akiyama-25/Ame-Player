@@ -35,8 +35,18 @@ data class ResolvedSongUrl(
     val sampleRate: Int? = null,
     val formatType: String? = null,
     val level: String? = null,
-    val size: Long? = null
-)
+    val size: Long? = null,
+    val md5: String? = null,
+    val isFreeTrial: Boolean = false,
+    val vdDb: Float? = null
+) {
+    val fileSignature: String
+        get() = when {
+            !md5.isNullOrBlank() -> "md5:$md5"
+            size != null && size > 0L -> "size:$size"
+            else -> ""
+        }
+}
 
 @Singleton
 class NcmApi @Inject constructor(
@@ -390,6 +400,7 @@ class NcmApi @Inject constructor(
                     val type = data?.get("type")?.jsonPrimitive?.contentOrNull
                     val level = data?.get("level")?.jsonPrimitive?.contentOrNull ?: q.value
                     val size = data?.get("size")?.jsonPrimitive?.longOrNull
+                    val md5 = data?.get("md5")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                     val freeTrialInfo = data?.get("freeTrialInfo")
                     val isTrial = freeTrialInfo != null && freeTrialInfo !is JsonNull
 
@@ -402,14 +413,16 @@ class NcmApi @Inject constructor(
                             sampleRate = sr,
                             formatType = type,
                             level = level,
-                            size = size
+                            size = size,
+                            md5 = md5,
+                            isFreeTrial = isTrial
                         )
                         if (isTrial) {
                             AppLogger.w("[AME_ONLINE_PLAY]", "--- Direct level ${q.value} returned trial audio snippet, trying lower level for full track...")
                             if (trialFallbackUrl == null) trialFallbackUrl = resolved
                         } else {
-                            AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Direct resolved URL for '${song.title}' with level=$level (cost=${cost}ms, br=$br, sr=$sr, type=$type, size=$size, gain=$gain, peak=$peak): $url")
-                            return resolved
+                            AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Direct resolved URL for '${song.title}' with level=$level (cost=${cost}ms, br=$br, sr=$sr, type=$type, size=$size, gain=$gain, peak=$peak, md5=$md5): $url")
+                            return enrichWithQualityVdIfNeeded(song.id, resolved)
                         }
                     }
                 } catch (e: Exception) {
@@ -440,6 +453,7 @@ class NcmApi @Inject constructor(
                 val type = data?.get("type")?.jsonPrimitive?.contentOrNull
                 val level = data?.get("level")?.jsonPrimitive?.contentOrNull ?: q.value
                 val size = data?.get("size")?.jsonPrimitive?.longOrNull
+                val md5 = data?.get("md5")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
                 val freeTrialInfo = data?.get("freeTrialInfo")
                 val isTrial = freeTrialInfo != null && freeTrialInfo !is JsonNull
 
@@ -452,14 +466,16 @@ class NcmApi @Inject constructor(
                         sampleRate = sr,
                         formatType = type,
                         level = level,
-                        size = size
+                        size = size,
+                        md5 = md5,
+                        isFreeTrial = isTrial
                     )
                     if (isTrial) {
                         AppLogger.w("[AME_ONLINE_PLAY]", "--- API level ${q.value} returned trial audio snippet, trying lower level for full track...")
                         if (trialFallbackUrl == null) trialFallbackUrl = resolved
                     } else {
-                        AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Successfully resolved URL for '${song.title}' with level=$level (cost=${cost}ms, br=$br, sr=$sr, type=$type, size=$size, gain=$gain, peak=$peak): $url")
-                        return resolved
+                        AppLogger.i("[AME_ONLINE_PLAY]", ">>> [SUCCESS] Successfully resolved URL for '${song.title}' with level=$level (cost=${cost}ms, br=$br, sr=$sr, type=$type, size=$size, gain=$gain, peak=$peak, md5=$md5): $url")
+                        return enrichWithQualityVdIfNeeded(song.id, resolved)
                     }
                 }
             } catch (e: Exception) {
@@ -508,7 +524,10 @@ class NcmApi @Inject constructor(
             val type = data.get("type")?.jsonPrimitive?.contentOrNull ?: "mp3"
             val gain = data.get("gain")?.jsonPrimitive?.doubleOrNull?.toFloat()
             val peak = data.get("peak")?.jsonPrimitive?.doubleOrNull?.toFloat()
-            ResolvedSongUrl(
+            val md5 = data.get("md5")?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }
+            val freeTrialInfo = data.get("freeTrialInfo")
+            val isTrial = freeTrialInfo != null && freeTrialInfo !is JsonNull
+            val resolved = ResolvedSongUrl(
                 url = url,
                 gain = gain,
                 peak = peak,
@@ -516,10 +535,176 @@ class NcmApi @Inject constructor(
                 sampleRate = 44100,
                 formatType = type,
                 level = if (br >= 320000) "exhigh" else "standard",
-                size = size
+                size = size,
+                md5 = md5,
+                isFreeTrial = isTrial
             )
+            if (isTrial) resolved else enrichWithQualityVdIfNeeded(songId, resolved)
         } catch (_: Exception) {
             null
+        }
+    }
+
+    /**
+     * Tier 1 补全：当 /song/url/v1 返回的 gain 缺失或落入无效占位区间 (|gain| <= 0.001) 时，
+     * 联合查询 /song/music/detail (l/m/h/sq/hr/je/jm/sk/db.vd) 与 /song/detail (l/m/h/sq/hr.vd) 补齐分音质 vd。
+     */
+    private suspend fun enrichWithQualityVdIfNeeded(songId: String, resolved: ResolvedSongUrl): ResolvedSongUrl {
+        if (resolved.isFreeTrial) return resolved
+        if (isValidNeteaseGainOrVd(resolved.gain?.toDouble())) return resolved
+        val vdDb = withTimeoutOrNull(1800L) {
+            getSongQualityVd(songId, resolved.level)
+        }
+        return if (vdDb != null) resolved.copy(vdDb = vdDb) else resolved
+    }
+
+    /**
+     * 联合查询 /song/music/detail 与 /v3/song/detail 获取指定音质档位的 Volume Delta (dB)
+     */
+    suspend fun getSongQualityVd(songId: String, qualityLevel: String?): Float? {
+        val idLong = songId.toLongOrNull() ?: return null
+
+        // 1. 优先查询歌曲音质详情 (/song/music/detail，覆盖 l/m/h/sq/hr/je/jm/sk/db 高规格档位)
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject { put("songId", idLong) }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_SONG_MUSIC_DETAIL,
+                    NeteaseEndpoints.PATH_EAPI_SONG_MUSIC_DETAIL,
+                    payload
+                )
+                val vd = extractQualityVdFromMusicDetailJson(body, qualityLevel)
+                if (vd != null) return vd
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.d("AME_LOUDNESS", "Direct /song/music/detail vd fetch failed for $songId: ${e.message}")
+            }
+        } else {
+            try {
+                val resp = client.get("$baseUrl/song/music/detail") {
+                    parameter("id", songId)
+                }
+                val vd = extractQualityVdFromMusicDetailJson(resp.bodyAsText(), qualityLevel)
+                if (vd != null) return vd
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.d("AME_LOUDNESS", "Proxy /song/music/detail vd fetch failed for $songId: ${e.message}")
+            }
+        }
+
+        // 2. 回退查询歌曲基础详情 (/v3/song/detail，覆盖 l/m/h/sq/hr)
+        if (isDirectMode) {
+            try {
+                val cArray = buildJsonArray { add(buildJsonObject { put("id", idLong) }) }.toString()
+                val payload = buildJsonObject { put("c", cArray) }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_SONG_DETAIL,
+                    NeteaseEndpoints.PATH_EAPI_SONG_DETAIL,
+                    payload
+                )
+                val vd = extractQualityVdFromSongDetailJson(body, qualityLevel)
+                if (vd != null) return vd
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.d("AME_LOUDNESS", "Direct /song/detail vd fetch failed for $songId: ${e.message}")
+            }
+        } else {
+            try {
+                val resp = client.get("$baseUrl/song/detail") {
+                    parameter("ids", songId)
+                }
+                val vd = extractQualityVdFromSongDetailJson(resp.bodyAsText(), qualityLevel)
+                if (vd != null) return vd
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.d("AME_LOUDNESS", "Proxy /song/detail vd fetch failed for $songId: ${e.message}")
+            }
+        }
+
+        return null
+    }
+
+    companion object {
+        const val MIN_VALID_GAIN_OR_VD_DB = 0.001
+
+        /**
+         * 校验网易云返回的 gain / vd 是否有效（剔除 null、NaN、0、-0.0、-2.0E-4 等 |v| <= 0.001 占位值）
+         */
+        fun isValidNeteaseGainOrVd(rawValue: Double?): Boolean {
+            if (rawValue == null || rawValue.isNaN() || rawValue.isInfinite()) return false
+            return kotlin.math.abs(rawValue) > MIN_VALID_GAIN_OR_VD_DB
+        }
+
+        /**
+         * 校准网易云接口 vd（Volume Delta）字段至标准 dB 标度：
+         * - 标准接口返回直接 dB 浮点值（如 -4.62）
+         * - 兼容部分旧接口/封装返回的 1e-4 dB 整型（如 -46200）或 1e-2 dB（如 -462）
+         * - 过滤绝对值 <= 0.001 的未扫描占位值（0 / -0.0 / -2.0E-4）
+         */
+        fun normalizeNeteaseVdToDb(rawVd: Double?): Float? {
+            if (!isValidNeteaseGainOrVd(rawVd)) return null
+            val v = rawVd!!
+            val calibrated = when {
+                kotlin.math.abs(v) <= 35.0 -> v
+                kotlin.math.abs(v) > 1000.0 && kotlin.math.abs(v) <= 350_000.0 -> v / 10_000.0
+                kotlin.math.abs(v) > 35.0 && kotlin.math.abs(v) <= 1000.0 -> v / 100.0
+                else -> return null
+            }
+            if (kotlin.math.abs(calibrated) <= MIN_VALID_GAIN_OR_VD_DB) return null
+            if (calibrated < -30.0 || calibrated > 24.0) return null
+            return calibrated.toFloat()
+        }
+
+        /**
+         * 根据当前播放音质档位构造优先查找的 JSON 音质字段顺序
+         */
+        internal fun qualityFieldSearchOrder(qualityLevel: String?): List<String> {
+            val primary = when (qualityLevel?.lowercase()) {
+                "jymaster" -> listOf("jm", "je", "hr", "sq", "h", "m", "l")
+                "jyeffect" -> listOf("je", "jm", "hr", "sq", "h", "m", "l")
+                "sky" -> listOf("sk", "hr", "sq", "h", "m", "l")
+                "dolby" -> listOf("db", "hr", "sq", "h", "m", "l")
+                "hires" -> listOf("hr", "sq", "h", "m", "l")
+                "lossless" -> listOf("sq", "hr", "h", "m", "l")
+                "exhigh" -> listOf("h", "sq", "m", "l")
+                "higher" -> listOf("m", "h", "l", "sq")
+                "standard" -> listOf("l", "m", "h", "sq")
+                else -> listOf("hr", "sq", "h", "m", "l", "je", "jm", "sk", "db")
+            }
+            val all = listOf("jm", "je", "sk", "db", "hr", "sq", "h", "m", "l")
+            return (primary + all).distinct()
+        }
+
+        internal fun extractQualityVdFromMusicDetailJson(body: String, qualityLevel: String?): Float? {
+            return try {
+                val root = Json.parseToJsonElement(body).asJsonObjectOrNull ?: return null
+                val dataObj = root["data"]?.asJsonObjectOrNull ?: root
+                extractQualityVdFromObject(dataObj, qualityLevel)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        internal fun extractQualityVdFromSongDetailJson(body: String, qualityLevel: String?): Float? {
+            return try {
+                val root = Json.parseToJsonElement(body).asJsonObjectOrNull ?: return null
+                val firstSong = root["songs"]?.jsonArray?.firstOrNull()?.asJsonObjectOrNull ?: return null
+                extractQualityVdFromObject(firstSong, qualityLevel)
+            } catch (_: Exception) {
+                null
+            }
+        }
+
+        private fun extractQualityVdFromObject(container: JsonObject, qualityLevel: String?): Float? {
+            for (field in qualityFieldSearchOrder(qualityLevel)) {
+                val qualityObj = container[field]?.asJsonObjectOrNull ?: continue
+                val rawVd = qualityObj["vd"]?.jsonPrimitive?.doubleOrNull
+                val normalized = normalizeNeteaseVdToDb(rawVd)
+                if (normalized != null) return normalized
+            }
+            return null
         }
     }
 

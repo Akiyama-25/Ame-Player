@@ -14,6 +14,9 @@ internal object NeteaseEndpoints {
     const val PATH_EAPI_SONG_DETAIL = "/api/v3/song/detail"
     const val URL_EAPI_SONG_DETAIL = "$HOST_SERVICE/eapi/v3/song/detail"
 
+    const val PATH_EAPI_SONG_MUSIC_DETAIL = "/api/song/music/detail/get"
+    const val URL_EAPI_SONG_MUSIC_DETAIL = "$HOST_SERVICE/eapi/song/music/detail/get"
+
     const val PATH_EAPI_SONG_URL = "/api/song/enhance/player/url/v1"
     const val URL_EAPI_SONG_URL = "$HOST_SERVICE/eapi/song/enhance/player/url/v1"
 

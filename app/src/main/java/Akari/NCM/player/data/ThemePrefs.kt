@@ -33,6 +33,7 @@ object ThemePrefs {
     private const val KEY_VOLUME_NORMALIZATION_ENABLED = "volume_normalization_enabled"
     private const val KEY_TARGET_LOUDNESS_LUFS = "target_loudness_lufs"
     private const val KEY_LOUDNESS_PEAK_LIMIT_ENABLED = "loudness_peak_limit_enabled"
+    private const val KEY_LOUDNESS_NEGATIVE_GAIN_ONLY = "loudness_negative_gain_only"
     private const val KEY_USB_EXCLUSIVE_MODE = "usb_exclusive_mode"
     private const val KEY_PLAYBACK_FADE_ENABLED = "playback_fade_enabled"
     private const val KEY_PLAYBACK_FADE_DURATION_MS = "playback_fade_duration_ms"
@@ -117,6 +118,9 @@ object ThemePrefs {
     private val _loudnessPeakLimitFlow = MutableStateFlow(true)
     val loudnessPeakLimitFlow: StateFlow<Boolean> = _loudnessPeakLimitFlow.asStateFlow()
 
+    private val _loudnessNegativeGainOnlyFlow = MutableStateFlow(false)
+    val loudnessNegativeGainOnlyFlow: StateFlow<Boolean> = _loudnessNegativeGainOnlyFlow.asStateFlow()
+
     private val _usbExclusiveModeFlow = MutableStateFlow(false)
     val usbExclusiveModeFlow: StateFlow<Boolean> = _usbExclusiveModeFlow.asStateFlow()
 
@@ -153,6 +157,7 @@ object ThemePrefs {
         _volumeNormalizationFlow.value = volumeNormalizationEnabled
         _targetLoudnessFlow.value = targetLoudnessLufs
         _loudnessPeakLimitFlow.value = loudnessPeakLimitEnabled
+        _loudnessNegativeGainOnlyFlow.value = loudnessNegativeGainOnly
         _usbExclusiveModeFlow.value = usbExclusiveMode
         _playbackFadeEnabledFlow.value = playbackFadeEnabled
         _playbackFadeDurationMsFlow.value = playbackFadeDurationMs
@@ -375,6 +380,15 @@ object ThemePrefs {
                 prefs.edit().putBoolean(KEY_LOUDNESS_PEAK_LIMIT_ENABLED, value).apply()
             }
             _loudnessPeakLimitFlow.value = value
+        }
+
+    var loudnessNegativeGainOnly: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_LOUDNESS_NEGATIVE_GAIN_ONLY, false) else _loudnessNegativeGainOnlyFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_LOUDNESS_NEGATIVE_GAIN_ONLY, value).apply()
+            }
+            _loudnessNegativeGainOnlyFlow.value = value
         }
 
     var usbExclusiveMode: Boolean

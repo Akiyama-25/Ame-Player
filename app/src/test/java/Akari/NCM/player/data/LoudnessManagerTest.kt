@@ -27,23 +27,135 @@ class LoudnessManagerTest {
         context = ApplicationProvider.getApplicationContext()
         context.getSharedPreferences("ame_loudness_cache", Context.MODE_PRIVATE)
             .edit().clear().commit()
+        context.deleteDatabase("ame_loudness_cache.db")
         val sessionManager = UserSessionManager(context)
         val ncmApi = NcmApi(sessionManager)
         loudnessManager = LoudnessManager(context, ncmApi)
     }
 
     @Test
-    fun `registerOnlineLoudness过滤零值与空占位增益并保留有效云端增益`() {
+    fun `registerOnlineLoudness过滤试听片段与0点001以内占位值并支持vd回退`() {
         assertNull(loudnessManager.registerOnlineLoudness("song_null", null, 1.0f))
         assertNull(loudnessManager.registerOnlineLoudness("song_zero", 0.0f, 1.0f))
-        assertNull(loudnessManager.registerOnlineLoudness("song_tiny", 0.002f, 0.9f))
+        assertNull(loudnessManager.registerOnlineLoudness("song_neg_zero", -0.0f, 1.0f))
+        assertNull(loudnessManager.registerOnlineLoudness("song_tiny", -2.0e-4f, 0.9f))
+        assertNull(loudnessManager.registerOnlineLoudness("song_boundary", 0.001f, 0.9f))
 
+        // 试听截断片段强制拒绝，哪怕 gain 非零
+        assertNull(
+            loudnessManager.registerOnlineLoudness(
+                songId = "song_trial",
+                gainDb = -5.2f,
+                peak = 0.98f,
+                vdDb = -5.2f,
+                isFreeTrial = true
+            )
+        )
+
+        // gain 有效 -> NETEASE_ONLINE
         val valid = loudnessManager.registerOnlineLoudness("song_valid", -4.5f, 0.95f)
         assertNotNull(valid)
-        // -14.0 - (-4.5) = -9.5 LUFS
         assertEquals(-9.5f, valid!!.integratedLufs, 0.01f)
         assertEquals(0.95f, valid.truePeak, 0.001f)
         assertEquals(LoudnessSource.NETEASE_ONLINE, valid.source)
+
+        // gain 为无效占位 0.0，但分音质 vd 有效 (-3.4 dB) -> NETEASE_VD
+        val vdFallback = loudnessManager.registerOnlineLoudness(
+            songId = "song_vd_only",
+            gainDb = 0.0f,
+            peak = 0.96f,
+            vdDb = -3.4f,
+            isFreeTrial = false,
+            qualityLevel = "lossless",
+            fileSignature = "md5_abc_123"
+        )
+        assertNotNull(vdFallback)
+        assertEquals(-10.6f, vdFallback!!.integratedLufs, 0.01f)
+        assertEquals(LoudnessSource.NETEASE_VD, vdFallback.source)
+    }
+
+    @Test
+    fun `NcmApi正确解析并校准song_detail与song_music_detail分音质vd字段`() {
+        assertNull(NcmApi.normalizeNeteaseVdToDb(0.0))
+        assertNull(NcmApi.normalizeNeteaseVdToDb(-0.0002))
+        assertEquals(-3.39f, NcmApi.normalizeNeteaseVdToDb(-3.39)!!, 0.001f)
+        // 防御性兼容 1e-4 / 1e-2 整数缩放格式
+        assertEquals(-3.39f, NcmApi.normalizeNeteaseVdToDb(-33900.0)!!, 0.01f)
+
+        val musicDetailJson = """
+            {
+              "code": 200,
+              "data": {
+                "h": {"br": 320000, "vd": -2.5},
+                "sq": {"br": 960000, "vd": -4.15},
+                "hr": {"br": 1920000, "vd": 0.0}
+              }
+            }
+        """.trimIndent()
+        assertEquals(-4.15f, NcmApi.extractQualityVdFromMusicDetailJson(musicDetailJson, "lossless")!!, 0.01f)
+        assertEquals(-2.5f, NcmApi.extractQualityVdFromMusicDetailJson(musicDetailJson, "exhigh")!!, 0.01f)
+        // hr 为 0 占位时按回退顺序取有效 sq
+        assertEquals(-4.15f, NcmApi.extractQualityVdFromMusicDetailJson(musicDetailJson, "hires")!!, 0.01f)
+
+        val songDetailJson = """
+            {
+              "code": 200,
+              "songs": [{
+                "id": 12345,
+                "l": {"vd": -1.8},
+                "m": {"vd": -2.1},
+                "h": {"vd": -2.95},
+                "sq": {"vd": -3.6}
+              }]
+            }
+        """.trimIndent()
+        assertEquals(-3.6f, NcmApi.extractQualityVdFromSongDetailJson(songDetailJson, "lossless")!!, 0.01f)
+        assertEquals(-2.95f, NcmApi.extractQualityVdFromSongDetailJson(songDetailJson, "exhigh")!!, 0.01f)
+    }
+
+    @Test
+    fun `P0本地SQLite缓存支持复合主键持久化与LRU淘汰`() {
+        val song = PlayableMedia.Online(
+            id = "p0_song",
+            title = "P0 Test",
+            artist = "Artist",
+            album = "Album",
+            durationMs = 180_000L
+        )
+        loudnessManager.saveLoudness(
+            mediaId = song.id,
+            data = LoudnessData(-8.3f, 1.07f, LoudnessSource.SPARSE_RANGE_SCAN),
+            sourcePlatform = LoudnessManager.PLATFORM_NETEASE,
+            qualityLevel = "lossless",
+            fileSignature = "md5_lossless_1"
+        )
+        loudnessManager.saveLoudness(
+            mediaId = song.id,
+            data = LoudnessData(-9.1f, 0.99f, LoudnessSource.SPARSE_RANGE_SCAN),
+            sourcePlatform = LoudnessManager.PLATFORM_NETEASE,
+            qualityLevel = "exhigh",
+            fileSignature = "md5_exhigh_2"
+        )
+
+        // 重建全新 LoudnessManager 实例验证冷启动 SQLite P0 零延迟命中与音质区分
+        val freshManager = LoudnessManager(context, NcmApi(UserSessionManager(context)))
+        val sqHit = freshManager.getCachedLoudnessSync(song, "lossless", "md5_lossless_1")
+        val hqHit = freshManager.getCachedLoudnessSync(song, "exhigh", "md5_exhigh_2")
+        assertNotNull(sqHit)
+        assertNotNull(hqHit)
+        assertEquals(-8.3f, sqHit!!.integratedLufs, 0.01f)
+        assertEquals(-9.1f, hqHit!!.integratedLufs, 0.01f)
+
+        // 验证数据库 LRU 上限裁剪
+        val smallDb = LoudnessCacheDatabase(context, maxEntries = 3)
+        smallDb.clearAll()
+        for (i in 1..5) {
+            smallDb.put("netease", "lru_$i", "sq", "sig_$i", LoudnessData(-10.0f - i, 0.9f, LoudnessSource.SPARSE_RANGE_SCAN))
+            Thread.sleep(5)
+        }
+        assertEquals(3, smallDb.count())
+        assertNull(smallDb.get("netease", "lru_1", "sq", "sig_1"))
+        assertNotNull(smallDb.get("netease", "lru_5", "sq", "sig_5"))
     }
 
     @Test
@@ -57,22 +169,18 @@ class LoudnessManagerTest {
             coverUrl = null
         )
 
-        // 1. 先保存 Stage 1 初判
         val preview = LoudnessData(-11.0f, 0.9f, LoudnessSource.FAST_PREVIEW_SCAN)
         loudnessManager.saveLoudness(song.id, preview)
         assertEquals(-11.0f, loudnessManager.getCachedLoudnessSync(song)!!.integratedLufs, 0.01f)
 
-        // 2. QUEUE_AVERAGE 不允许写入持久化缓存
         loudnessManager.saveLoudness(song.id, LoudnessData(-18.0f, 1.0f, LoudnessSource.QUEUE_AVERAGE))
         assertEquals(-11.0f, loudnessManager.getCachedLoudnessSync(song)!!.integratedLufs, 0.01f)
 
-        // 3. Stage 2 全曲锁定可覆盖初判
         val locked = LoudnessData(-12.3f, 0.92f, LoudnessSource.BS1770_SCAN)
         loudnessManager.saveLoudness(song.id, locked)
         assertEquals(-12.3f, loudnessManager.getCachedLoudnessSync(song)!!.integratedLufs, 0.01f)
         assertEquals(LoudnessSource.BS1770_SCAN, loudnessManager.getCachedLoudnessSync(song)!!.source)
 
-        // 4. 已有全曲锁定时不被后续初判覆盖
         loudnessManager.saveLoudness(song.id, LoudnessData(-8.0f, 1.0f, LoudnessSource.FAST_PREVIEW_SCAN))
         assertEquals(-12.3f, loudnessManager.getCachedLoudnessSync(song)!!.integratedLufs, 0.01f)
         assertEquals(LoudnessSource.BS1770_SCAN, loudnessManager.getCachedLoudnessSync(song)!!.source)
@@ -104,18 +212,15 @@ class LoudnessManagerTest {
             coverUrl = null
         )
 
-        // 1. 先保存 3 锚点多点抽样 (-6.9 LUFS, FAST_PREVIEW_SCAN)
         val multiPoint = LoudnessData(-6.9f, 0.95f, LoudnessSource.FAST_PREVIEW_SCAN)
         loudnessManager.saveLoudness(song.id, multiPoint)
 
-        // 2. 低优先级前奏初判 (-21.3 LUFS, INTRO_PREVIEW_SCAN) 不得覆盖多点初判
         val introPreview = LoudnessData(-21.3f, 0.3f, LoudnessSource.INTRO_PREVIEW_SCAN)
         loudnessManager.saveLoudness(song.id, introPreview)
         val afterIntro = loudnessManager.getCachedLoudnessSync(song)!!
         assertEquals(-6.9f, afterIntro.integratedLufs, 0.01f)
         assertEquals(LoudnessSource.FAST_PREVIEW_SCAN, afterIntro.source)
 
-        // 3. 若先写入 INTRO_PREVIEW_SCAN，后续 FAST_PREVIEW_SCAN 可升级覆盖
         val song2 = song.copy(id = "track_priority_2")
         loudnessManager.saveLoudness(song2.id, introPreview)
         loudnessManager.saveLoudness(song2.id, multiPoint)
@@ -123,7 +228,6 @@ class LoudnessManagerTest {
         assertEquals(-6.9f, upgraded.integratedLufs, 0.01f)
         assertEquals(LoudnessSource.FAST_PREVIEW_SCAN, upgraded.source)
 
-        // 4. 全曲 BS.1770 锁定可升级多点初判
         val finalLocked = LoudnessData(-9.6f, 0.98f, LoudnessSource.BS1770_SCAN)
         loudnessManager.saveLoudness(song.id, finalLocked)
         val afterFinal = loudnessManager.getCachedLoudnessSync(song)!!

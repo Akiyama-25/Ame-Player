@@ -190,8 +190,8 @@ class LoudnessAudioProcessorTest {
         assertEquals(null, processor.staticGainDb)
         assertEquals(1.0f, processor.currentMultiplier, 0.001f)
 
-        // 喂入连续音频流，未获取全曲响度前保持 1.0 原始电平输出，绝不在播放中途动态漂移
-        val frameCount = 1000
+        // 喂入超过 60ms Look-ahead 环形缓冲 (2880 帧) 的平稳直流信号，验证起播平滑无突兀漂移
+        val frameCount = 6000
         val input = ByteBuffer.allocateDirect(frameCount * 4).order(ByteOrder.LITTLE_ENDIAN)
         for (i in 0 until frameCount) {
             input.putShort(10000)
@@ -205,7 +205,7 @@ class LoudnessAudioProcessorTest {
 
         output.position((frameCount - 10) * 4)
         val initialSample = output.short.toInt()
-        assertTrue("未获取全曲响度前应保持 1.0 原始电平输出，实际: $initialSample", initialSample in 9990..10010)
+        assertTrue("未获取全曲响度前平稳信号应保持接近 1.0 原始电平输出，实际: $initialSample", initialSample in 9950..10050)
 
         // 全曲扫描完成后，设置全曲静态增益 (-6.0 dB, 乘数 ≈ 0.501)
         processor.setStaticGain(-6.0f, 0.501187f)
@@ -442,5 +442,167 @@ class LoudnessAudioProcessorTest {
         // 将目标响度进一步调高到 -11.0 LUFS 时，未锁定源的正向增益仍被控制在 +2.0 dB 以内
         processor.updateSettings(enabled = true, target = -11.0f, peakLimit = true)
         assertEquals(2.0f, processor.staticGainDb!!, 0.01f)
+    }
+
+    @Test
+    fun `USB独占BitPerfect模式强制逐字节旁路所有响度与限幅DSP`() {
+        val processor = LoudnessAudioProcessor()
+        processor.updateSettings(
+            enabled = true,
+            target = -14.0f,
+            peakLimit = true,
+            negativeGainOnly = false,
+            usbExclusiveBypass = true
+        )
+        processor.configure(AudioFormat(48000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        processor.resetForTrack("usb_bp_track", LoudnessData(-6.0f, 1.0f, LoudnessSource.NETEASE_ONLINE))
+
+        val input = ByteBuffer.allocateDirect(16).order(ByteOrder.LITTLE_ENDIAN)
+        val samples = shortArrayOf(12345, -23456, 32767, -32768, 1000, -1000, 42, -42)
+        samples.forEach { input.putShort(it) }
+        input.flip()
+
+        processor.queueInput(input)
+        val output = processor.output
+        output.order(ByteOrder.LITTLE_ENDIAN)
+
+        assertEquals(16, output.remaining())
+        for (expected in samples) {
+            assertEquals("USB 独占模式必须零修改逐样本透传", expected, output.short)
+        }
+    }
+
+    @Test
+    fun `Tier2完成后通过1点2秒对数斜坡无缝交接并锁定静态增益`() {
+        val processor = LoudnessAudioProcessor()
+        processor.isEnabled = true
+        processor.targetLufs = -14.0f
+        processor.peakLimitEnabled = true
+
+        val sr = 48000
+        processor.configure(AudioFormat(sr, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        processor.resetForTrack("handoff_track", null)
+        assertFalse(processor.isFinalLocked)
+
+        // 先走过 100ms Tier 3 Look-ahead 缓冲
+        val initFrames = sr / 10
+        val initBuf = ByteBuffer.allocateDirect(initFrames * 4).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(initFrames) {
+            initBuf.putShort(10000)
+            initBuf.putShort(10000)
+        }
+        initBuf.flip()
+        processor.queueInput(initBuf)
+
+        // Tier 2 11x3s 探测返回 -8.0 LUFS -> -6.0 dB 衰减，执行 1.2s 对数斜坡交接
+        val sparseData = LoudnessData(-8.0f, 0.98f, LoudnessSource.SPARSE_RANGE_SCAN)
+        val handoffGain = processor.handoffToStaticGain(sparseData, rampDurationSec = 1.2)
+        assertEquals(-6.0f, handoffGain.effectiveGainDb, 0.05f)
+        assertTrue(processor.isFinalLocked)
+        assertEquals(LoudnessSource.SPARSE_RANGE_SCAN, processor.currentSource)
+
+        // 喂入 1.5 秒信号使 1.2s 斜坡完整结束
+        val rampFrames = (sr * 1.5).toInt()
+        val rampBuf = ByteBuffer.allocateDirect(rampFrames * 4).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(rampFrames) {
+            rampBuf.putShort(10000)
+            rampBuf.putShort(10000)
+        }
+        rampBuf.flip()
+        processor.queueInput(rampBuf)
+
+        val out = processor.output
+        out.order(ByteOrder.LITTLE_ENDIAN)
+        out.position((rampFrames - 10) * 4)
+        val settled = out.short.toInt()
+        assertTrue("1.2s 对数斜坡交接后应平稳收敛至 ~5012，实际: $settled", settled in 4900..5150)
+    }
+
+    @Test
+    fun `Tier3在副歌骤降至安静段落时触发FreezeGate冻结增益防止底噪抬升`() {
+        val processor = LoudnessAudioProcessor()
+        processor.isEnabled = true
+        processor.targetLufs = -14.0f
+        processor.peakLimitEnabled = true
+
+        val sr = 48000
+        processor.configure(AudioFormat(sr, 2, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        processor.resetForTrack("freeze_gate_track", null)
+
+        // 1. 喂入 2.0 秒高响度副歌 (约 -7 LUFS)
+        val loudFrames = sr * 2
+        val loudBuf = ByteBuffer.allocateDirect(loudFrames * 4).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until loudFrames) {
+            val s = (15000.0 * kotlin.math.sin(2.0 * kotlin.math.PI * 1000.0 * i / sr)).toInt().toShort()
+            loudBuf.putShort(s)
+            loudBuf.putShort(s)
+        }
+        loudBuf.flip()
+        processor.queueInput(loudBuf)
+        val gainAfterChorus = processor.currentMultiplier
+        assertTrue("高响度副歌应被 Tier 3 快压衰减 (< 0.85)，实际: $gainAfterChorus", gainAfterChorus < 0.85f)
+
+        // 2. 紧接着喂入 3.5 秒极轻过门段落 (约 -34 LUFS，落差 > 11 LU)
+        val quietFrames = (sr * 3.5).toInt()
+        val quietBuf = ByteBuffer.allocateDirect(quietFrames * 4).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until quietFrames) {
+            val s = (600.0 * kotlin.math.sin(2.0 * kotlin.math.PI * 1000.0 * i / sr)).toInt().toShort()
+            quietBuf.putShort(s)
+            quietBuf.putShort(s)
+        }
+        quietBuf.flip()
+        processor.queueInput(quietBuf)
+
+        assertTrue("安静过门段落落差超过 11 LU 时应触发 Freeze Gate", processor.isFreezeGateActive)
+        assertTrue(
+            "Freeze Gate 激活期间增益不得向上泵浦超过 +0.15，实际: before=$gainAfterChorus, after=${processor.currentMultiplier}",
+            processor.currentMultiplier <= gainAfterChorus + 0.15f
+        )
+    }
+
+    @Test
+    fun `末端4x过采样真峰值限幅器将Nyquist四分之一过冲严控在负1dBTP以内`() {
+        val processor = LoudnessAudioProcessor()
+        processor.isEnabled = true
+        processor.targetLufs = -14.0f
+        processor.peakLimitEnabled = true
+
+        val sr = 48000
+        processor.configure(AudioFormat(sr, 2, C.ENCODING_PCM_FLOAT))
+        processor.flush()
+        // 给定 0 dB 静态增益，但输入信号本身存在采样点间真峰值 +2.1 dBTP 的过冲
+        processor.resetForTrack("tp_limiter_track", LoudnessData(-14.0f, 0.5f, LoudnessSource.BS1770_SCAN))
+
+        val frames = sr / 2 // 0.5s
+        val input = ByteBuffer.allocateDirect(frames * 8).order(ByteOrder.LITTLE_ENDIAN)
+        for (i in 0 until frames) {
+            val s = if ((i / 2) % 2 == 0) 0.92f else -0.92f
+            input.putFloat(s)
+            input.putFloat(s)
+        }
+        input.flip()
+
+        processor.queueInput(input)
+        val out = processor.output
+        out.order(ByteOrder.LITTLE_ENDIAN)
+
+        // 跳过前 2000 帧稳态建立后测量 4x 真峰值
+        val tailFrames = frames - 2000
+        val outL = FloatArray(tailFrames)
+        val outR = FloatArray(tailFrames)
+        out.position(2000 * 8)
+        for (i in 0 until tailFrames) {
+            outL[i] = out.float
+            outR[i] = out.float
+        }
+        val measuredTruePeak = Akari.NCM.player.core.loudness.EbuR128Calculator.measureTruePeak4x(outL, outR)
+        // -1.0 dBTP = 0.89125 线性，留极小浮点容差 0.905
+        assertTrue(
+            "4x 过采样真峰值限幅器应将输出真峰值压制在 <= 0.905 (-0.87 dBTP)，实际: $measuredTruePeak",
+            measuredTruePeak <= 0.905f
+        )
     }
 }

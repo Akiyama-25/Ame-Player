@@ -129,6 +129,7 @@ fun SettingsScreen(
     val volumeNormalizationEnabled by ThemePrefs.volumeNormalizationFlow.collectAsState()
     val targetLoudnessLufs by ThemePrefs.targetLoudnessFlow.collectAsState()
     val loudnessPeakLimitEnabled by ThemePrefs.loudnessPeakLimitFlow.collectAsState()
+    val loudnessNegativeGainOnly by ThemePrefs.loudnessNegativeGainOnlyFlow.collectAsState()
     val playbackFadeEnabled by ThemePrefs.playbackFadeEnabledFlow.collectAsState()
 
     val isMonet by ThemePrefs.monetFlow.collectAsState()
@@ -608,13 +609,15 @@ fun SettingsScreen(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 val targetDesc = when (targetLoudnessLufs) {
-                                    -23.0f -> "EBU R128 标准 (-23.0 LUFS)"
-                                    -16.0f -> "Apple 演播室标准 (-16.0 LUFS)"
-                                    else -> "流媒体推荐 (-14.0 LUFS)"
+                                    -11.0f -> "响亮 (-11.0 LUFS)"
+                                    -16.0f -> "柔和 (-16.0 LUFS)"
+                                    -23.0f -> "广电参考 (-23.0 LUFS)"
+                                    else -> "标准 (-14.0 LUFS)"
                                 }
+                                val negTag = if (loudnessNegativeGainOnly) " · 仅降不升" else ""
                                 Text(
-                                    text = if (volumeNormalizationEnabled) "已启用 · 基准: $targetDesc · -1.0 dBTP 防过载"
-                                    else "基于综合响度与真峰值防过载算法，自动均衡不同歌曲的响度差异",
+                                    text = if (volumeNormalizationEnabled) "已启用 · $targetDesc$negTag · -1.0 dBTP 限幅"
+                                    else "云端元数据 + 11×3s 稀疏抽样 + 实时前瞻 AGC 三级响度均衡，自动拉平曲目音量差异",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1263,9 +1266,12 @@ fun SettingsScreen(
                 }
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
                     Text(
-                        text = "基准标准：ITU-R BS.1770-4 综合响度与 EBU R128 规范。支持渐进式双阶段均衡（秒级初判先行生效，随后平滑锁定全曲增益）、在线播放解码流实时测算，并在曲间保留 1 秒校准等候且自动预计算未来 3 首曲目平均响度与在线特征缓存。",
+                        text = "采用三级渐进式响度引擎（P0 本地持久化缓存 → 云端 gain/vd → 11×3s 稀疏抽样 → 实时前瞻 AGC 与 Freeze Gate 兜底），全链路配备末端 4x 过采样真峰值限幅器；启用 USB DAC 硬件独占模式时自动旁路所有响度 DSP。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -1278,19 +1284,22 @@ fun SettingsScreen(
                     )
 
                     val targets = listOf(
-                        Triple(-14.0f, "流媒体推荐 (-14.0 LUFS)", "适合现代耳机与移动设备，动态与响度极佳平衡"),
-                        Triple(-23.0f, "EBU R128 标准 (-23.0 LUFS)", "国际广电参考电平，保留最高动态范围，适合耳放与 Hi-Fi"),
-                        Triple(-16.0f, "Apple 演播室标准 (-16.0 LUFS)", "Apple Music Sound Check 统一电平规范")
+                        Triple(-14.0f, "标准 (-14.0 LUFS)", "默认推荐，与主流流媒体标准一致，兼顾响度与动态"),
+                        Triple(-16.0f, "柔和 (-16.0 LUFS)", "温和听感，保留更多安静细节与动态起伏"),
+                        Triple(-11.0f, "响亮 (-11.0 LUFS)", "更高响度输出，适合通勤或外放环境"),
+                        Triple(-23.0f, "广电参考 (-23.0 LUFS)", "EBU R128 广电参考电平，最大动态余量")
                     )
 
                     targets.forEach { (lufs, title, desc) ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .heightIn(min = 48.dp)
                                 .clickable {
                                     ThemePrefs.targetLoudnessLufs = lufs
                                 }
-                                .padding(vertical = 6.dp),
+                                .padding(vertical = 4.dp)
+                                .testTag("loudness_target_${lufs.toInt()}"),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
@@ -1310,17 +1319,43 @@ fun SettingsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .clickable { ThemePrefs.loudnessNegativeGainOnly = !loudnessNegativeGainOnly }
+                            .testTag("setting_loudness_negative_gain_only"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("仅降不升模式 (Negative Gain Only)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("仅衰减高于目标响度的曲目，不对低响度/大动态曲目施加正向增益，杜绝任何动态压缩感", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Switch(
+                            checked = loudnessNegativeGainOnly,
+                            onCheckedChange = { ThemePrefs.loudnessNegativeGainOnly = it },
+                            modifier = Modifier.testTag("switch_loudness_negative_gain_only")
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
                             .clickable { ThemePrefs.loudnessPeakLimitEnabled = !loudnessPeakLimitEnabled },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("真峰值防破音压制 (-1.0 dBTP)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
-                            Text("施加正增益时自动压制超出 -1.0 dBTP 的瞬态峰值，彻底防止数字削波破音", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("末端 4x 过采样真峰值限幅 (-1.0 dBTP)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+                            Text("在音频管线末端采用 4 倍过采样与 5ms 前瞻限幅，严控采样点间真实峰值不超 -1.0 dBTP", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        Spacer(Modifier.width(10.dp))
                         Switch(
                             checked = loudnessPeakLimitEnabled,
-                            onCheckedChange = { ThemePrefs.loudnessPeakLimitEnabled = it }
+                            onCheckedChange = { ThemePrefs.loudnessPeakLimitEnabled = it },
+                            modifier = Modifier.testTag("switch_loudness_peak_limit")
                         )
                     }
                 }

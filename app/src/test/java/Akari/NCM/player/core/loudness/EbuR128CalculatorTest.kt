@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.PI
+import kotlin.math.pow
 import kotlin.math.sin
 
 class EbuR128CalculatorTest {
@@ -249,5 +250,171 @@ class EbuR128CalculatorTest {
             peakLimitEnabled = true
         )
         assertEquals(7.3f, lockedResult.effectiveGainDb, 0.05f)
+    }
+
+    @Test
+    fun `测试仅降不升模式与响亮档位预设`() {
+        val loudTrack = LoudnessData(-8.3f, 1.07f, LoudnessSource.SPARSE_RANGE_SCAN)
+        val quietTrack = LoudnessData(-20.0f, 0.30f, LoudnessSource.BS1770_SCAN)
+
+        // 响亮档位 -11.0 LUFS
+        val loudPresetResult = EbuR128Calculator.computeGain(
+            loudness = loudTrack,
+            targetLufs = EbuR128Calculator.TARGET_LOUD_LUFS,
+            peakLimitEnabled = true,
+            negativeGainOnly = false
+        )
+        assertEquals(-2.7f, loudPresetResult.effectiveGainDb, 0.05f)
+
+        // 仅降不升模式下：过响曲目正常衰减，低响度曲目强制钳位至 0.0 dB
+        val negOnlyLoud = EbuR128Calculator.computeGain(
+            loudness = loudTrack,
+            targetLufs = EbuR128Calculator.TARGET_STREAMING_LUFS,
+            peakLimitEnabled = true,
+            negativeGainOnly = true
+        )
+        assertEquals(-5.7f, negOnlyLoud.effectiveGainDb, 0.05f)
+
+        val negOnlyQuiet = EbuR128Calculator.computeGain(
+            loudness = quietTrack,
+            targetLufs = EbuR128Calculator.TARGET_STREAMING_LUFS,
+            peakLimitEnabled = true,
+            negativeGainOnly = true
+        )
+        assertEquals(0.0f, negOnlyQuiet.effectiveGainDb, 0.001f)
+        assertEquals(1.0f, negOnlyQuiet.linearMultiplier, 0.001f)
+    }
+
+    @Test
+    fun `测试4x过采样真峰值检测器捕获采样点间过冲`() {
+        val sampleRate = 48000
+        val n = 4096
+        val left = FloatArray(n)
+        val right = FloatArray(n)
+        // Nyquist/4 交替模式 [+0.9, +0.9, -0.9, -0.9, ...]：采样点峰值 0.90，但连续波形采样点间真实峰值约为 0.90 * sqrt(2) ≈ 1.27 (> 1.0)
+        for (i in 0 until n) {
+            val s = if ((i / 2) % 2 == 0) 0.9f else -0.9f
+            left[i] = s
+            right[i] = s
+        }
+        val truePeak = EbuR128Calculator.measureTruePeak4x(left, right)
+        assertTrue("4x 过采样应检测到采样点间真实峰值 > 1.05，实际: $truePeak", truePeak > 1.05f)
+    }
+
+    @Test
+    fun `测试11x3s稀疏抽样窗口规划与短曲目全曲回退`() {
+        // 参考音频 rN Frums - ハテ.flac 时长 173.376s (> 33s) -> 规划 11 段 × 3s，第 11 段钳位至 [170376, 173376]
+        val windows = EbuR128Calculator.planSparseSampleWindows(173_376L)
+        assertEquals(11, windows.size)
+        assertEquals(0L, windows[0].startMs)
+        assertEquals(3000L, windows[0].durationMs)
+        assertEquals(170_376L, windows[10].startMs)
+        assertEquals(3000L, windows[10].durationMs)
+        for (i in 1 until windows.size) {
+            assertTrue("窗口应严格递增", windows[i].startMs > windows[i - 1].startMs)
+        }
+
+        // 短曲目 <= 33s -> 单窗全曲扫描
+        val shortWindows = EbuR128Calculator.planSparseSampleWindows(28_500L)
+        assertEquals(1, shortWindows.size)
+        assertEquals(0L, shortWindows[0].startMs)
+        assertEquals(28_500L, shortWindows[0].durationMs)
+    }
+
+    @Test
+    fun `测试参考音频rN_Frums_ハテ的FLAC容器SEEKTABLE解析与11段稀疏字节映射`() {
+        val candidates = listOf(
+            java.io.File("public/assets/aistudio/rN_Frums_-____4de5d3de.flac"),
+            java.io.File("../public/assets/aistudio/rN_Frums_-____4de5d3de.flac")
+        )
+        val refFile = candidates.firstOrNull { it.exists() }
+        assertTrue("参考音频文件应存在于工作区", refFile != null)
+
+        val totalSize = refFile!!.length()
+        val headerBuf = ByteArray(65536)
+        refFile.inputStream().use { ins ->
+            var read = 0
+            while (read < headerBuf.size) {
+                val n = ins.read(headerBuf, read, headerBuf.size - read)
+                if (n <= 0) break
+                read += n
+            }
+        }
+
+        val flacIndex = SparseRangeLoudnessProber.FlacHeaderIndex.parse(headerBuf, totalSize)
+        assertTrue("应成功解析参考 FLAC 的 STREAMINFO 与 SEEKTABLE", flacIndex != null)
+        assertEquals(48000, flacIndex!!.sampleRate)
+        assertEquals(2, flacIndex.channels)
+        assertEquals(16, flacIndex.bitsPerSample)
+        assertTrue("总时长应约为 173.4s，实际: ${flacIndex.durationMs}", flacIndex.durationMs in 173_000L..174_000L)
+        assertTrue("应解析到 SEEKTABLE 定位点", flacIndex.seekPoints.size >= 50)
+
+        val windows = EbuR128Calculator.planSparseSampleWindows(flacIndex.durationMs)
+        var totalPlannedBytes = 0L
+        var prevStart = -1L
+        for (w in windows) {
+            val byteRange = flacIndex.mapWindowToByteRange(w.startMs, w.endMs)
+            assertTrue("字节区段长度必须 > 0", byteRange.endInclusive > byteRange.start)
+            assertTrue("各稀疏片段起始字节偏移应单调递增", byteRange.start >= prevStart)
+            prevStart = byteRange.start
+            totalPlannedBytes += byteRange.length
+        }
+        val trafficRatio = totalPlannedBytes.toDouble() / totalSize.toDouble()
+        assertTrue("11×3s 稀疏拉取流量占比应显著低于完整文件 (期望 < 35%，实际 ${(trafficRatio * 100).toInt()}%)", trafficRatio < 0.35)
+    }
+
+    @Test
+    fun `测试11x3s双重门控加P75锚点对安静前奏尾奏曲目的精确抗偏移估计`() {
+        // 复现参考音频 rN Frums - ハテ.flac 实测 11×3s 真实分段响度分布（改善计划 Section 4.4）：
+        // Seg 0 (-21.85) 与 Seg 10 (-55.37) 低于相对门限自动过滤，主体 9 段 -9.16 至 -7.40 LUFS，全曲真值 -8.30 LUFS
+        val sampleRate = 48000
+        val segTargetLufs = floatArrayOf(
+            -21.85f, -9.16f, -7.83f, -8.36f, -7.92f, -7.87f, -9.13f, -7.42f, -7.40f, -9.02f, -55.37f
+        )
+        val segFrames = sampleRate * 3 // 每段 3s
+        val segments = segTargetLufs.mapIndexed { idx, targetLufs ->
+            // 1kHz 立体声正弦波幅度 a 对应响度约为 20*log10(a) - 0.04 LUFS
+            val amp = 10.0.pow((targetLufs + 0.04f) / 20.0).toFloat().coerceAtMost(0.99f)
+            val l = FloatArray(segFrames)
+            val r = FloatArray(segFrames)
+            for (i in 0 until segFrames) {
+                val s = (amp * sin(2.0 * PI * 1000.0 * i / sampleRate)).toFloat()
+                l[i] = s
+                r[i] = s
+            }
+            EbuR128Calculator.analyzeSegment(
+                segmentIndex = idx,
+                startMs = idx * 17_300L,
+                endMs = idx * 17_300L + 3000L,
+                leftChannel = l,
+                rightChannel = r,
+                sampleRate = sampleRate
+            )
+        }
+
+        val analysis = EbuR128Calculator.calculateSparseSegmentsLoudness(segments)
+        assertTrue("安静前奏 Seg 0 应被相对门限过滤", analysis.filteredSegmentIndices.contains(0))
+        assertTrue("安静尾奏 Seg 10 应被相对门限过滤", analysis.filteredSegmentIndices.contains(10))
+        assertEquals(9, analysis.keptSegmentIndices.size)
+        // 与全曲真值 -8.30 LUFS 误差必须在 ±0.5 LU 以内
+        assertEquals(-8.30f, analysis.loudnessData.integratedLufs, 0.5f)
+        assertEquals(LoudnessSource.SPARSE_RANGE_SCAN, analysis.loudnessData.source)
+    }
+
+    @Test
+    fun `测试MP3帧同步检索与USB旁路状态文本`() {
+        val fakeStream = ByteArray(100)
+        // 放置一个合法的 MPEG1 Layer3 128kbps 44.1kHz 帧头：FF FB 90 00 于 offset 42
+        fakeStream[42] = 0xFF.toByte()
+        fakeStream[43] = 0xFB.toByte()
+        fakeStream[44] = 0x90.toByte()
+        fakeStream[45] = 0x00.toByte()
+        assertEquals(42, SparseRangeLoudnessProber.Mp3HeaderIndex.findNextMp3FrameSync(fakeStream))
+
+        val usbBypassed = LoudnessNormalizationState(
+            isEnabled = true,
+            isBypassedForUsbExclusive = true
+        )
+        assertTrue(usbBypassed.statusSummary.contains("USB 独占源码旁路"))
     }
 }
