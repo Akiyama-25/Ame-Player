@@ -42,6 +42,7 @@ import androidx.media3.extractor.ExtractorOutput
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.PositionHolder
 import androidx.media3.extractor.flac.FlacExtractor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -148,6 +149,45 @@ class AmePlayerEngine @Inject constructor(
     companion object {
         private const val INTER_TRACK_GAP_MS = 1000L
         private const val UPCOMING_PREFETCH_COUNT = 3
+
+        /**
+         * 兼容历史持久化队列：旧版 MainScreen 曾将已同步的网易云歌单保存为 LOCAL。
+         * 若队列中存在 Online 曲目，或存在非 NCM 本地曲目却携带 http(s) 云端封面（仅云端匹配写入），
+         * 则自动纠正为 ONLINE；纯本地文件夹与本地 .ncm 歌单保持 LOCAL 不受影响。
+         */
+        internal fun resolveRestoredSourceType(
+            savedSource: PlaylistSourceType,
+            items: List<PlayableMedia>
+        ): PlaylistSourceType {
+            if (savedSource != PlaylistSourceType.LOCAL || items.isEmpty()) return savedSource
+            val hasOnlineTracks = items.any { it is PlayableMedia.Online }
+            val hasCloudMatchedLocalTracks = items.any { media ->
+                media is PlayableMedia.LocalNcm &&
+                    !media.isNcm &&
+                    (media.coverUrl?.startsWith("http://", ignoreCase = true) == true ||
+                        media.coverUrl?.startsWith("https://", ignoreCase = true) == true)
+            }
+            return if (hasOnlineTracks || hasCloudMatchedLocalTracks) {
+                PlaylistSourceType.ONLINE
+            } else {
+                savedSource
+            }
+        }
+
+        internal fun sanitizeMediaForSource(
+            media: PlayableMedia?,
+            sourceType: PlaylistSourceType
+        ): PlayableMedia? {
+            if (sourceType == PlaylistSourceType.LOCAL &&
+                media is PlayableMedia.LocalNcm &&
+                !media.coverUrl.isNullOrBlank() &&
+                !media.coverUrl.startsWith("file://") &&
+                !media.coverUrl.startsWith("content://")
+            ) {
+                return media.copy(coverUrl = null)
+            }
+            return media
+        }
     }
 
     var isLiveIslandEnabled: Boolean
@@ -166,6 +206,8 @@ class AmePlayerEngine @Inject constructor(
     private var currentArtworkBitmap: Bitmap? = null
     private var lyricLoadJob: Job? = null
     private var artworkLoadJob: Job? = null
+    @Volatile
+    private var activeTrackTaskKey: String? = null
 
     // State flows
     private val _currentMedia = MutableStateFlow<PlayableMedia?>(null)
@@ -354,8 +396,16 @@ class AmePlayerEngine @Inject constructor(
             val savedSource = runCatching {
                 PlaylistSourceType.valueOf(ThemePrefs.lastPlaybackSourceType)
             }.getOrDefault(PlaylistSourceType.NONE)
+            val resolvedSource = resolveRestoredSourceType(savedSource, items)
+            if (resolvedSource != savedSource) {
+                ThemePrefs.lastPlaybackSourceType = resolvedSource.name
+                AppLogger.i(
+                    "[AME_ONLINE_PLAY]",
+                    ">>> Migrated legacy restored playlistSourceType from $savedSource to $resolvedSource (size=${items.size})"
+                )
+            }
 
-            _playlistSourceType.value = savedSource
+            _playlistSourceType.value = resolvedSource
             mediaMap.clear()
             val mediaItems = items.mapIndexed { index, media ->
                 mediaMap[media.id] = media
@@ -364,7 +414,7 @@ class AmePlayerEngine @Inject constructor(
             val restoredMedia = items[savedIndex]
             _playlist.value = items
             _currentIndex.value = savedIndex
-            _currentMedia.value = restoredMedia
+            _currentMedia.value = sanitizeMediaForSource(restoredMedia, resolvedSource)
             _currentPositionMs.value = 0L
             _durationMs.value = restoredMedia.durationMs
             _isPlaying.value = false
@@ -671,7 +721,7 @@ class AmePlayerEngine @Inject constructor(
                 val id = mediaItem?.mediaId
                 AppLogger.i("[AME_ONLINE_PLAY]", ">>> ExoPlayer onMediaItemTransition: mediaId='$id', reason=$reason")
                 val currentMedia = id?.let { mediaMap[it] }
-                _currentMedia.value = currentMedia
+                _currentMedia.value = sanitizeMediaForSource(currentMedia, effectiveSourceTypeFor(currentMedia))
                 _currentIndex.value = player.currentMediaItemIndex
                 _currentPositionMs.value = player.currentPosition.coerceAtLeast(0L)
                 _durationMs.value = player.duration.takeIf { it != C.TIME_UNSET } ?: 0L
@@ -1803,18 +1853,29 @@ class AmePlayerEngine @Inject constructor(
     }
 
     private fun onTrackChanged(currentMedia: PlayableMedia?) {
-        lyricLoadJob?.cancel()
-        artworkLoadJob?.cancel()
-        _currentLyricState.value = null
-        _currentLyricsResult.value = LyricResult(emptyList(), LyricSource.NONE)
-        currentArtworkBitmap = null
-
         if (currentMedia == null) {
+            activeTrackTaskKey = null
+            lyricLoadJob?.cancel()
+            artworkLoadJob?.cancel()
+            _currentLyricState.value = null
+            _currentLyricsResult.value = LyricResult(emptyList(), LyricSource.NONE)
+            currentArtworkBitmap = null
             islandManager.cancelIsland()
             return
         }
 
         val effectiveSourceType = effectiveSourceTypeFor(currentMedia)
+        val taskKey = "${currentMedia.id}|${effectiveSourceType.name}|${(currentMedia as? PlayableMedia.LocalNcm)?.uri.orEmpty()}"
+        if (activeTrackTaskKey == taskKey && artworkLoadJob?.isActive == true) {
+            return
+        }
+
+        activeTrackTaskKey = taskKey
+        lyricLoadJob?.cancel()
+        artworkLoadJob?.cancel()
+        _currentLyricState.value = null
+        _currentLyricsResult.value = LyricResult(emptyList(), LyricSource.NONE)
+        currentArtworkBitmap = null
 
         // 1. 异步加载当前曲目的歌词（严格遵循云端歌单 / 本地歌单信息获取优先级）
         lyricLoadJob = scope.launch {
@@ -1967,10 +2028,16 @@ class AmePlayerEngine @Inject constructor(
                                 mediaId = currentMedia.id,
                                 updatedMetadata = updatedMetadata
                             )
+                            AppLogger.d(
+                                "[AME_ONLINE_PLAY]",
+                                "Updated MediaSession artwork for '${currentMedia.title}' ($effectiveSourceType): bytes=${artworkBytes?.size ?: 0}, uri=$finalCoverUrl"
+                            )
                         }
                         syncIslandState()
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppLogger.e("[AME_ONLINE_PLAY]", "Failed to resolve cover/metadata for media session", e)
             }
@@ -2215,17 +2282,7 @@ class AmePlayerEngine @Inject constructor(
         }
         _playlist.value = items
         val startMedia = items.getOrNull(safeStartIndex)
-        val initialCurrentMedia = if (_playlistSourceType.value == PlaylistSourceType.LOCAL &&
-            startMedia is PlayableMedia.LocalNcm &&
-            !startMedia.coverUrl.isNullOrBlank() &&
-            !startMedia.coverUrl.startsWith("file://") &&
-            !startMedia.coverUrl.startsWith("content://")
-        ) {
-            startMedia.copy(coverUrl = null)
-        } else {
-            startMedia
-        }
-        _currentMedia.value = initialCurrentMedia
+        _currentMedia.value = sanitizeMediaForSource(startMedia, _playlistSourceType.value)
         _currentIndex.value = safeStartIndex
         saveLastPlaybackState()
         prepareLoudnessSync(startMedia)

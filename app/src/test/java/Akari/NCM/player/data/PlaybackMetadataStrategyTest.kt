@@ -7,6 +7,7 @@ import Akari.NCM.player.core.PlayableMedia
 import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.core.loudness.LoudnessData
 import Akari.NCM.player.core.loudness.LoudnessSource
+import Akari.NCM.player.player.AmePlayerEngine
 import android.content.Context
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
@@ -308,5 +309,57 @@ class PlaybackMetadataStrategyTest {
         // 验证 JPEG SOI 魔数 FF D8
         assertEquals(0xFF.toByte(), cover[0])
         assertEquals(0xD8.toByte(), cover[1])
+    }
+
+    @Test
+    fun `旧版持久化为LOCAL的云端同步歌单自动迁移为ONLINE且纯本地歌单保持LOCAL`() {
+        val cloudMatchedLocalFlac = PlayableMedia.LocalNcm(
+            id = "2723338530",
+            title = "ムリムリ進化論",
+            artist = "七音阿卡莉/ナユタン星人",
+            album = "ムリムリ進化論",
+            coverUrl = "https://p1.music.126.net/example_cover.jpg",
+            uri = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic%2Fsong.flac",
+            format = AudioFormat.FLAC,
+            isNcm = false
+        )
+        assertEquals(
+            PlaylistSourceType.ONLINE,
+            AmePlayerEngine.resolveRestoredSourceType(PlaylistSourceType.LOCAL, listOf(cloudMatchedLocalFlac))
+        )
+
+        val pureLocalFlac = cloudMatchedLocalFlac.copy(id = "12345", artist = "", album = "", coverUrl = null)
+        assertEquals(
+            PlaylistSourceType.LOCAL,
+            AmePlayerEngine.resolveRestoredSourceType(PlaylistSourceType.LOCAL, listOf(pureLocalFlac))
+        )
+
+        val pureLocalNcm = cloudMatchedLocalFlac.copy(isNcm = true)
+        assertEquals(
+            PlaylistSourceType.LOCAL,
+            AmePlayerEngine.resolveRestoredSourceType(PlaylistSourceType.LOCAL, listOf(pureLocalNcm))
+        )
+
+        // LOCAL 模式下 sanitizeMediaForSource 必须清理云端 http(s) 封面，与 buildMediaItem 保持一致
+        val sanitizedLocal = AmePlayerEngine.sanitizeMediaForSource(cloudMatchedLocalFlac, PlaylistSourceType.LOCAL)
+        assertNull((sanitizedLocal as PlayableMedia.LocalNcm).coverUrl)
+        // ONLINE 模式下保留云端封面
+        val keptOnline = AmePlayerEngine.sanitizeMediaForSource(cloudMatchedLocalFlac, PlaylistSourceType.ONLINE)
+        assertEquals("https://p1.music.126.net/example_cover.jpg", (keptOnline as PlayableMedia.LocalNcm).coverUrl)
+    }
+
+    @Test
+    fun `SAF父目录ID推导准确且不错误截取根路径`() {
+        assertEquals(
+            "primary:Download/netease/cloudmusic/Music",
+            LocalMediaMetadataHelper.deriveParentDocumentId(
+                "primary:Download/netease/cloudmusic/Music/あたらよ - 「僕は...」.ncm"
+            )
+        )
+        assertEquals(
+            "primary:",
+            LocalMediaMetadataHelper.deriveParentDocumentId("primary:track.flac")
+        )
+        assertNull(LocalMediaMetadataHelper.deriveParentDocumentId("invalid_doc_id"))
     }
 }

@@ -2,6 +2,7 @@ package Akari.NCM.player.player
 
 import Akari.NCM.player.MainActivity
 import Akari.NCM.player.R
+import Akari.NCM.player.core.AppLogger
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -213,6 +214,7 @@ class AmePlaybackService : MediaSessionService() {
                 if (bitmap != null) {
                     future.set(bitmap)
                 } else {
+                    AppLogger.w("[AME_ONLINE_PLAY]", "CoilSessionBitmapLoader.decodeBitmap failed (bytes=${data.size})")
                     future.setException(IllegalArgumentException("Failed to decode artwork byte array"))
                 }
             }
@@ -248,9 +250,11 @@ class AmePlaybackService : MediaSessionService() {
                     if (bitmap != null) {
                         future.set(bitmap)
                     } else {
+                        AppLogger.w("[AME_ONLINE_PLAY]", "CoilSessionBitmapLoader.loadBitmap returned null for $uri")
                         future.setException(IllegalStateException("Null bitmap loaded for $uri"))
                     }
                 } catch (e: Exception) {
+                    AppLogger.w("[AME_ONLINE_PLAY]", "CoilSessionBitmapLoader.loadBitmap failed for $uri: ${e.message}")
                     future.setException(e)
                 }
             }

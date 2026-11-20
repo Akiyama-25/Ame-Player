@@ -179,6 +179,67 @@ object LocalMediaMetadataHelper {
         val openStream: () -> InputStream?
     )
 
+    private sealed interface ParentDirQueryResult {
+        data class Matched(val match: SiblingMatch) : ParentDirQueryResult
+        data object Empty : ParentDirQueryResult
+        data object Unavailable : ParentDirQueryResult
+    }
+
+    private const val MAX_FALLBACK_TREE_DIRS = 64
+
+    private fun querySiblingViaDocumentsContract(
+        cr: android.content.ContentResolver,
+        audioUri: Uri,
+        stem: String,
+        extensionsPriority: List<String>
+    ): ParentDirQueryResult {
+        return try {
+            val docId = DocumentsContract.getDocumentId(audioUri)
+            val parentDocId = deriveParentDocumentId(docId) ?: return ParentDirQueryResult.Unavailable
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(audioUri, parentDocId)
+            val cursor = cr.query(
+                childrenUri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME
+                ),
+                null,
+                null,
+                null
+            ) ?: return ParentDirQueryResult.Unavailable
+
+            val foundByExt = HashMap<String, Uri>()
+            cursor.use { c ->
+                val idIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIdx = c.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                if (idIdx < 0 || nameIdx < 0) return ParentDirQueryResult.Unavailable
+                while (c.moveToNext()) {
+                    val childName = c.getString(nameIdx) ?: continue
+                    val childExt = childName.substringAfterLast('.', "").lowercase()
+                    if (childExt !in extensionsPriority) continue
+                    val childStem = stripExtension(childName)
+                    if (childStem.equals(stem, ignoreCase = true) && !foundByExt.containsKey(childExt)) {
+                        val childDocId = c.getString(idIdx) ?: continue
+                        foundByExt[childExt] = DocumentsContract.buildDocumentUriUsingTree(audioUri, childDocId)
+                    }
+                }
+            }
+
+            for (ext in extensionsPriority) {
+                val matchedUri = foundByExt[ext]
+                if (matchedUri != null) {
+                    return ParentDirQueryResult.Matched(
+                        SiblingMatch(matchedUri, ext) { cr.openInputStream(matchedUri) }
+                    )
+                }
+            }
+            // 父目录查询已成功完成且同目录确实没有同名文件：直接返回 Empty，严禁回退遍历整棵曲库目录树
+            ParentDirQueryResult.Empty
+        } catch (_: Exception) {
+            ParentDirQueryResult.Unavailable
+        }
+    }
+
     private fun findSiblingFile(
         context: Context,
         audioUri: Uri,
@@ -212,49 +273,17 @@ object LocalMediaMetadataHelper {
         if (audioUri.scheme == "content") {
             val cr = context.contentResolver
             // 2a. 直接通过 DocumentsContract 推导父目录 ID（一次目录查询，零递归）
-            val directMatch = runCatching {
-                val docId = DocumentsContract.getDocumentId(audioUri)
-                val parentDocId = deriveParentDocumentId(docId) ?: return@runCatching null
-                val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(audioUri, parentDocId)
-                val foundByExt = HashMap<String, Uri>()
-                cr.query(
-                    childrenUri,
-                    arrayOf(
-                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                        DocumentsContract.Document.COLUMN_DISPLAY_NAME
-                    ),
-                    null,
-                    null,
-                    null
-                )?.use { cursor ->
-                    val idIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-                    val nameIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                    while (cursor.moveToNext()) {
-                        if (idIdx < 0 || nameIdx < 0) break
-                        val childName = cursor.getString(nameIdx) ?: continue
-                        val childExt = childName.substringAfterLast('.', "").lowercase()
-                        if (childExt !in extensionsPriority) continue
-                        val childStem = stripExtension(childName)
-                        if (childStem.equals(stem, ignoreCase = true) && !foundByExt.containsKey(childExt)) {
-                            val childDocId = cursor.getString(idIdx) ?: continue
-                            foundByExt[childExt] = DocumentsContract.buildDocumentUriUsingTree(audioUri, childDocId)
-                        }
-                    }
-                }
-                for (ext in extensionsPriority) {
-                    val matchedUri = foundByExt[ext]
-                    if (matchedUri != null) {
-                        return@runCatching SiblingMatch(matchedUri, ext) { cr.openInputStream(matchedUri) }
-                    }
-                }
-                null
-            }.getOrNull()
-            if (directMatch != null) return directMatch
+            when (val directResult = querySiblingViaDocumentsContract(cr, audioUri, stem, extensionsPriority)) {
+                is ParentDirQueryResult.Matched -> return directResult.match
+                ParentDirQueryResult.Empty -> return null
+                ParentDirQueryResult.Unavailable -> Unit
+            }
 
-            // 2b. 回退遍历已授权的本地扫描目录树查找同目录同名文件
+            // 2b. 仅当非标准 DocumentProvider 无法直接查询父目录时，才有限回退遍历已授权的本地扫描目录树
             val prefs = context.getSharedPreferences("local_folders", Context.MODE_PRIVATE)
             val dirs = prefs.getStringSet("folders", emptySet()).orEmpty()
             for (dirStr in dirs) {
+                if (Thread.currentThread().isInterrupted) return null
                 val matched = runCatching {
                     val root = DocumentFile.fromTreeUri(context, Uri.parse(dirStr)) ?: return@runCatching null
                     findSiblingInDocumentTree(root, audioUri, stem, extensionsPriority, cr)
@@ -274,7 +303,10 @@ object LocalMediaMetadataHelper {
     ): SiblingMatch? {
         val queue = ArrayDeque<DocumentFile>()
         queue.add(root)
-        while (queue.isNotEmpty()) {
+        var visitedDirs = 0
+        while (queue.isNotEmpty() && visitedDirs < MAX_FALLBACK_TREE_DIRS) {
+            if (Thread.currentThread().isInterrupted) return null
+            visitedDirs++
             val dir = queue.removeFirst()
             val children = dir.listFiles()
             val containsAudio = children.any { it.isFile && it.uri == audioUri }
@@ -293,13 +325,15 @@ object LocalMediaMetadataHelper {
                 return null
             }
             for (child in children) {
-                if (child.isDirectory) queue.add(child)
+                if (child.isDirectory && visitedDirs + queue.size < MAX_FALLBACK_TREE_DIRS) {
+                    queue.add(child)
+                }
             }
         }
         return null
     }
 
-    private fun deriveParentDocumentId(docId: String): String? {
+    internal fun deriveParentDocumentId(docId: String): String? {
         val lastSlash = docId.lastIndexOf('/')
         if (lastSlash > 0) return docId.substring(0, lastSlash)
         val colonIdx = docId.lastIndexOf(':')
