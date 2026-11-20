@@ -19,8 +19,8 @@ android {
         applicationId = customApplicationId ?: "Akari.NCM.player"
         minSdk = 26
         targetSdk = 37
-        versionCode = 4
-        versionName = "release-0.4"
+        versionCode = 5
+        versionName = "release-0.5"
 
         val gitCommitSha = runCatching {
             val proc = ProcessBuilder("git", "rev-parse", "--short", "HEAD").start()
