@@ -51,6 +51,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -201,7 +202,7 @@ class AmePlayerEngine @Inject constructor(
     val currentLyricState: StateFlow<LyricLine?> = _currentLyricState.asStateFlow()
 
     private val _currentLyricsResult = MutableStateFlow(LyricResult(emptyList(), LyricSource.NONE))
-    val currentLyricsResult: StateFlow<LyricResult> = _currentLyricsResult.asStateFlow()
+    override val currentLyricsResult: StateFlow<LyricResult> = _currentLyricsResult.asStateFlow()
 
     private var currentArtworkBitmap: Bitmap? = null
     private var lyricLoadJob: Job? = null
@@ -626,7 +627,9 @@ class AmePlayerEngine @Inject constructor(
         val player = ExoPlayer.Builder(context, audioOnlyFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
-            .setWakeMode(C.WAKE_MODE_NETWORK)
+            // 默认仅持本地播放锁（WAKE_MODE_LOCAL），避免播放本地无损文件时长期占用 Wi-Fi 高性能锁；
+            // 播放在线曲目时由 updateWakeModeForMedia 动态切至 WAKE_MODE_NETWORK。
+            .setWakeMode(C.WAKE_MODE_LOCAL)
             .build()
 
         // Audio offload disabled for maximum high-sample-rate stability (192kHz/384kHz)
@@ -692,6 +695,15 @@ class AmePlayerEngine @Inject constructor(
                     else -> PlaybackState.IDLE
                 }
                 if (playbackState == Player.STATE_READY) {
+                    val currentMedia = _currentMedia.value
+                    if (currentMedia is PlayableMedia.Online) {
+                        val details = resolvedDetailsCache[currentMedia.id]
+                        if (details == null) {
+                            updateAudioFormatFromExo(player.audioFormat)
+                        }
+                    } else {
+                        updateAudioFormatFromExo(player.audioFormat)
+                    }
                     val realDuration = player.duration.takeIf { it != C.TIME_UNSET && it > 0 } ?: 0L
                     if (realDuration > 0L) {
                         _durationMs.value = realDuration
@@ -710,6 +722,7 @@ class AmePlayerEngine @Inject constructor(
                     }
                 }
                 if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+                    updateWakeModeForMedia(null)
                     islandManager.cancelIsland()
                 }
                 if (playbackState == Player.STATE_ENDED && _infinitePlayMode.value.isActive) {
@@ -851,25 +864,23 @@ class AmePlayerEngine @Inject constructor(
 
     private fun startBackgroundObservers() {
         // Position ticker & in-app lyric sync & live island refresh
+        // 使用 collectLatest 监听 _isPlaying：暂停时彻底挂起零唤醒；播放时按 100ms 节拍同步，
+        // 不再在轮询循环内高频重复解析音频格式，降低主线程与 CPU 唤醒功耗。
         scope.launch {
-            var islandTickCounter = 0
-            while (isActive) {
-                if (_isPlaying.value) {
+            _isPlaying.collectLatest { playing ->
+                if (!playing) return@collectLatest
+                var islandTickCounter = 0
+                while (isActive) {
                     val pos = exoPlayer.currentPosition
                     _currentPositionMs.value = pos
-                    _durationMs.value = exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L
-                    val currentMedia = _currentMedia.value
-                    if (currentMedia is PlayableMedia.Online) {
-                        val details = resolvedDetailsCache[currentMedia.id]
-                        if (details == null) {
-                            updateAudioFormatFromExo(exoPlayer.audioFormat)
-                        }
-                    } else {
-                        updateAudioFormatFromExo(exoPlayer.audioFormat)
+                    val dur = exoPlayer.duration.takeIf { it != C.TIME_UNSET } ?: 0L
+                    if (_durationMs.value != dur) {
+                        _durationMs.value = dur
                     }
+                    val currentMedia = _currentMedia.value
                     val lyricChanged = updateCurrentLyricForPosition(pos)
                     islandTickCounter++
-                    if (islandTickCounter % 5 == 0 &&
+                    if (islandTickCounter % 3 == 0 &&
                         ThemePrefs.volumeNormalizationEnabled &&
                         !isUsbBitPerfectActive() &&
                         loudnessAudioProcessor.isRealtimeAgcRunning &&
@@ -890,12 +901,12 @@ class AmePlayerEngine @Inject constructor(
                             )
                         }
                     }
-                    if (isLiveIslandEnabled && (lyricChanged || islandTickCounter >= 20)) {
+                    if (isLiveIslandEnabled && (lyricChanged || islandTickCounter >= 10)) {
                         islandTickCounter = 0
                         syncIslandState()
                     }
+                    delay(100.milliseconds)
                 }
-                delay(50.milliseconds)
             }
         }
 
@@ -1852,7 +1863,13 @@ class AmePlayerEngine @Inject constructor(
         return changed
     }
 
+    private fun updateWakeModeForMedia(media: PlayableMedia?) {
+        val targetWakeMode = if (media is PlayableMedia.Online) C.WAKE_MODE_NETWORK else C.WAKE_MODE_LOCAL
+        runCatching { exoPlayer.setWakeMode(targetWakeMode) }
+    }
+
     private fun onTrackChanged(currentMedia: PlayableMedia?) {
+        updateWakeModeForMedia(currentMedia)
         if (currentMedia == null) {
             activeTrackTaskKey = null
             lyricLoadJob?.cancel()

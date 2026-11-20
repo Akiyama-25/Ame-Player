@@ -116,6 +116,15 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
     @Volatile
     private var targetGainDb: Double = 0.0
 
+    // 预缓存的 dB -> 线性增益与采样率相关时间常数，避免逐采样调用 Math.pow / exp
+    private var cachedGainDb: Double = Double.NaN
+    private var cachedLinearGain: Float = 1.0f
+    private var cachedAttackAlpha: Double = 0.0
+    private var cachedReleaseAlpha: Double = 0.0
+    private var cachedSurgeAlpha: Double = 0.0
+    private var cachedLimReleaseCoeff: Float = 0.999f
+    private var cachedLimAttackAlpha: Float = 0.05f
+
     @Volatile
     private var rampActive: Boolean = false
     private var rampStartDb: Double = 0.0
@@ -201,6 +210,12 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         s1Coeffs = EbuR128Calculator.calculateStage1Coeffs(sr.toDouble())
         s2Coeffs = EbuR128Calculator.calculateStage2Coeffs(sr.toDouble())
         stepSizeFrames = (0.1 * sr).toInt().coerceAtLeast(1)
+        cachedAttackAlpha = 1.0 - exp(-1.0 / (sr * AGC_ATTACK_SEC))
+        cachedReleaseAlpha = 1.0 - exp(-1.0 / (sr * AGC_RELEASE_SEC))
+        cachedSurgeAlpha = 1.0 - exp(-1.0 / (sr * 0.040))
+        cachedLimReleaseCoeff = exp(-1.0 / (sr * LIMITER_RELEASE_SEC)).toFloat()
+        cachedLimAttackAlpha = (1.0 - exp(-1.0 / (sr * 0.0008))).toFloat()
+        cachedGainDb = Double.NaN
 
         if (ch > channelScratch.size) {
             channelScratch = FloatArray(ch)
@@ -495,13 +510,11 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
             delayedScratch = FloatArray(channels)
         }
         val encoding = inputAudioFormat.encoding
-        val sampleRate = inputAudioFormat.sampleRate.coerceAtLeast(8000)
-
-        val attackAlpha = 1.0 - exp(-1.0 / (sampleRate * AGC_ATTACK_SEC))
-        val releaseAlpha = 1.0 - exp(-1.0 / (sampleRate * AGC_RELEASE_SEC))
-        val surgeAlpha = 1.0 - exp(-1.0 / (sampleRate * 0.040)) // 40ms 快速能量包络，配合 60ms Look-ahead 预判突增
-        val limReleaseCoeff = exp(-1.0 / (sampleRate * LIMITER_RELEASE_SEC)).toFloat()
-        val limAttackAlpha = (1.0 - exp(-1.0 / (sampleRate * 0.0008))).toFloat()
+        val attackAlpha = cachedAttackAlpha
+        val releaseAlpha = cachedReleaseAlpha
+        val surgeAlpha = cachedSurgeAlpha
+        val limReleaseCoeff = cachedLimReleaseCoeff
+        val limAttackAlpha = cachedLimAttackAlpha
 
         val shouldAnalyzeStream = !isFinalLocked && currentMediaId != null && s1Coeffs != null && s2Coeffs != null
         val c1 = s1Coeffs
@@ -596,10 +609,17 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
                     if (!isFreezeGateActive || !agcActive) {
                         currentGainDb += diff * releaseAlpha
                     }
+                } else if (diff != 0.0) {
+                    currentGainDb = targetGainDb
                 }
             }
 
-            val linearGain = dbToLinear(currentGainDb)
+            // 仅当增益变化 >= 0.0001 dB 时才重新计算 Math.pow，静态锁定期 0 次 pow 调用
+            if (cachedGainDb.isNaN() || abs(currentGainDb - cachedGainDb) >= 1e-4) {
+                cachedGainDb = currentGainDb
+                cachedLinearGain = dbToLinear(currentGainDb)
+            }
+            val linearGain = cachedLinearGain
             if (agcActive) {
                 currentMultiplier = linearGain
             }
@@ -634,7 +654,7 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
     ) {
         var maxTp = 0.0f
         for (c in 0 until channels) {
-            val tp = limiterTruePeak4x.processSample(c, delayedScratch[c])
+            val tp = limiterTruePeak4x.processSampleWithThreshold(c, delayedScratch[c], 0.55f)
             if (tp > maxTp) maxTp = tp
         }
         val reqGain = if (maxTp > TRUE_PEAK_CEILING_LINEAR) {
@@ -889,6 +909,7 @@ class LoudnessAudioProcessor : BaseAudioProcessor() {
         } else {
             currentGainDb = 0.0
         }
+        cachedGainDb = Double.NaN
     }
 
     override fun onReset() {

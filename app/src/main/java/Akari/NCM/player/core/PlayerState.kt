@@ -83,6 +83,8 @@ interface PlayerState {
         get() = MutableStateFlow(Akari.NCM.player.core.loudness.LoudnessNormalizationState())
     val playlistSourceType: StateFlow<PlaylistSourceType>
         get() = MutableStateFlow(PlaylistSourceType.NONE)
+    val currentLyricsResult: StateFlow<Akari.NCM.player.data.LyricResult>?
+        get() = null
 }
 
 /**

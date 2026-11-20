@@ -377,38 +377,29 @@ private fun PlayerMainContentView(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
 
-    // ── 播放状态 ───────────────────────────────────────────────────────────────
+    // ── 播放状态（不在此顶层订阅高频 currentPositionMs / rememberSmoothPosition，避免整页 60~120Hz 全量重组） ──
     val isPlaying by playerState.isPlaying.collectAsState()
-    val positionMs by playerState.currentPositionMs.collectAsState()
     val durationMs by playerState.durationMs.collectAsState()
     val repeatMode by playerState.repeatMode.collectAsState()
     val shuffleEnabled by playerState.shuffleEnabled.collectAsState()
     val infinitePlayMode by playerState.infinitePlayMode.collectAsState()
-    val smoothPositionMs by rememberSmoothPosition(positionMs, isPlaying, durationMs)
 
-    // ── 歌词 ───────────────────────────────────────────────────────────────────
-    val playlistSourceType by playerState.playlistSourceType.collectAsState()
-    val lyricsManager = remember { LyricsManager(context, ncmApi) }
-    var lyricResult by remember { mutableStateOf(LyricResult(emptyList(), LyricSource.NONE)) }
+    // ── 歌词（优先直接复用引擎已加载的歌词状态，避免重复实例化 LyricsManager 造成双倍 IO 与网络开销） ──
+    val engineLyricsFlow = playerState.currentLyricsResult
+    val lyricResult: LyricResult = if (engineLyricsFlow != null) {
+        val collected by engineLyricsFlow.collectAsState()
+        collected
+    } else {
+        val playlistSourceType by playerState.playlistSourceType.collectAsState()
+        val lyricsManager = remember { LyricsManager(context, ncmApi) }
+        var fallbackResult by remember { mutableStateOf(LyricResult(emptyList(), LyricSource.NONE)) }
+        LaunchedEffect(currentTrack?.id, playlistSourceType) {
+            fallbackResult = currentTrack?.let { lyricsManager.loadLyrics(it, playlistSourceType) }
+                ?: LyricResult(emptyList(), LyricSource.NONE)
+        }
+        fallbackResult
+    }
     var showTranslation by remember { mutableStateOf(true) }
-
-    LaunchedEffect(currentTrack?.id, playlistSourceType) {
-        lyricResult = currentTrack?.let { lyricsManager.loadLyrics(it, playlistSourceType) }
-            ?: LyricResult(emptyList(), LyricSource.NONE)
-    }
-
-    val currentLineIndex = remember(lyricResult.lines, smoothPositionMs) {
-        val lines = lyricResult.lines
-        if (lines.isEmpty()) -1
-        else lines.indexOfLast { it.timeMs <= smoothPositionMs }.let { if (it == -1) 0 else it }
-    }
-
-    val currentLyricLine = lyricResult.lines.getOrNull(currentLineIndex)
-    val nextLyricLineTimeMs = lyricResult.lines.getOrNull(currentLineIndex + 1)?.timeMs
-
-    // ── 进度条拖拽 ─────────────────────────────────────────────────────────────
-    var isDragging by remember { mutableStateOf(false) }
-    var dragPositionMs by remember { mutableStateOf(0L) }
 
     // ── 动画 ───────────────────────────────────────────────────────────────────
     val progress = remember { Animatable(0f) }
@@ -531,136 +522,24 @@ private fun PlayerMainContentView(
         }
 
         val CurrentLyricBlock: @Composable (Alignment.Horizontal) -> Unit = { align ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 64.dp),
-                contentAlignment = if (align == Alignment.CenterHorizontally) Alignment.Center else Alignment.CenterStart
-            ) {
-                if (currentLyricLine != null) {
-                    val fallbackDur = if (nextLyricLineTimeMs != null && nextLyricLineTimeMs > currentLyricLine.timeMs) {
-                        (nextLyricLineTimeMs - currentLyricLine.timeMs).coerceIn(800L, 10000L)
-                    } else 3600L
-
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = align,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        WordByWordLyricView(
-                            line = currentLyricLine,
-                            currentPositionMs = smoothPositionMs,
-                            fontSize = 22.sp,
-                            lineHeight = 30.sp,
-                            activeColor = palette.playedLyricColor,
-                            inactiveColor = palette.unplayedLyricColor,
-                            horizontalAlignment = align,
-                            hasWordTimestamps = lyricResult.hasWordTimestamps,
-                            fallbackLineDurationMs = fallbackDur
-                        )
-                        AnimatedVisibility(
-                            visible = showTranslation && !currentLyricLine.translation.isNullOrBlank(),
-                            enter = fadeIn(animationSpec = tween(450, easing = FastOutSlowInEasing)) +
-                                expandVertically(
-                                    animationSpec = tween(450, easing = FastOutSlowInEasing),
-                                    clip = false,
-                                    expandFrom = Alignment.Top
-                                ),
-                            exit = fadeOut(animationSpec = tween(450, easing = FastOutSlowInEasing)) +
-                                shrinkVertically(
-                                    animationSpec = tween(450, easing = FastOutSlowInEasing),
-                                    clip = false,
-                                    shrinkTowards = Alignment.Top
-                                )
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = align
-                            ) {
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    text = currentLyricLine.translation?.trim().orEmpty(),
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = palette.playedLyricColor,
-                                    textAlign = if (align == Alignment.CenterHorizontally) TextAlign.Center else TextAlign.Start,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                } else {
-                    Text(
-                        "暂无歌词 / 纯音乐",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = palette.unplayedLyricColor,
-                        textAlign = if (align == Alignment.CenterHorizontally) TextAlign.Center else TextAlign.Start
-                    )
-                }
-            }
+            PlayerCurrentLyricSection(
+                playerState = playerState,
+                isPlaying = isPlaying,
+                durationMs = durationMs,
+                lyricResult = lyricResult,
+                showTranslation = showTranslation,
+                palette = palette,
+                align = align
+            )
         }
 
         val ProgressBarBlock: @Composable () -> Unit = {
-            val effectivePosition = if (isDragging) dragPositionMs else positionMs
-            val sliderProgress =
-                if (durationMs > 0) (effectivePosition.toFloat() / durationMs).coerceIn(0f, 1f)
-                else 0f
-
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Slider(
-                    value = sliderProgress,
-                    onValueChange = { pct ->
-                        isDragging = true
-                        dragPositionMs = (pct * durationMs).toLong()
-                    },
-                    onValueChangeFinished = {
-                        isDragging = false
-                        playerController.seekTo(dragPositionMs)
-                    },
-                    thumb = {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = palette.sliderActiveColor,
-                            shadowElevation = 4.dp,
-                            modifier = Modifier.size(width = 18.dp, height = 22.dp)
-                        ) {}
-                    },
-                    track = { sliderState ->
-                        SliderDefaults.Track(
-                            sliderState = sliderState,
-                            colors = SliderDefaults.colors(
-                                activeTrackColor = palette.sliderActiveColor,
-                                inactiveTrackColor = palette.sliderInactiveColor
-                            ),
-                            drawStopIndicator = null,
-                            thumbTrackGapSize = 2.dp,
-                            trackInsideCornerSize = 6.dp
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        formatTime(effectivePosition),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = palette.playedLyricColor
-                    )
-                    Text(
-                        formatTime(durationMs),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = palette.secondaryTextColor
-                    )
-                }
-            }
+            PlayerProgressBarSection(
+                playerState = playerState,
+                playerController = playerController,
+                durationMs = durationMs,
+                palette = palette
+            )
         }
 
         val ControlsBlock: @Composable () -> Unit = {
@@ -939,11 +818,12 @@ private fun PlayerMainContentView(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     if (isLyricsMode) {
-                                        SaltFullLyricsView(
+                                        PlayerLiveFullLyricsSection(
                                             modifier = Modifier.fillMaxSize().graphicsLayer { alpha = p },
+                                            playerState = playerState,
+                                            isPlaying = isPlaying,
+                                            durationMs = durationMs,
                                             lyricResult = lyricResult,
-                                            currentIndex = currentLineIndex,
-                                            currentPositionMs = smoothPositionMs,
                                             showTranslation = showTranslation,
                                             palette = palette,
                                             listState = lyricsListState,
@@ -969,91 +849,17 @@ private fun PlayerMainContentView(
                                                 else -> 1
                                             }
 
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(fixedLineHeight * maxLinesCount)
-                                            .clickable(
-                                                interactionSource = remember { MutableInteractionSource() },
-                                                indication = null,
-                                                onClick = { goToLyrics() }
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (lyricResult.lines.isEmpty()) {
-                                            Text(
-                                                "暂无歌词 / 纯音乐",
-                                                fontSize = 16.sp,
-                                                color = palette.unplayedLyricColor
+                                            PlayerShortLandscapeLyricSection(
+                                                playerState = playerState,
+                                                isPlaying = isPlaying,
+                                                durationMs = durationMs,
+                                                lyricResult = lyricResult,
+                                                showTranslation = showTranslation,
+                                                palette = palette,
+                                                fixedLineHeight = fixedLineHeight,
+                                                maxLinesCount = maxLinesCount,
+                                                onClickExpand = { goToLyrics() }
                                             )
-                                        } else {
-                                            val actualCurrent = maxOf(0, currentLineIndex)
-                                            val start = maxOf(0, actualCurrent - (maxLinesCount - 1) / 2)
-                                            val end = minOf(maxOf(0, lyricResult.lines.size - 1), start + maxLinesCount - 1)
-                                            val adjStart = maxOf(0, end - maxLinesCount + 1)
-                                            val linesToShow = lyricResult.lines.slice(adjStart..end)
-
-                                            Column(
-                                                verticalArrangement = Arrangement.Center,
-                                                horizontalAlignment = Alignment.CenterHorizontally
-                                            ) {
-                                                linesToShow.forEachIndexed { i, line ->
-                                                    val lineGlobalIndex = adjStart + i
-                                                    val isSelected = lineGlobalIndex == actualCurrent
-                                                    val isPlayedLine = lineGlobalIndex < actualCurrent
-                                                    val lineColor = when {
-                                                        isPlayedLine -> palette.playedLyricColor
-                                                        else -> palette.unplayedLyricColor
-                                                    }
-
-                                                    Column(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .height(fixedLineHeight),
-                                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                                        verticalArrangement = Arrangement.Center
-                                                    ) {
-                                                        if (isSelected) {
-                                                            val nextLineMs = lyricResult.lines.getOrNull(lineGlobalIndex + 1)?.timeMs
-                                                            val fallbackDur = if (nextLineMs != null && nextLineMs > line.timeMs) {
-                                                                (nextLineMs - line.timeMs).coerceIn(800L, 10000L)
-                                                            } else 3600L
-                                                            WordByWordLyricView(
-                                                                line = line,
-                                                                currentPositionMs = smoothPositionMs,
-                                                                fontSize = 21.sp,
-                                                                lineHeight = 27.sp,
-                                                                activeColor = palette.playedLyricColor,
-                                                                inactiveColor = palette.unplayedLyricColor,
-                                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                                hasWordTimestamps = lyricResult.hasWordTimestamps,
-                                                                fallbackLineDurationMs = fallbackDur
-                                                            )
-                                                        } else {
-                                                            Text(
-                                                                text = if (line.text.isBlank()) "..." else line.text.trim(),
-                                                                fontSize = 18.sp,
-                                                                fontWeight = if (isPlayedLine) FontWeight.SemiBold else FontWeight.Medium,
-                                                                color = lineColor,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                        }
-                                                        if (showTranslation && !line.translation.isNullOrBlank()) {
-                                                            Spacer(Modifier.height(2.dp))
-                                                            Text(
-                                                                text = line.translation.trim(),
-                                                                fontSize = if (isSelected) 15.sp else 13.sp,
-                                                                color = if (isSelected || isPlayedLine) palette.playedLyricColor else palette.unplayedLyricColor,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
 
                                             Spacer(Modifier.height(16.dp))
                                             ProgressBarBlock()
@@ -1156,11 +962,12 @@ private fun PlayerMainContentView(
                                 }
                             }
 
-                            SaltFullLyricsView(
+                            PlayerLiveFullLyricsSection(
                                 modifier = Modifier.weight(1f).fillMaxWidth(),
+                                playerState = playerState,
+                                isPlaying = isPlaying,
+                                durationMs = durationMs,
                                 lyricResult = lyricResult,
-                                currentIndex = currentLineIndex,
-                                currentPositionMs = smoothPositionMs,
                                 showTranslation = showTranslation,
                                 palette = palette,
                                 listState = lyricsListState,
@@ -1323,11 +1130,12 @@ private fun PlayerMainContentView(
                         }
 
                         if (isLyricsMode) {
-                            SaltFullLyricsView(
+                            PlayerLiveFullLyricsSection(
                                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = p },
+                                playerState = playerState,
+                                isPlaying = isPlaying,
+                                durationMs = durationMs,
                                 lyricResult = lyricResult,
-                                currentIndex = currentLineIndex,
-                                currentPositionMs = smoothPositionMs,
                                 showTranslation = showTranslation,
                                 palette = palette,
                                 listState = lyricsListState,
@@ -1392,6 +1200,320 @@ private fun PlayerMainContentView(
             }
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 隔离高频进度/平滑时钟的子组件，防止整页 PlayerMainContentView（封面、按钮、模糊背景）随播放进度高频重组
+// ─────────────────────────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlayerProgressBarSection(
+    playerState: PlayerState,
+    playerController: PlayerController,
+    durationMs: Long,
+    palette: PlayerExpressivePalette
+) {
+    val positionMs by playerState.currentPositionMs.collectAsState()
+    var isDragging by remember { mutableStateOf(false) }
+    var dragPositionMs by remember { mutableStateOf(0L) }
+
+    val effectivePosition = if (isDragging) dragPositionMs else positionMs
+    val sliderProgress =
+        if (durationMs > 0) (effectivePosition.toFloat() / durationMs).coerceIn(0f, 1f)
+        else 0f
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Slider(
+            value = sliderProgress,
+            onValueChange = { pct ->
+                isDragging = true
+                dragPositionMs = (pct * durationMs).toLong()
+            },
+            onValueChangeFinished = {
+                isDragging = false
+                playerController.seekTo(dragPositionMs)
+            },
+            thumb = {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = palette.sliderActiveColor,
+                    shadowElevation = 4.dp,
+                    modifier = Modifier.size(width = 18.dp, height = 22.dp)
+                ) {}
+            },
+            track = { sliderState ->
+                SliderDefaults.Track(
+                    sliderState = sliderState,
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = palette.sliderActiveColor,
+                        inactiveTrackColor = palette.sliderInactiveColor
+                    ),
+                    drawStopIndicator = null,
+                    thumbTrackGapSize = 2.dp,
+                    trackInsideCornerSize = 6.dp
+                )
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                formatTime(effectivePosition),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = palette.playedLyricColor
+            )
+            Text(
+                formatTime(durationMs),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = palette.secondaryTextColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerCurrentLyricSection(
+    playerState: PlayerState,
+    isPlaying: Boolean,
+    durationMs: Long,
+    lyricResult: LyricResult,
+    showTranslation: Boolean,
+    palette: PlayerExpressivePalette,
+    align: Alignment.Horizontal
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp),
+        contentAlignment = if (align == Alignment.CenterHorizontally) Alignment.Center else Alignment.CenterStart
+    ) {
+        if (lyricResult.lines.isEmpty()) {
+            Text(
+                "暂无歌词 / 纯音乐",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                color = palette.unplayedLyricColor,
+                textAlign = if (align == Alignment.CenterHorizontally) TextAlign.Center else TextAlign.Start
+            )
+        } else {
+            val positionMs by playerState.currentPositionMs.collectAsState()
+            val smoothPositionMs by rememberSmoothPosition(
+                positionMs = positionMs,
+                isPlaying = isPlaying,
+                durationMs = durationMs,
+                enabled = isPlaying && lyricResult.lines.isNotEmpty()
+            )
+            val currentLineIndex = remember(lyricResult.lines, smoothPositionMs) {
+                lyricResult.lines.indexOfLast { it.timeMs <= smoothPositionMs }.let { if (it == -1) 0 else it }
+            }
+            val currentLyricLine = lyricResult.lines.getOrNull(currentLineIndex)
+            if (currentLyricLine != null) {
+                val nextLyricLineTimeMs = lyricResult.lines.getOrNull(currentLineIndex + 1)?.timeMs
+                val fallbackDur = if (nextLyricLineTimeMs != null && nextLyricLineTimeMs > currentLyricLine.timeMs) {
+                    (nextLyricLineTimeMs - currentLyricLine.timeMs).coerceIn(800L, 10000L)
+                } else 3600L
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = align,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    WordByWordLyricView(
+                        line = currentLyricLine,
+                        currentPositionMs = smoothPositionMs,
+                        fontSize = 22.sp,
+                        lineHeight = 30.sp,
+                        activeColor = palette.playedLyricColor,
+                        inactiveColor = palette.unplayedLyricColor,
+                        horizontalAlignment = align,
+                        hasWordTimestamps = lyricResult.hasWordTimestamps,
+                        fallbackLineDurationMs = fallbackDur
+                    )
+                    AnimatedVisibility(
+                        visible = showTranslation && !currentLyricLine.translation.isNullOrBlank(),
+                        enter = fadeIn(animationSpec = tween(450, easing = FastOutSlowInEasing)) +
+                            expandVertically(
+                                animationSpec = tween(450, easing = FastOutSlowInEasing),
+                                clip = false,
+                                expandFrom = Alignment.Top
+                            ),
+                        exit = fadeOut(animationSpec = tween(450, easing = FastOutSlowInEasing)) +
+                            shrinkVertically(
+                                animationSpec = tween(450, easing = FastOutSlowInEasing),
+                                clip = false,
+                                shrinkTowards = Alignment.Top
+                            )
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = align
+                        ) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = currentLyricLine.translation?.trim().orEmpty(),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = palette.playedLyricColor,
+                                textAlign = if (align == Alignment.CenterHorizontally) TextAlign.Center else TextAlign.Start,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerShortLandscapeLyricSection(
+    playerState: PlayerState,
+    isPlaying: Boolean,
+    durationMs: Long,
+    lyricResult: LyricResult,
+    showTranslation: Boolean,
+    palette: PlayerExpressivePalette,
+    fixedLineHeight: androidx.compose.ui.unit.Dp,
+    maxLinesCount: Int,
+    onClickExpand: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(fixedLineHeight * maxLinesCount)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClickExpand
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (lyricResult.lines.isEmpty()) {
+            Text(
+                "暂无歌词 / 纯音乐",
+                fontSize = 16.sp,
+                color = palette.unplayedLyricColor
+            )
+        } else {
+            val positionMs by playerState.currentPositionMs.collectAsState()
+            val smoothPositionMs by rememberSmoothPosition(
+                positionMs = positionMs,
+                isPlaying = isPlaying,
+                durationMs = durationMs,
+                enabled = isPlaying && lyricResult.lines.isNotEmpty()
+            )
+            val currentLineIndex = remember(lyricResult.lines, smoothPositionMs) {
+                lyricResult.lines.indexOfLast { it.timeMs <= smoothPositionMs }.let { if (it == -1) 0 else it }
+            }
+            val actualCurrent = maxOf(0, currentLineIndex)
+            val start = maxOf(0, actualCurrent - (maxLinesCount - 1) / 2)
+            val end = minOf(maxOf(0, lyricResult.lines.size - 1), start + maxLinesCount - 1)
+            val adjStart = maxOf(0, end - maxLinesCount + 1)
+            val linesToShow = lyricResult.lines.slice(adjStart..end)
+
+            Column(
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                linesToShow.forEachIndexed { i, line ->
+                    val lineGlobalIndex = adjStart + i
+                    val isSelected = lineGlobalIndex == actualCurrent
+                    val isPlayedLine = lineGlobalIndex < actualCurrent
+                    val lineColor = if (isPlayedLine) palette.playedLyricColor else palette.unplayedLyricColor
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(fixedLineHeight),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        if (isSelected) {
+                            val nextLineMs = lyricResult.lines.getOrNull(lineGlobalIndex + 1)?.timeMs
+                            val fallbackDur = if (nextLineMs != null && nextLineMs > line.timeMs) {
+                                (nextLineMs - line.timeMs).coerceIn(800L, 10000L)
+                            } else 3600L
+                            WordByWordLyricView(
+                                line = line,
+                                currentPositionMs = smoothPositionMs,
+                                fontSize = 21.sp,
+                                lineHeight = 27.sp,
+                                activeColor = palette.playedLyricColor,
+                                inactiveColor = palette.unplayedLyricColor,
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                hasWordTimestamps = lyricResult.hasWordTimestamps,
+                                fallbackLineDurationMs = fallbackDur
+                            )
+                        } else {
+                            Text(
+                                text = if (line.text.isBlank()) "..." else line.text.trim(),
+                                fontSize = 18.sp,
+                                fontWeight = if (isPlayedLine) FontWeight.SemiBold else FontWeight.Medium,
+                                color = lineColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (showTranslation && !line.translation.isNullOrBlank()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = line.translation.trim(),
+                                fontSize = if (isSelected) 15.sp else 13.sp,
+                                color = if (isSelected || isPlayedLine) palette.playedLyricColor else palette.unplayedLyricColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerLiveFullLyricsSection(
+    modifier: Modifier = Modifier,
+    playerState: PlayerState,
+    isPlaying: Boolean,
+    durationMs: Long,
+    lyricResult: LyricResult,
+    showTranslation: Boolean,
+    palette: PlayerExpressivePalette,
+    listState: LazyListState,
+    onLyricClick: (Long) -> Unit,
+    onCollapseLyrics: () -> Unit = {}
+) {
+    val hasLyrics = lyricResult.lines.isNotEmpty()
+    val positionMs by playerState.currentPositionMs.collectAsState()
+    val smoothPositionMs by rememberSmoothPosition(
+        positionMs = positionMs,
+        isPlaying = isPlaying,
+        durationMs = durationMs,
+        enabled = isPlaying && hasLyrics
+    )
+    val currentLineIndex = remember(lyricResult.lines, smoothPositionMs) {
+        if (!hasLyrics) -1
+        else lyricResult.lines.indexOfLast { it.timeMs <= smoothPositionMs }.let { if (it == -1) 0 else it }
+    }
+    SaltFullLyricsView(
+        modifier = modifier,
+        lyricResult = lyricResult,
+        currentIndex = currentLineIndex,
+        currentPositionMs = smoothPositionMs,
+        showTranslation = showTranslation,
+        palette = palette,
+        listState = listState,
+        onLyricClick = onLyricClick,
+        onCollapseLyrics = onCollapseLyrics
+    )
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

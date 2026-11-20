@@ -119,7 +119,6 @@ fun MainScreen(
     val isPlaying by playerEngine.isPlaying.collectAsState()
     val playlist by playerEngine.playlist.collectAsState()
     val currentIndex by playerEngine.currentIndex.collectAsState()
-    val positionMs by playerEngine.currentPositionMs.collectAsState()
     val durationMs by playerEngine.durationMs.collectAsState()
     val infinitePlayMode by playerEngine.infinitePlayMode.collectAsState()
     val isFetchingRecommendations by playerEngine.isFetchingRecommendations.collectAsState()
@@ -1037,7 +1036,7 @@ fun MainScreen(
                                 MiniPlayerBar(
                                     media = currentMedia,
                                     isPlaying = isPlaying,
-                                    positionMs = positionMs,
+                                    positionMsFlow = playerEngine.currentPositionMs,
                                     durationMs = durationMs,
                                     onTogglePlayPause = { playerEngine.togglePlayPause() },
                                     onClick = {
@@ -1855,7 +1854,7 @@ fun SongItem(
 private fun MiniPlayerBar(
     media: PlayableMedia?,
     isPlaying: Boolean,
-    positionMs: Long,
+    positionMsFlow: kotlinx.coroutines.flow.StateFlow<Long>,
     durationMs: Long,
     onTogglePlayPause: () -> Unit,
     onClick: () -> Unit,
@@ -2007,11 +2006,8 @@ private fun MiniPlayerBar(
         label = "MiniPlayerUnplayedSecondaryColor"
     )
 
-    val progressFraction = if (hasMedia && durationMs > 0L) {
-        (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-    } else {
-        0f
-    }
+    // 仅在 drawBehind 绘制阶段读取 positionMsState.value，避免整个 MainScreen 与 MiniPlayerBar 随播放进度高频重组
+    val positionMsState = positionMsFlow.collectAsState()
 
     // 水平滑动切歌：跟随手指水平偏移，松手超过阈值切歌并回弹
     var dragOffsetX by remember { mutableFloatStateOf(0f) }
@@ -2051,7 +2047,11 @@ private fun MiniPlayerBar(
                     // 未播放部分色彩：封面取色的背景色
                     drawRect(color = animatedUnplayedColor)
                     // 已播放部分色彩：歌曲封面的 Material 取色结果（整条播放栏作为进度条）
-                    val p = progressFraction.coerceIn(0f, 1f)
+                    val p = if (hasMedia && durationMs > 0L) {
+                        (positionMsState.value.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
                     if (p > 0f) {
                         drawRect(
                             color = animatedPlayedColor,

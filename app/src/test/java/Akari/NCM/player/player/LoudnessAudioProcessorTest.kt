@@ -669,4 +669,26 @@ class LoudnessAudioProcessorTest {
             burstTruePeak <= 0.905f
         )
     }
+
+    @Test
+    fun `TruePeakDetector4x阈值低功耗路径在低幅值跳过过采样且高幅值与全量路径完全一致`() {
+        val full = Akari.NCM.player.core.loudness.EbuR128Calculator.TruePeakDetector4x(2)
+        val fast = Akari.NCM.player.core.loudness.EbuR128Calculator.TruePeakDetector4x(2)
+
+        // 1. 低幅值段 (0.35 < 0.55)：快速路径返回安全包络且远低于 -1.0 dBTP (0.891)
+        for (i in 0 until 200) {
+            val s = if ((i / 2) % 2 == 0) 0.35f else -0.35f
+            val fastTp = fast.processSampleWithThreshold(0, s, 0.55f)
+            full.processSample(0, s)
+            assertTrue("低幅值快速路径输出应远低于限幅门限，实际: $fastTp", fastTp < 0.891f)
+        }
+
+        // 2. 突升至含采样点间过冲的 0.92f 信号：12 抽头历史无缝衔接，快速路径必须与全量路径逐样本完全一致
+        for (i in 0 until 200) {
+            val s = if ((i / 2) % 2 == 0) 0.92f else -0.92f
+            val fullTp = full.processSample(0, s)
+            val fastTp = fast.processSampleWithThreshold(0, s, 0.55f)
+            assertEquals("高幅值过冲处快速路径应与全量 4x 过采样完全一致 (i=$i)", fullTp, fastTp, 1e-5f)
+        }
+    }
 }

@@ -285,6 +285,7 @@ object EbuR128Calculator {
 
         private var history = Array(channelCount.coerceAtLeast(1)) { FloatArray(TAPS_PER_PHASE) }
         private var writePos = IntArray(channelCount.coerceAtLeast(1))
+        private var hotFrames = IntArray(channelCount.coerceAtLeast(1))
         var maxTruePeak: Float = 0.0f
             private set
 
@@ -293,13 +294,54 @@ object EbuR128Calculator {
             if (history.size != ch) {
                 history = Array(ch) { FloatArray(TAPS_PER_PHASE) }
                 writePos = IntArray(ch)
+                hotFrames = IntArray(ch)
             } else {
                 for (c in history.indices) {
                     history[c].fill(0f)
                     writePos[c] = 0
+                    hotFrames[c] = 0
                 }
             }
             maxTruePeak = 0.0f
+        }
+
+        /**
+         * 实时限幅低功耗路径：持续维护 12 抽头环形历史缓冲，仅当 12 样本窗口内存在
+         * |sample| >= threshold 时才执行 4 相 × 12 抽头多相插值；
+         * 当窗口内全部样本均低于 0.55 (-5.2 dBFS) 时，数学上 4x 插值峰值必然低于 -1.0 dBTP (0.891)，
+         * 可安全跳过 48 次乘加循环，大幅降低 96kHz/192kHz 播放 CPU 功耗且保持限幅精度完全一致。
+         */
+        fun processSampleWithThreshold(channel: Int, sample: Float, threshold: Float): Float {
+            if (channel < 0 || channel >= history.size) return abs(sample)
+            val buf = history[channel]
+            val pos = writePos[channel]
+            buf[pos] = sample
+            writePos[channel] = if (pos + 1 == TAPS_PER_PHASE) 0 else pos + 1
+
+            val absSample = abs(sample)
+            if (absSample >= threshold) {
+                hotFrames[channel] = TAPS_PER_PHASE
+            }
+            if (hotFrames[channel] <= 0) {
+                if (absSample > maxTruePeak) maxTruePeak = absSample
+                return absSample
+            }
+            hotFrames[channel]--
+
+            var peak = absSample
+            for (phase in 0 until OVERSAMPLE_FACTOR) {
+                val coeffs = POLYPHASE_COEFFS[phase]
+                var acc = 0.0f
+                var idx = pos
+                for (t in 0 until TAPS_PER_PHASE) {
+                    acc += buf[idx] * coeffs[t]
+                    idx = if (idx == 0) TAPS_PER_PHASE - 1 else idx - 1
+                }
+                val a = abs(acc)
+                if (a > peak) peak = a
+            }
+            if (peak > maxTruePeak) maxTruePeak = peak
+            return peak
         }
 
         /**
