@@ -2107,7 +2107,11 @@ private fun MiniPlayerBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .drawWithContent {
-                        val splitX = size.width * progressFraction.coerceIn(0f, 1f)
+                        val splitX = if (hasMedia && durationMs > 0L) {
+                            size.width * (positionMsState.value.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        }
                         if (splitX < size.width) {
                             clipRect(left = splitX, right = size.width) {
                                 this@drawWithContent.drawContent()
@@ -2117,7 +2121,7 @@ private fun MiniPlayerBar(
             )
 
             // 2. 已播放端前景层（像素级对齐的镜像层，视觉裁剪至 [0, splitX]，允许单个字符被进度线分割）
-            if (progressFraction > 0f) {
+            if (hasMedia) {
                 MiniPlayerForegroundRow(
                     media = media,
                     isPlaying = isPlaying,
@@ -2131,7 +2135,11 @@ private fun MiniPlayerBar(
                         .fillMaxWidth()
                         .clearAndSetSemantics { }
                         .drawWithContent {
-                            val splitX = size.width * progressFraction.coerceIn(0f, 1f)
+                            val splitX = if (durationMs > 0L) {
+                                size.width * (positionMsState.value.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                            } else {
+                                0f
+                            }
                             if (splitX > 0f) {
                                 clipRect(left = 0f, right = splitX) {
                                     this@drawWithContent.drawContent()

@@ -339,3 +339,35 @@ jobs:
       - name: Remove temporary keystore
         if: always()
         run: rm -f "${{ runner.temp }}/ame-player-signing.p12"
+
+  cleanup-cache:
+    name: Clean up InstaBox build cache
+    needs: [build, sign]
+    if: always()
+    runs-on: [self-hosted, android-builder]
+    steps:
+      - name: Clean build caches and temporary workspace outputs
+        continue-on-error: true
+        run: |
+          echo ">>> Disk usage before cleanup:"
+          df -h . "$HOME" || true
+          rm -rf \
+            "$GITHUB_WORKSPACE/.gradle" \
+            "$GITHUB_WORKSPACE/build" \
+            "$GITHUB_WORKSPACE"/*/build \
+            "$GITHUB_WORKSPACE/build-outputs" \
+            "$GITHUB_WORKSPACE/dist" \
+            "$GITHUB_WORKSPACE/unsigned" \
+            "$GITHUB_WORKSPACE/signed" \
+            "$HOME/.gradle/caches/build-cache-"* \
+            "$HOME/.gradle/caches/transforms-"* \
+            "$HOME/.gradle/caches/journal-"* \
+            "$HOME/.gradle/caches/8."* \
+            "$HOME/.gradle/caches/9."* \
+            "$HOME/.gradle/daemon" \
+            "$HOME/.gradle/tmp" \
+            "$HOME/.android/build-cache" \
+            "$RUNNER_TEMP/"* \
+            /tmp/gradle* /tmp/kotlin* /tmp/sdk.log 2>/dev/null || true
+          echo ">>> Disk usage after cleanup:"
+          df -h . "$HOME" || true

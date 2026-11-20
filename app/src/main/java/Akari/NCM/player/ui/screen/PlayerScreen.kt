@@ -1487,7 +1487,7 @@ private fun PlayerLiveFullLyricsSection(
     lyricResult: LyricResult,
     showTranslation: Boolean,
     palette: PlayerExpressivePalette,
-    listState: LazyListState,
+    listState: androidx.compose.foundation.lazy.LazyListState,
     onLyricClick: (Long) -> Unit,
     onCollapseLyrics: () -> Unit = {}
 ) {
