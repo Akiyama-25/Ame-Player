@@ -16,9 +16,13 @@ object AudioTagLoudnessParser {
 
     fun extractLoudness(context: Context, uri: Uri): LoudnessData? {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                parseStream(stream)
+            val stream = if (uri.scheme == "file" && !uri.path.isNullOrBlank()) {
+                val f = java.io.File(uri.path!!)
+                if (f.exists() && f.isFile) f.inputStream() else null
+            } else {
+                context.contentResolver.openInputStream(uri)
             }
+            stream?.use { parseStream(it) }
         } catch (e: Exception) {
             AppLogger.d(TAG, "Failed to parse audio tags: ${e.message}")
             null
@@ -37,18 +41,22 @@ object AudioTagLoudnessParser {
     }
 
     fun parseStream(stream: InputStream): LoudnessData? {
-        val header = ByteArray(12)
-        val read = stream.read(header)
+        val header = ByteArray(10)
+        val read = readFullyUpTo(stream, header, 10)
         if (read < 4) return null
 
         return when {
-            // FLAC: "fLaC"
+            // FLAC: "fLaC"（前 4 字节为魔数，将多读出的字节回推流头防止首块偏移错位）
             header[0] == 'f'.code.toByte() && header[1] == 'L'.code.toByte() &&
                     header[2] == 'a'.code.toByte() && header[3] == 'C'.code.toByte() -> {
-                parseFlac(stream)
+                val pushed = java.io.SequenceInputStream(
+                    java.io.ByteArrayInputStream(header, 4, (read - 4).coerceAtLeast(0)),
+                    stream
+                )
+                parseFlac(pushed)
             }
-            // MP3 ID3v2: "ID3"
-            header[0] == 'I'.code.toByte() && header[1] == 'D'.code.toByte() && header[2] == '3'.code.toByte() -> {
+            // MP3 ID3v2: "ID3"（标准头部恰好 10 字节）
+            read >= 10 && header[0] == 'I'.code.toByte() && header[1] == 'D'.code.toByte() && header[2] == '3'.code.toByte() -> {
                 parseId3(header, stream)
             }
             else -> null
@@ -60,10 +68,11 @@ object AudioTagLoudnessParser {
         var replayGain: Float? = null
         var r128Gain: Float? = null
         var trackPeak: Float? = null
+        var guard = 0
 
-        while (!isLast) {
+        while (!isLast && guard++ < 128) {
             val blockHeader = ByteArray(4)
-            if (stream.read(blockHeader) < 4) break
+            if (readFullyUpTo(stream, blockHeader, 4) < 4) break
             val firstByte = blockHeader[0].toInt() and 0xFF
             isLast = (firstByte and 0x80) != 0
             val blockType = firstByte and 0x7F
@@ -71,9 +80,9 @@ object AudioTagLoudnessParser {
                     ((blockHeader[2].toInt() and 0xFF) shl 8) or
                     (blockHeader[3].toInt() and 0xFF)
 
-            if (blockType == 4) { // VORBIS_COMMENT
+            if (blockType == 4 && length in 8..(4 * 1024 * 1024)) { // VORBIS_COMMENT
                 val commentBytes = ByteArray(length)
-                if (stream.read(commentBytes) < length) break
+                if (readFullyUpTo(stream, commentBytes, length) < length) break
                 val comments = parseVorbisComments(commentBytes)
                 for ((key, value) in comments) {
                     when (key.uppercase()) {
@@ -90,7 +99,7 @@ object AudioTagLoudnessParser {
                 }
                 break
             } else {
-                stream.skip(length.toLong())
+                skipFully(stream, length.toLong())
             }
         }
 
@@ -105,6 +114,31 @@ object AudioTagLoudnessParser {
             return LoudnessData(integrated, trackPeak ?: 1.0f, LoudnessSource.REPLAYGAIN_TAG)
         }
         return null
+    }
+
+    private fun readFullyUpTo(stream: InputStream, dst: ByteArray, count: Int): Int {
+        var total = 0
+        while (total < count) {
+            val r = stream.read(dst, total, count - total)
+            if (r <= 0) break
+            total += r
+        }
+        return total
+    }
+
+    private fun skipFully(stream: InputStream, count: Long) {
+        var remaining = count
+        val discard = ByteArray(4096)
+        while (remaining > 0L) {
+            val skipped = stream.skip(remaining)
+            if (skipped > 0L) {
+                remaining -= skipped
+            } else {
+                val r = stream.read(discard, 0, minOf(remaining, discard.size.toLong()).toInt())
+                if (r <= 0) break
+                remaining -= r.toLong()
+            }
+        }
     }
 
     private fun parseVorbisComments(bytes: ByteArray): List<Pair<String, String>> {

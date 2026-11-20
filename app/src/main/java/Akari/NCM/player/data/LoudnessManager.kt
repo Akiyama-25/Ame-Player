@@ -2,7 +2,9 @@ package Akari.NCM.player.data
 
 import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.core.AppLogger
+import Akari.NCM.player.core.AudioFormat
 import Akari.NCM.player.core.PlayableMedia
+import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.core.loudness.AudioTagLoudnessParser
 import Akari.NCM.player.core.loudness.LoudnessData
 import Akari.NCM.player.core.loudness.LoudnessSource
@@ -10,6 +12,7 @@ import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -106,31 +109,48 @@ class LoudnessManager @Inject constructor(
         }
     }
 
+    private fun isLocalComputedSource(source: LoudnessSource): Boolean {
+        return source == LoudnessSource.SPARSE_RANGE_SCAN ||
+            source == LoudnessSource.BS1770_SCAN ||
+            source == LoudnessSource.FAST_PREVIEW_SCAN
+    }
+
     /**
      * 同步高速读取内存中已有的曲目响度缓存（P0 零毫秒命中，用于切歌瞬间无延迟增益预置）
      */
     fun getCachedLoudnessSync(
         media: PlayableMedia,
         qualityLevel: String = "",
-        fileSignature: String = ""
+        fileSignature: String = "",
+        sourceType: PlaylistSourceType = PlaylistSourceType.NONE
     ): LoudnessData? {
         val platform = if (media is PlayableMedia.Online) PLATFORM_NETEASE else PLATFORM_LOCAL
+        val localPlaylistOnly = sourceType == PlaylistSourceType.LOCAL
+
+        fun acceptRecord(data: LoudnessData?): LoudnessData? {
+            if (data == null || !data.source.isKnownValid) return null
+            if (localPlaylistOnly && !isLocalComputedSource(data.source)) return null
+            return data
+        }
+
         if (qualityLevel.isNotBlank() || fileSignature.isNotBlank()) {
             val exactKey = LoudnessCacheDatabase.buildCacheKey(platform, media.id, qualityLevel, fileSignature)
-            memoryCache[exactKey]?.takeIf { it.source.isKnownValid }?.let { return it }
+            acceptRecord(memoryCache[exactKey])?.let { return it }
             // 同步查一次 SQLite 以保证冷启动精确命中
-            cacheDb.get(platform, media.id, qualityLevel, fileSignature)?.loudnessData?.let { rec ->
+            acceptRecord(cacheDb.get(platform, media.id, qualityLevel, fileSignature)?.loudnessData)?.let { rec ->
                 putMemoryIfHigherOrEqual(exactKey, rec)
                 putMemoryIfHigherOrEqual(media.id, rec)
                 return rec
             }
         }
 
-        memoryCache[media.id]?.takeIf { it.source.isKnownValid }?.let { return it }
-        if (media is PlayableMedia.LocalNcm && media.isNcm) {
+        acceptRecord(memoryCache[media.id])?.let { return it }
+
+        // 仅在云端歌单或未指定来源时，允许通过 NCM musicId 复用云端响度缓存；本地歌单不读取云端均衡值
+        if (!localPlaylistOnly && media is PlayableMedia.LocalNcm && media.isNcm) {
             val mappedMusicId = ncmMusicIdCache[media.id]
             if (mappedMusicId != null) {
-                memoryCache[mappedMusicId]?.takeIf { it.source.isKnownValid }?.let { return it }
+                acceptRecord(memoryCache[mappedMusicId])?.let { return it }
             }
         }
         return null
@@ -259,68 +279,146 @@ class LoudnessManager @Inject constructor(
     /**
      * 计算未来队列曲目的平均响度（LUFS）与已就绪数量
      */
-    fun computeUpcomingAverageLoudness(upcomingTracks: List<PlayableMedia>): Pair<Float?, Int> {
+    fun computeUpcomingAverageLoudness(
+        upcomingTracks: List<PlayableMedia>,
+        sourceType: PlaylistSourceType = PlaylistSourceType.NONE
+    ): Pair<Float?, Int> {
         if (upcomingTracks.isEmpty()) return null to 0
         val readyLufs = upcomingTracks.mapNotNull { track ->
-            getCachedLoudnessSync(track)?.integratedLufs
+            getCachedLoudnessSync(track, sourceType = sourceType)?.integratedLufs
         }
         val avg = if (readyLufs.isNotEmpty()) readyLufs.average().toFloat() else null
         return avg to readyLufs.size
     }
 
     /**
-     * 异步获取曲目的已知响度数据（P0 SQLite 缓存、云端特征或本地文件内嵌标签）；
-     * 若未命中则返回 null，由 Tier 2（11×3s 稀疏抽样）与 Tier 3（实时流式兜底）处理。
+     * 异步获取曲目的已知响度数据：
+     * - 本地歌单（PlaylistSourceType.LOCAL）：不读取云端均衡值与内嵌云端 ID，仅复用本地已计算缓存（SPARSE_RANGE_SCAN / BS1770_SCAN），
+     *   未命中则返回 null 由 Tier 2 本地计算。
+     * - 云端歌单（PlaylistSourceType.ONLINE）：
+     *   1. 若存在本地文件，优先读取本地文件自身内嵌响度标签（ReplayGain / R128 / SoundCheck）；
+     *   2. 其次按精确云端歌曲 ID 读取云端音量均衡值（缓存或 /song/music/detail & /v3/song/detail 分音质 vd）；
+     *   3. 最后复用本地已计算缓存或返回 null 交由 Tier 2 本地计算。
      */
     suspend fun getLoudness(
         media: PlayableMedia,
         qualityLevel: String = "",
-        fileSignature: String = ""
+        fileSignature: String = "",
+        sourceType: PlaylistSourceType = PlaylistSourceType.NONE
     ): LoudnessData? = withContext(Dispatchers.IO) {
-        getCachedLoudnessSync(media, qualityLevel, fileSignature)?.let { return@withContext it }
-
+        val effectiveSource = when (sourceType) {
+            PlaylistSourceType.ONLINE -> PlaylistSourceType.ONLINE
+            PlaylistSourceType.LOCAL -> PlaylistSourceType.LOCAL
+            PlaylistSourceType.NONE -> if (media is PlayableMedia.Online) PlaylistSourceType.ONLINE else PlaylistSourceType.LOCAL
+        }
         val platform = if (media is PlayableMedia.Online) PLATFORM_NETEASE else PLATFORM_LOCAL
-        cacheDb.get(platform, media.id, qualityLevel, fileSignature)?.loudnessData?.let { persisted ->
-            val key = LoudnessCacheDatabase.buildCacheKey(platform, media.id, qualityLevel, fileSignature)
-            putMemoryIfHigherOrEqual(key, persisted)
-            putMemoryIfHigherOrEqual(media.id, persisted)
-            return@withContext persisted
+
+        // === 本地歌单：音量均衡值仍本地计算（仅接受本地已计算结果，绝不读云端） ===
+        if (effectiveSource == PlaylistSourceType.LOCAL) {
+            getCachedLoudnessSync(media, qualityLevel, fileSignature, PlaylistSourceType.LOCAL)?.let { return@withContext it }
+            cacheDb.get(platform, media.id, qualityLevel, fileSignature)?.loudnessData
+                ?.takeIf { isLocalComputedSource(it.source) }
+                ?.let { persisted ->
+                    val key = LoudnessCacheDatabase.buildCacheKey(platform, media.id, qualityLevel, fileSignature)
+                    putMemoryIfHigherOrEqual(key, persisted)
+                    putMemoryIfHigherOrEqual(media.id, persisted)
+                    return@withContext persisted
+                }
+            return@withContext null
         }
 
+        // === 云端歌单 ===
         when (media) {
-            is PlayableMedia.Online -> null
+            is PlayableMedia.Online -> {
+                getCachedLoudnessSync(media, qualityLevel, fileSignature, PlaylistSourceType.ONLINE)?.let { return@withContext it }
+                cacheDb.get(PLATFORM_NETEASE, media.id, qualityLevel, fileSignature)?.loudnessData?.let { persisted ->
+                    val key = LoudnessCacheDatabase.buildCacheKey(PLATFORM_NETEASE, media.id, qualityLevel, fileSignature)
+                    putMemoryIfHigherOrEqual(key, persisted)
+                    putMemoryIfHigherOrEqual(media.id, persisted)
+                    return@withContext persisted
+                }
+                null
+            }
             is PlayableMedia.LocalNcm -> {
                 val uri = Uri.parse(media.uri)
+                val localCacheKey = LoudnessCacheDatabase.buildCacheKey(PLATFORM_LOCAL, media.id, qualityLevel, fileSignature)
+                val cachedLocal = memoryCache[localCacheKey]
+                    ?: cacheDb.get(PLATFORM_LOCAL, media.id, qualityLevel, fileSignature)?.loudnessData
 
-                // 1. 若为 NCM 且包含有效网易云 musicId，优先查找是否已有云端或扫描特征缓存
-                if (media.isNcm) {
-                    val ncmMeta = NcmDataSource.scanMetadata(context.contentResolver, uri)
-                    val musicId = ncmMeta?.first?.musicId?.toString()?.takeIf { it != "0" && it.isNotBlank() }
-                    if (musicId != null) {
-                        ncmMusicIdCache[media.id] = musicId
-                        val matched = memoryCache[musicId]?.takeIf { it.source.isKnownValid }
-                            ?: cacheDb.get(PLATFORM_NETEASE, musicId)?.loudnessData
-                        if (matched != null) {
-                            saveLoudness(media.id, matched, sourcePlatform = PLATFORM_LOCAL, qualityLevel = "local", fileSignature = fileSignature)
-                            return@withContext matched
-                        }
-                    }
+                // 若本地已有 REPLAYGAIN_TAG（本地自身元数据）直接零延迟命中
+                if (cachedLocal != null && cachedLocal.source == LoudnessSource.REPLAYGAIN_TAG) {
+                    putMemoryIfHigherOrEqual(localCacheKey, cachedLocal)
+                    return@withContext cachedLocal
                 }
 
-                // 2. 尝试从本地音频文件元数据标签提取 (FLAC Vorbis Comment / MP3 ID3v2 ReplayGain / Apple SoundCheck)
+                // 第 1 优先：读取本地文件自身的内嵌响度元数据标签（ReplayGain / R128 / SoundCheck）
                 val tagData = if (media.isNcm) {
                     AudioTagLoudnessParser.extractNcmLoudness(context, uri)
                 } else {
                     AudioTagLoudnessParser.extractLoudness(context, uri)
                 }
                 if (tagData != null) {
-                    AppLogger.i(TAG, "Extracted tag loudness for '${media.title}': ${tagData.integratedLufs} LUFS, peak=${tagData.peakDb} dBTP")
+                    AppLogger.i(TAG, "Cloud playlist loaded local embedded loudness tag for '${media.title}': ${tagData.integratedLufs} LUFS, peak=${tagData.peakDb} dBTP")
                     saveLoudness(media.id, tagData, sourcePlatform = PLATFORM_LOCAL, qualityLevel = "local", fileSignature = fileSignature)
                     return@withContext tagData
+                }
+
+                // 第 2 优先：按精确云端歌曲 ID 读取云端音量均衡值（缓存或 /song/music/detail & /v3/song/detail vd）
+                val cloudSongId = resolveCloudSongIdForLocal(media, uri)
+                if (!cloudSongId.isNullOrBlank()) {
+                    val cachedCloud = memoryCache[cloudSongId]?.takeIf {
+                        it.source == LoudnessSource.NETEASE_ONLINE || it.source == LoudnessSource.NETEASE_VD
+                    } ?: cacheDb.get(PLATFORM_NETEASE, cloudSongId)?.loudnessData?.takeIf {
+                        it.source == LoudnessSource.NETEASE_ONLINE || it.source == LoudnessSource.NETEASE_VD
+                    }
+                    if (cachedCloud != null) {
+                        AppLogger.i(TAG, "Cloud playlist matched cached cloud loudness for local file '${media.title}' (songId=$cloudSongId): ${cachedCloud.integratedLufs} LUFS")
+                        return@withContext cachedCloud
+                    }
+
+                    val qualityHint = if (media.format == AudioFormat.FLAC) "lossless" else "exhigh"
+                    val vdDb = withTimeoutOrNull(1800L) {
+                        ncmApi.getSongQualityVd(cloudSongId, qualityHint)
+                    }
+                    if (vdDb != null) {
+                        val registered = registerOnlineLoudness(
+                            songId = cloudSongId,
+                            gainDb = null,
+                            peak = null,
+                            vdDb = vdDb,
+                            isFreeTrial = false,
+                            qualityLevel = qualityHint
+                        )
+                        if (registered != null) {
+                            AppLogger.i(TAG, "Cloud playlist fetched cloud vd loudness for local file '${media.title}' (songId=$cloudSongId): ${registered.integratedLufs} LUFS")
+                            return@withContext registered
+                        }
+                    }
+                }
+
+                // 第 3 优先：复用已缓存的本地计算结果（否则返回 null 由 Tier 2 本地计算）
+                if (cachedLocal != null && isLocalComputedSource(cachedLocal.source)) {
+                    putMemoryIfHigherOrEqual(localCacheKey, cachedLocal)
+                    return@withContext cachedLocal
                 }
 
                 null
             }
         }
+    }
+
+    private fun resolveCloudSongIdForLocal(media: PlayableMedia.LocalNcm, uri: Uri): String? {
+        val idAsLong = media.id.toLongOrNull()
+        if (idAsLong != null && idAsLong > 0L) return media.id
+        if (media.isNcm) {
+            ncmMusicIdCache[media.id]?.let { return it }
+            val ncmMeta = NcmDataSource.scanMetadata(context.contentResolver, uri)
+            val musicId = ncmMeta?.first?.musicId?.takeIf { it > 0L }?.toString()
+            if (musicId != null) {
+                ncmMusicIdCache[media.id] = musicId
+                return musicId
+            }
+        }
+        return null
     }
 }

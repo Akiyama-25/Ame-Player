@@ -5,15 +5,14 @@ import Akari.NCM.player.core.AppLogger
 import Akari.NCM.player.core.LyricLine
 import Akari.NCM.player.core.LyricSource
 import Akari.NCM.player.core.PlayableMedia
+import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.data.ttml.AmllLyricsClient
 import Akari.NCM.player.data.ttml.LyricsCache
 import Akari.NCM.player.data.ttml.TtmlLyricParser
 import android.content.Context
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
 data class LyricResult(
     val lines: List<LyricLine>,
@@ -32,122 +31,83 @@ class LyricsManager(
     private val amllLyricsClient: AmllLyricsClient = AmllLyricsClient(LyricsCache(context.cacheDir))
 ) {
 
-    suspend fun loadLyrics(media: PlayableMedia): LyricResult = withContext(Dispatchers.IO) {
-        // Strategy 1: Try local .ttml file, embedded metadata or local .lrc file if LocalNcm
-        if (media is PlayableMedia.LocalNcm) {
-            val uri = Uri.parse(media.uri)
+    /**
+     * 按播放歌单来源加载歌词：
+     * - 本地歌单（PlaylistSourceType.LOCAL）：仅通过音频文件名匹配同目录 .ttml / .lrc 文件，不读内嵌、不联网搜索或拉取云端歌词。
+     * - 云端歌单（PlaylistSourceType.ONLINE）：
+     *   1. 若匹配到本地文件，优先读取本地文件自身的内嵌歌词元数据；
+     *   2. 其次按精确云端歌曲 ID 读取云端歌词（AMLL TTML -> 网易云 YRC -> LRC + 翻译）；
+     *   3. 严禁通过歌曲名搜索歌词。
+     */
+    suspend fun loadLyrics(
+        media: PlayableMedia,
+        sourceType: PlaylistSourceType = PlaylistSourceType.NONE
+    ): LyricResult = withContext(Dispatchers.IO) {
+        val effectiveSource = when (sourceType) {
+            PlaylistSourceType.ONLINE -> PlaylistSourceType.ONLINE
+            PlaylistSourceType.LOCAL -> PlaylistSourceType.LOCAL
+            PlaylistSourceType.NONE -> if (media is PlayableMedia.Online) PlaylistSourceType.ONLINE else PlaylistSourceType.LOCAL
+        }
 
-            // Try local matching .ttml file (word-by-word)
-            val ttmlFileContent = findLocalTtmlFile(uri)
-            if (!ttmlFileContent.isNullOrBlank()) {
-                val parsed = TtmlLyricParser.parse(ttmlFileContent)
-                if (parsed.isNotEmpty()) {
-                    AppLogger.d("LyricsManager", "Found local .ttml file for ${media.title}")
-                    return@withContext LyricResult(parsed, LyricSource.TTML)
+        // === 分支 1：本地歌单播放 ===
+        // 仅通过文件名匹配本地同目录歌词文件（.ttml 优先，其次 .lrc），不查云端、不搜歌名
+        if (effectiveSource == PlaylistSourceType.LOCAL) {
+            if (media is PlayableMedia.LocalNcm) {
+                val uri = Uri.parse(media.uri)
+                val sibling = LocalMediaMetadataHelper.findSiblingLyrics(context, uri, media.title)
+                if (sibling != null) {
+                    val (content, src) = sibling
+                    val parsed = if (src == LyricSource.TTML) {
+                        TtmlLyricParser.parse(content)
+                    } else {
+                        LrcParser.parse(content)
+                    }
+                    if (parsed.isNotEmpty()) {
+                        AppLogger.d("LyricsManager", "Local playlist matched sibling ${src.name} by filename for ${media.title}")
+                        return@withContext LyricResult(parsed, src)
+                    }
                 }
             }
+            return@withContext LyricResult(emptyList(), LyricSource.NONE)
+        }
 
-            // Try embedded lyrics via MediaMetadataRetriever
-            val embeddedLrc = extractEmbeddedLyrics(uri)
-            if (!embeddedLrc.isNullOrBlank()) {
-                val parsed = LrcParser.parse(embeddedLrc)
+        // === 分支 2：云端歌单播放 ===
+        // 第 1 优先：若存在本地文件，优先读取本地文件自身内嵌歌词元数据
+        if (media is PlayableMedia.LocalNcm) {
+            val uri = Uri.parse(media.uri)
+            val embeddedRaw = LocalMediaMetadataHelper.extractEmbeddedLyrics(context, uri, media.isNcm)
+            if (!embeddedRaw.isNullOrBlank()) {
+                val parsed = if (embeddedRaw.contains("<tt", ignoreCase = true) && embeddedRaw.contains("<p", ignoreCase = true)) {
+                    TtmlLyricParser.parse(embeddedRaw)
+                } else {
+                    LrcParser.parse(embeddedRaw)
+                }
                 if (parsed.isNotEmpty()) {
-                    AppLogger.d("LyricsManager", "Found embedded lyrics for ${media.title}")
+                    AppLogger.d("LyricsManager", "Cloud playlist loaded local embedded lyrics for ${media.title}")
                     return@withContext LyricResult(parsed, LyricSource.EMBEDDED)
                 }
             }
-
-            // Try local matching .lrc file (if file:// or content:// has file path)
-            val lrcFileContent = findLocalLrcFile(uri)
-            if (!lrcFileContent.isNullOrBlank()) {
-                val parsed = LrcParser.parse(lrcFileContent)
-                if (parsed.isNotEmpty()) {
-                    AppLogger.d("LyricsManager", "Found local .lrc file for ${media.title}")
-                    return@withContext LyricResult(parsed, LyricSource.LOCAL_LRC)
-                }
-            }
         }
 
-        // Strategy 2: Fetch online lyrics via exact ID
+        // 第 2 优先：按精确云端歌曲 ID 读取云端歌词（严禁按歌曲名搜索）
         val onlineSongId: String? = when (media) {
             is PlayableMedia.Online -> media.id
             is PlayableMedia.LocalNcm -> {
-                // If it's an NCM file, check if we can scan NCM metadata for musicId
-                val ncmMeta = NcmDataSource.scanMetadata(context.contentResolver, Uri.parse(media.uri))
-                val musicId = ncmMeta?.first?.musicId
-                if (musicId != null && musicId > 0) musicId.toString() else null
+                val idAsLong = media.id.toLongOrNull()
+                if (idAsLong != null && idAsLong > 0L) {
+                    media.id
+                } else if (media.isNcm) {
+                    val ncmMeta = NcmDataSource.scanMetadata(context.contentResolver, Uri.parse(media.uri))
+                    ncmMeta?.first?.musicId?.takeIf { it > 0L }?.toString()
+                } else {
+                    null
+                }
             }
         }
 
-        suspend fun searchAndFetchLyric(title: String, artist: String): LyricResult? {
-            if (title.isBlank()) return null
-            val rawFirstArtist = artist.split(",", "/").firstOrNull()?.trim() ?: ""
-            val searchArtist = rawFirstArtist.split(Regex("\\s+")).firstOrNull()?.trim() ?: ""
-            val cleanTitle = title.replace(Regex("^\\d+\\.?\\s*"), "").trim()
-            val query = if (searchArtist.isNotBlank() && searchArtist != "Unknown") {
-                "$searchArtist $cleanTitle"
-            } else {
-                cleanTitle
-            }
-            val searchResults = ncmApi.searchSongs(query.trim(), limit = 5)
-
-            // 将搜索结果智能排序：
-            // 1. 优先尝试歌手名匹配的
-            // 2. 其次尝试歌名完全一样的 (这样即使歌手名不匹配，比如用户听的是翻唱，也能拿到原唱的歌词)
-            val prioritizedResults = searchResults.sortedByDescending {
-                when {
-                    it.artist.contains(searchArtist, ignoreCase = true) -> 2
-                    it.title.equals(cleanTitle, ignoreCase = true) -> 1
-                    else -> 0
-                }
-            }
-
-            // 逐个尝试获取歌词：优先尝试 AMLL TTML 逐词歌词，其次尝试 NCM YRC 逐字，未命中再尝试 NCM API 在线 LRC
-            for (song in prioritizedResults) {
-                val songIdLong = song.id.toLongOrNull()
-                if (songIdLong != null && songIdLong > 0) {
-                    val ttmlXml = amllLyricsClient.fetch(songIdLong)
-                    if (!ttmlXml.isNullOrBlank()) {
-                        val parsed = TtmlLyricParser.parse(ttmlXml)
-                        if (parsed.isNotEmpty()) {
-                            AppLogger.d("LyricsManager", "Fetched fallback AMLL TTML lyrics from ${song.title} - ${song.artist}")
-                            return LyricResult(parsed, LyricSource.TTML)
-                        }
-                    }
-                }
-
-                val lyricData = ncmApi.getLyric(song.id)
-                val yrc = lyricData?.yrc
-                val mainLrc = lyricData?.lrc
-                val transLrc = lyricData?.tlyric
-
-                if (!yrc.isNullOrBlank()) {
-                    val yrcParsed = YrcLyricParser.parse(yrc)
-                    if (yrcParsed.isNotEmpty()) {
-                        val transParsed = LrcParser.parse(transLrc)
-                        val merged = LrcParser.mergeWithTranslation(yrcParsed, transParsed)
-                        AppLogger.d("LyricsManager", "Fetched fallback YRC word-by-word lyrics from ${song.title} - ${song.artist}")
-                        return LyricResult(merged, LyricSource.YRC)
-                    }
-                }
-
-                if (!mainLrc.isNullOrBlank() || !transLrc.isNullOrBlank()) {
-                    val mP = LrcParser.parse(mainLrc)
-                    val tP = LrcParser.parse(transLrc)
-                    val merged = LrcParser.mergeWithTranslation(mP, tP)
-                    if (merged.isNotEmpty() && merged.any { it.text.isNotBlank() && !it.text.contains("纯音乐") }) {
-                        AppLogger.d("LyricsManager", "Fetched fallback online lyrics from ${song.title} - ${song.artist}")
-                        return LyricResult(merged, LyricSource.ONLINE)
-                    }
-                }
-            }
-            return null
-        }
-
-        // Try exact ID first (for Online or NCM with musicId)
         if (!onlineSongId.isNullOrBlank()) {
             val songIdLong = onlineSongId.toLongOrNull()
-            if (songIdLong != null && songIdLong > 0) {
+            if (songIdLong != null && songIdLong > 0L) {
                 val ttmlXml = amllLyricsClient.fetch(songIdLong)
                 if (!ttmlXml.isNullOrBlank()) {
                     val parsed = TtmlLyricParser.parse(ttmlXml)
@@ -184,57 +144,7 @@ class LyricsManager(
             }
         }
 
-        // If exact ID failed (e.g. Cloud Drive song without lyrics) or no ID, fallback to text search
-        val fallbackResult = searchAndFetchLyric(media.title, media.artist)
-        if (fallbackResult != null) {
-            return@withContext fallbackResult
-        }
-
+        // 不通过歌曲名搜索歌词，精确 ID 未命中直接返回无歌词
         LyricResult(emptyList(), LyricSource.NONE)
-    }
-
-    private fun extractEmbeddedLyrics(uri: Uri): String? {
-        val retriever = MediaMetadataRetriever()
-        return try {
-            retriever.setDataSource(context, uri)
-            // Key 1000 corresponds to METADATA_KEY_LYRIC in MediaMetadataRetriever
-            retriever.extractMetadata(1000)
-        } catch (_: Exception) {
-            null
-        } finally {
-            try { retriever.release() } catch (_: Exception) {}
-        }
-    }
-
-    private fun findLocalLrcFile(uri: Uri): String? {
-        return try {
-            val path = uri.path ?: return null
-            val audioFile = File(path)
-            if (audioFile.exists()) {
-                val lrcFile = File(audioFile.parentFile, "${audioFile.nameWithoutExtension}.lrc")
-                if (lrcFile.exists()) {
-                    return lrcFile.readText()
-                }
-            }
-            null
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private fun findLocalTtmlFile(uri: Uri): String? {
-        return try {
-            val path = uri.path ?: return null
-            val audioFile = File(path)
-            if (audioFile.exists()) {
-                val ttmlFile = File(audioFile.parentFile, "${audioFile.nameWithoutExtension}.ttml")
-                if (ttmlFile.exists()) {
-                    return ttmlFile.readText()
-                }
-            }
-            null
-        } catch (_: Exception) {
-            null
-        }
     }
 }

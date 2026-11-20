@@ -677,7 +677,9 @@ fun MainScreen(
                                                         LazyListState()
                                                     }
                                                     val currentPlaylistSourceType by playerEngine.playlistSourceType.collectAsState()
-                                                    val isCurrentFromLocal = currentPlaylistSourceType == PlaylistSourceType.LOCAL
+                                                    val isCloudSyncedPlaylist = currentPlaylist.ncmPlaylistId != null && currentPlaylist.ncmPlaylistId != -9999L
+                                                    val detailPlaylistSourceType = if (isCloudSyncedPlaylist) PlaylistSourceType.ONLINE else PlaylistSourceType.LOCAL
+                                                    val isCurrentFromLocal = currentPlaylistSourceType == detailPlaylistSourceType
                                                     var inPlaylistSearchQuery by remember(currentPlaylist.id) { mutableStateOf("") }
                                                     var isPlaylistSearchActive by remember(currentPlaylist.id) { mutableStateOf(false) }
 
@@ -860,7 +862,7 @@ fun MainScreen(
                                                                                     playlistManager.findLocalMatch(m) ?: m
                                                                                 } else m
                                                                             }
-                                                                            playerEngine.loadPlaylist(playableList, 0, PlaylistSourceType.LOCAL)
+                                                                            playerEngine.loadPlaylist(playableList, 0, detailPlaylistSourceType)
                                                                             playerEngine.play()
                                                                         },
                                                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
@@ -980,7 +982,7 @@ fun MainScreen(
                                                                                         } else m
                                                                                     }
                                                                                     val targetIndex = playableList.indexOfFirst { it.id == media.id }.coerceAtLeast(0)
-                                                                                    playerEngine.loadPlaylist(playableList, targetIndex, PlaylistSourceType.LOCAL)
+                                                                                    playerEngine.loadPlaylist(playableList, targetIndex, detailPlaylistSourceType)
                                                                                     playerEngine.play()
                                                                                 },
                                                                                 onActionClick = {

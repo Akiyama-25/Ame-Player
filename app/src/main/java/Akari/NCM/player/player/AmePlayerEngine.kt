@@ -67,6 +67,7 @@ import Akari.NCM.player.core.loudness.EbuR128Calculator
 import Akari.NCM.player.core.loudness.LoudnessData
 import Akari.NCM.player.core.loudness.LoudnessNormalizationState
 import Akari.NCM.player.core.loudness.LoudnessSource
+import Akari.NCM.player.data.LocalMediaMetadataHelper
 import Akari.NCM.player.data.LoudnessManager
 import Akari.NCM.player.data.LyricResult
 import Akari.NCM.player.data.LyricsManager
@@ -1033,6 +1034,14 @@ class AmePlayerEngine @Inject constructor(
     @Volatile
     private var activeTier2ScanMediaId: String? = null
 
+    private fun effectiveSourceTypeFor(media: PlayableMedia?): PlaylistSourceType {
+        return when (val current = _playlistSourceType.value) {
+            PlaylistSourceType.ONLINE -> PlaylistSourceType.ONLINE
+            PlaylistSourceType.LOCAL -> PlaylistSourceType.LOCAL
+            PlaylistSourceType.NONE -> if (media is PlayableMedia.Online) PlaylistSourceType.ONLINE else PlaylistSourceType.LOCAL
+        }
+    }
+
     private fun resolveLocalFileSignature(media: PlayableMedia.LocalNcm): String {
         val bytes = runCatching {
             val uri = Uri.parse(media.uri)
@@ -1106,12 +1115,14 @@ class AmePlayerEngine @Inject constructor(
             usbExclusiveBypass = false
         )
         val details = resolvedDetailsCache[media.id]
+        val sourceType = effectiveSourceTypeFor(media)
         val qLevel = if (media is PlayableMedia.LocalNcm) "local" else details?.level.orEmpty()
         val fileSig = if (media is PlayableMedia.LocalNcm) resolveLocalFileSignature(media) else details?.fileSignature.orEmpty()
         val cached = loudnessManager.getCachedLoudnessSync(
             media = media,
             qualityLevel = qLevel,
-            fileSignature = fileSig
+            fileSignature = fileSig,
+            sourceType = sourceType
         )
         if (cached != null) {
             loudnessAudioProcessor.resetForTrack(media.id, cached)
@@ -1276,7 +1287,7 @@ class AmePlayerEngine @Inject constructor(
                     qualityLevel = qualityLevel,
                     fileSignature = fileSignature
                 )
-                if (media is PlayableMedia.LocalNcm && media.isNcm) {
+                if (media is PlayableMedia.LocalNcm && media.isNcm && effectiveSourceTypeFor(media) == PlaylistSourceType.ONLINE) {
                     val musicId = runCatching {
                         NcmDataSource.scanMetadata(context.contentResolver, Uri.parse(media.uri))?.first?.musicId?.toString()
                     }.getOrNull()
@@ -1405,12 +1416,14 @@ class AmePlayerEngine @Inject constructor(
         loudnessJob?.cancel()
         loudnessJob = scope.launch {
             val details = resolvedDetailsCache[media.id]
+            val sourceType = effectiveSourceTypeFor(media)
             val qLevel = if (media is PlayableMedia.LocalNcm) "local" else details?.level.orEmpty()
             val fileSig = if (media is PlayableMedia.LocalNcm) resolveLocalFileSignature(media) else details?.fileSignature.orEmpty()
             val loudnessData = loudnessManager.getLoudness(
                 media = media,
                 qualityLevel = qLevel,
-                fileSignature = fileSig
+                fileSignature = fileSig,
+                sourceType = sourceType
             )
 
             if (loudnessData != null && loudnessData.source != LoudnessSource.DEFAULT_FALLBACK) {
@@ -1585,10 +1598,14 @@ class AmePlayerEngine @Inject constructor(
             for (track in upcoming) {
                 if (!isActive) break
                 val cachedDetails = resolvedDetailsCache[track.id]
+                val trackSourceType = effectiveSourceTypeFor(track)
+                val qLevel = if (track is PlayableMedia.LocalNcm) "local" else cachedDetails?.level.orEmpty()
+                val fileSig = if (track is PlayableMedia.LocalNcm) resolveLocalFileSignature(track) else cachedDetails?.fileSignature.orEmpty()
                 var resolved = loudnessManager.getLoudness(
                     media = track,
-                    qualityLevel = cachedDetails?.level.orEmpty(),
-                    fileSignature = cachedDetails?.fileSignature.orEmpty()
+                    qualityLevel = qLevel,
+                    fileSignature = fileSig,
+                    sourceType = trackSourceType
                 )
 
                 if (track is PlayableMedia.Online) {
@@ -1642,7 +1659,7 @@ class AmePlayerEngine @Inject constructor(
                     }
                 }
 
-                val (avg, readyCount) = loudnessManager.computeUpcomingAverageLoudness(upcoming)
+                val (avg, readyCount) = loudnessManager.computeUpcomingAverageLoudness(upcoming, _playlistSourceType.value)
                 upcomingAverageLufs = avg
                 upcomingPrefetchedCount = readyCount
                 upcomingPrefetchedTotalCount = upcoming.size
@@ -1676,10 +1693,14 @@ class AmePlayerEngine @Inject constructor(
                     withTimeoutOrNull(880L) {
                         withContext(Dispatchers.IO) {
                             val cachedDetails = resolvedDetailsCache[media.id]
+                            val sourceType = effectiveSourceTypeFor(media)
+                            val qLevel = if (media is PlayableMedia.LocalNcm) "local" else cachedDetails?.level.orEmpty()
+                            val fileSig = if (media is PlayableMedia.LocalNcm) resolveLocalFileSignature(media) else cachedDetails?.fileSignature.orEmpty()
                             var data = loudnessManager.getLoudness(
                                 media = media,
-                                qualityLevel = cachedDetails?.level.orEmpty(),
-                                fileSignature = cachedDetails?.fileSignature.orEmpty()
+                                qualityLevel = qLevel,
+                                fileSignature = fileSig,
+                                sourceType = sourceType
                             )
                             if (data == null && media is PlayableMedia.Online) {
                                 val details = cachedDetails ?: resolveOnlineSongDetails(media)
@@ -1713,7 +1734,8 @@ class AmePlayerEngine @Inject constructor(
                                         mediaId = media.id,
                                         data = data,
                                         sourcePlatform = LoudnessManager.PLATFORM_LOCAL,
-                                        qualityLevel = "local"
+                                        qualityLevel = "local",
+                                        fileSignature = fileSig
                                     )
                                 }
                             }
@@ -1792,9 +1814,11 @@ class AmePlayerEngine @Inject constructor(
             return
         }
 
-        // 1. 异步加载当前曲目的歌词（供播放页同步使用）
+        val effectiveSourceType = effectiveSourceTypeFor(currentMedia)
+
+        // 1. 异步加载当前曲目的歌词（严格遵循云端歌单 / 本地歌单信息获取优先级）
         lyricLoadJob = scope.launch {
-            val loaded = runCatching { lyricsManager.loadLyrics(currentMedia) }
+            val loaded = runCatching { lyricsManager.loadLyrics(currentMedia, effectiveSourceType) }
                 .getOrDefault(LyricResult(emptyList(), LyricSource.NONE))
             if (_currentMedia.value?.id == currentMedia.id) {
                 _currentLyricsResult.value = loaded
@@ -1803,92 +1827,106 @@ class AmePlayerEngine @Inject constructor(
             }
         }
 
-        // 2. 异步解析封面（含本地 .ncm 字节、ID3 内嵌封面或云端匹配封面）并写入 MediaSession MediaMetadata
+        // 2. 异步解析封面并写入 MediaSession MediaMetadata：
+        // - 本地歌单（PlaylistSourceType.LOCAL）：仅通过文件名匹配同目录封面（.jpg/.jpeg/.png/.webp），不读内嵌、不查云端、不搜索；
+        // - 云端歌单（PlaylistSourceType.ONLINE）：
+        //   1) 若匹配到本地文件，优先读取本地文件自身内嵌封面；
+        //   2) 其次读取云端封面（曲目自带 coverUrl / NCM albumPic / 按精确 songId 获取），不通过歌名搜索。
         artworkLoadJob = scope.launch(Dispatchers.IO) {
             try {
-                var finalCoverUrl: String? = currentMedia.coverUrl
+                var finalCoverUrl: String? = null
                 var localCoverBytes: ByteArray? = null
 
-                if (currentMedia is PlayableMedia.LocalNcm) {
-                    val coverDir = File(context.cacheDir, "covers")
-                    if (!coverDir.exists()) coverDir.mkdirs()
-                    val cachedCoverFile = File(coverDir, "${currentMedia.id}.jpg")
-                    if (cachedCoverFile.exists()) {
-                        localCoverBytes = runCatching { cachedCoverFile.readBytes() }.getOrNull()
-                        if (finalCoverUrl.isNullOrBlank()) {
-                            finalCoverUrl = "file://${cachedCoverFile.absolutePath}"
-                        }
-                    }
-
-                    // 1. 如果是 NCM 文件，直接从文件头解析准确的 albumPic 与内嵌封面字节
-                    if (currentMedia.isNcm && (finalCoverUrl.isNullOrBlank() || localCoverBytes == null)) {
-                        val ncmMeta = NcmDataSource.scanMetadata(
-                            context.contentResolver,
-                            Uri.parse(currentMedia.uri)
+                if (effectiveSourceType == PlaylistSourceType.LOCAL) {
+                    if (currentMedia is PlayableMedia.LocalNcm) {
+                        val sibling = LocalMediaMetadataHelper.findSiblingCover(
+                            context = context,
+                            uri = Uri.parse(currentMedia.uri),
+                            fallbackTitle = currentMedia.title
                         )
-                        val albumPic = ncmMeta?.first?.albumPic
-                        val embeddedBytes = ncmMeta?.third
-                        if (embeddedBytes != null && embeddedBytes.isNotEmpty()) {
-                            localCoverBytes = embeddedBytes
-                            runCatching { cachedCoverFile.writeBytes(embeddedBytes) }
+                        if (sibling != null) {
+                            finalCoverUrl = sibling.first.toString()
+                            localCoverBytes = sibling.second
+                        } else {
+                            // 本地歌单无同名封面文件时显式清空封面（不使用 NCM 云端 albumPic 或内嵌封面）
+                            finalCoverUrl = null
+                            localCoverBytes = null
                         }
-                        if (finalCoverUrl.isNullOrBlank() && !albumPic.isNullOrBlank()) {
-                            finalCoverUrl = albumPic
-                        }
-                    }
-
-                    // 2. 如果是普通 MP3/FLAC，尝试提取本地 ID3 内嵌封面
-                    if (!currentMedia.isNcm && (finalCoverUrl.isNullOrBlank() || localCoverBytes == null)) {
-                        try {
-                            val mmr = android.media.MediaMetadataRetriever()
-                            mmr.setDataSource(context, Uri.parse(currentMedia.uri))
-                            val picBytes = mmr.embeddedPicture
-                            mmr.release()
-                            if (picBytes != null && picBytes.isNotEmpty()) {
-                                localCoverBytes = picBytes
-                                cachedCoverFile.writeBytes(picBytes)
-                                if (finalCoverUrl.isNullOrBlank()) {
-                                    finalCoverUrl = "file://${cachedCoverFile.absolutePath}"
+                        if (finalCoverUrl != currentMedia.coverUrl) {
+                            val updatedMedia = currentMedia.copy(coverUrl = finalCoverUrl)
+                            mediaMap[updatedMedia.id] = updatedMedia
+                            withContext(Dispatchers.Main) {
+                                if (_currentMedia.value?.id == updatedMedia.id) {
+                                    _currentMedia.value = updatedMedia
                                 }
                             }
-                        } catch (e: Exception) {
-                            AppLogger.e("[AME_COVER_DEBUG]", "Failed to extract ID3 cover for ${currentMedia.title}", e)
                         }
                     }
+                } else {
+                    // 云端歌单模式：第 1 优先读取本地文件（如存在）自身的内嵌封面
+                    finalCoverUrl = currentMedia.coverUrl
+                    if (currentMedia is PlayableMedia.LocalNcm) {
+                        val coverDir = File(context.cacheDir, "covers")
+                        if (!coverDir.exists()) coverDir.mkdirs()
+                        val embeddedCacheFile = File(coverDir, "embedded_${currentMedia.uri.hashCode()}.jpg")
 
-                    // 3. 实在没有本地封面，才去网易云搜索兜底
-                    if (finalCoverUrl.isNullOrBlank()) {
-                        val rawFirstArtist = currentMedia.artist.split(",", "/").firstOrNull()?.trim() ?: ""
-                        val searchArtist = rawFirstArtist.split(Regex("\\s+")).firstOrNull()?.trim() ?: ""
-                        val cleanTitle = currentMedia.title.replace(Regex("^\\d+\\.?\\s*"), "").trim()
-                        val query = if (searchArtist.isNotBlank() && searchArtist != "Unknown") {
-                            "$searchArtist $cleanTitle"
+                        val embeddedBytes = LocalMediaMetadataHelper.extractEmbeddedCoverBytes(
+                            context = context,
+                            uri = Uri.parse(currentMedia.uri),
+                            isNcm = currentMedia.isNcm
+                        )
+                        if (embeddedBytes != null && embeddedBytes.isNotEmpty()) {
+                            localCoverBytes = embeddedBytes
+                            runCatching { embeddedCacheFile.writeBytes(embeddedBytes) }
+                            finalCoverUrl = "file://${embeddedCacheFile.absolutePath}"
                         } else {
-                            cleanTitle
-                        }
-                        val searchResults = ncmApi.searchSongs(query.trim(), limit = 5)
-                        val searchResult = searchResults.find {
-                            it.artist.contains(searchArtist, ignoreCase = true)
-                        }
-
-                        if (searchResult != null) {
-                            finalCoverUrl = if (!searchResult.coverUrl.isNullOrBlank()) {
-                                searchResult.coverUrl
-                            } else {
-                                ncmApi.getSongDetails(listOf(searchResult.id)).firstOrNull()?.coverUrl
+                            // 第 2 优先：读取云端封面（若已有非本地云端 URL 则沿用；否则仅按精确 ID 或 NCM 头补齐，绝不搜歌名）
+                            if (finalCoverUrl.isNullOrBlank() || finalCoverUrl.startsWith("file://")) {
+                                var cloudUrl: String? = null
+                                if (currentMedia.isNcm) {
+                                    cloudUrl = runCatching {
+                                        NcmDataSource.scanMetadata(context.contentResolver, Uri.parse(currentMedia.uri))
+                                            ?.first?.albumPic?.takeIf { it.isNotBlank() }
+                                    }.getOrNull()
+                                }
+                                if (cloudUrl.isNullOrBlank()) {
+                                    val exactId = currentMedia.id.takeIf { (it.toLongOrNull() ?: 0L) > 0L }
+                                    if (exactId != null) {
+                                        cloudUrl = runCatching {
+                                            ncmApi.getSongDetails(listOf(exactId)).firstOrNull()?.coverUrl
+                                        }.getOrNull()
+                                    }
+                                }
+                                finalCoverUrl = cloudUrl
                             }
                         }
-                    }
 
-                    if (!finalCoverUrl.isNullOrBlank() && finalCoverUrl != currentMedia.coverUrl) {
-                        val updatedMedia = currentMedia.copy(coverUrl = finalCoverUrl)
-                        mediaMap[updatedMedia.id] = updatedMedia
-                        withContext(Dispatchers.Main) {
-                            if (_currentMedia.value?.id == updatedMedia.id) {
-                                _currentMedia.value = updatedMedia
+                        if (finalCoverUrl != currentMedia.coverUrl) {
+                            val updatedMedia = currentMedia.copy(coverUrl = finalCoverUrl)
+                            mediaMap[updatedMedia.id] = updatedMedia
+                            withContext(Dispatchers.Main) {
+                                if (_currentMedia.value?.id == updatedMedia.id) {
+                                    _currentMedia.value = updatedMedia
+                                }
+                            }
+                            AppLogger.i("[AME_ONLINE_PLAY]", "Resolved cloud-playlist cover for ${currentMedia.title}: $finalCoverUrl")
+                        }
+                    } else if (currentMedia is PlayableMedia.Online && finalCoverUrl.isNullOrBlank()) {
+                        val exactId = currentMedia.id.takeIf { (it.toLongOrNull() ?: 0L) > 0L }
+                        if (exactId != null) {
+                            finalCoverUrl = runCatching {
+                                ncmApi.getSongDetails(listOf(exactId)).firstOrNull()?.coverUrl
+                            }.getOrNull()
+                            if (!finalCoverUrl.isNullOrBlank() && finalCoverUrl != currentMedia.coverUrl) {
+                                val updatedMedia = currentMedia.copy(coverUrl = finalCoverUrl)
+                                mediaMap[updatedMedia.id] = updatedMedia
+                                withContext(Dispatchers.Main) {
+                                    if (_currentMedia.value?.id == updatedMedia.id) {
+                                        _currentMedia.value = updatedMedia
+                                    }
+                                }
                             }
                         }
-                        AppLogger.i("[AME_ONLINE_PLAY]", "Lazy loaded cover for ${currentMedia.title}: $finalCoverUrl")
                     }
                 }
 
@@ -2177,7 +2215,17 @@ class AmePlayerEngine @Inject constructor(
         }
         _playlist.value = items
         val startMedia = items.getOrNull(safeStartIndex)
-        _currentMedia.value = startMedia
+        val initialCurrentMedia = if (_playlistSourceType.value == PlaylistSourceType.LOCAL &&
+            startMedia is PlayableMedia.LocalNcm &&
+            !startMedia.coverUrl.isNullOrBlank() &&
+            !startMedia.coverUrl.startsWith("file://") &&
+            !startMedia.coverUrl.startsWith("content://")
+        ) {
+            startMedia.copy(coverUrl = null)
+        } else {
+            startMedia
+        }
+        _currentMedia.value = initialCurrentMedia
         _currentIndex.value = safeStartIndex
         saveLastPlaybackState()
         prepareLoudnessSync(startMedia)
@@ -2229,6 +2277,7 @@ class AmePlayerEngine @Inject constructor(
             fixedShuffleEnabled = _shuffleEnabled.value
         }
         _infinitePlayMode.value = mode
+        _playlistSourceType.value = PlaylistSourceType.ONLINE
         // 强制设定无限歌单为顺序播放，且不改动固定歌单的播放模式配置
         _repeatMode.value = RepeatMode.OFF
         _shuffleEnabled.value = false
@@ -2882,17 +2931,27 @@ class AmePlayerEngine @Inject constructor(
             media.encodeUri()
         }
 
-        val localCoverBytes = if (includeLocalArtworkBytes && media is PlayableMedia.LocalNcm) {
-            val cachedFile = File(File(context.cacheDir, "covers"), "${media.id}.jpg")
-            if (cachedFile.exists()) runCatching { cachedFile.readBytes() }.getOrNull() else null
+        val effectiveSource = effectiveSourceTypeFor(media)
+        val localCoverBytes = if (includeLocalArtworkBytes &&
+            effectiveSource == PlaylistSourceType.ONLINE &&
+            media is PlayableMedia.LocalNcm
+        ) {
+            val embeddedFile = File(File(context.cacheDir, "covers"), "embedded_${media.uri.hashCode()}.jpg")
+            if (embeddedFile.exists()) runCatching { embeddedFile.readBytes() }.getOrNull() else null
         } else null
+
+        val initialArtworkUrl = if (effectiveSource == PlaylistSourceType.LOCAL) {
+            media.coverUrl?.takeIf { it.startsWith("file://") || it.startsWith("content://") }
+        } else {
+            media.coverUrl
+        }
 
         val metadata = MediaMetadataHelper.buildTrackMediaMetadata(
             title = media.title,
             artist = media.artist,
             album = media.album,
             durationMs = media.durationMs,
-            remoteArtworkUrl = media.coverUrl,
+            remoteArtworkUrl = initialArtworkUrl,
             localArtworkBytes = localCoverBytes
         )
 

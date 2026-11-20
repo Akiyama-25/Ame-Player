@@ -387,12 +387,13 @@ private fun PlayerMainContentView(
     val smoothPositionMs by rememberSmoothPosition(positionMs, isPlaying, durationMs)
 
     // ── 歌词 ───────────────────────────────────────────────────────────────────
+    val playlistSourceType by playerState.playlistSourceType.collectAsState()
     val lyricsManager = remember { LyricsManager(context, ncmApi) }
     var lyricResult by remember { mutableStateOf(LyricResult(emptyList(), LyricSource.NONE)) }
     var showTranslation by remember { mutableStateOf(true) }
 
-    LaunchedEffect(currentTrack?.id) {
-        lyricResult = currentTrack?.let { lyricsManager.loadLyrics(it) }
+    LaunchedEffect(currentTrack?.id, playlistSourceType) {
+        lyricResult = currentTrack?.let { lyricsManager.loadLyrics(it, playlistSourceType) }
             ?: LyricResult(emptyList(), LyricSource.NONE)
     }
 

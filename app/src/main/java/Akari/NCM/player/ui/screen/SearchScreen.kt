@@ -6,6 +6,7 @@ import Akari.NCM.player.core.NcmArtist
 import Akari.NCM.player.core.NcmMixedSearchResult
 import Akari.NCM.player.core.OnlinePlaylistTarget
 import Akari.NCM.player.core.PlayableMedia
+import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.core.PlayerController
 import Akari.NCM.player.core.PlayerState
 import Akari.NCM.player.data.CustomPlaylist
@@ -586,7 +587,7 @@ fun SearchScreen(
                                                         val playableList = mixedResult.songs.map { m ->
                                                             playlistManager.findLocalMatch(m) ?: m
                                                         }
-                                                        playerController.loadPlaylist(playableList, 0)
+                                                        playerController.loadPlaylist(playableList, 0, PlaylistSourceType.ONLINE)
                                                         playerController.play()
                                                     },
                                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
@@ -631,7 +632,7 @@ fun SearchScreen(
                                                 val playableList = mixedResult.songs.map { m ->
                                                     playlistManager.findLocalMatch(m) ?: m
                                                 }
-                                                playerController.loadPlaylist(playableList, index)
+                                                playerController.loadPlaylist(playableList, index, PlaylistSourceType.ONLINE)
                                                 playerController.play()
                                             },
                                             onActionClick = {
@@ -705,7 +706,7 @@ fun SearchScreen(
                                                 val playableList = categorySongs.map { m ->
                                                     playlistManager.findLocalMatch(m) ?: m
                                                 }
-                                                playerController.loadPlaylist(playableList, 0)
+                                                playerController.loadPlaylist(playableList, 0, PlaylistSourceType.ONLINE)
                                                 playerController.play()
                                             },
                                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
@@ -736,7 +737,7 @@ fun SearchScreen(
                                             val playableList = categorySongs.map { m ->
                                                 playlistManager.findLocalMatch(m) ?: m
                                             }
-                                            playerController.loadPlaylist(playableList, index)
+                                            playerController.loadPlaylist(playableList, index, PlaylistSourceType.ONLINE)
                                             playerController.play()
                                         },
                                         onActionClick = {
@@ -825,7 +826,7 @@ fun SearchScreen(
                                             val playableList = categoryLyrics.map { m ->
                                                 playlistManager.findLocalMatch(m) ?: m
                                             }
-                                            playerController.loadPlaylist(playableList, index)
+                                            playerController.loadPlaylist(playableList, index, PlaylistSourceType.ONLINE)
                                             playerController.play()
                                         },
                                         onActionClick = {
