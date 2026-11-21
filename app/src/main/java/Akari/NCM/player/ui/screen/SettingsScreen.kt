@@ -4,7 +4,6 @@ import Akari.NCM.player.BuildConfig
 import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.core.AppLogger
 import Akari.NCM.player.core.LogLevel
-import Akari.NCM.player.core.QrStatus
 import Akari.NCM.player.core.UserProfile
 import Akari.NCM.player.data.AppPackageVariant
 import Akari.NCM.player.data.AppUpdateManager
@@ -29,7 +28,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -54,8 +52,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -67,10 +63,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @UnstableApi
@@ -81,6 +78,7 @@ fun SettingsScreen(
     ncmApi: NcmApi,
     localFolderManager: Akari.NCM.player.data.LocalFolderManager,
     onOpenLog: () -> Unit = {},
+    onOpenWebLogin: (() -> Unit)? = null,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -109,7 +107,14 @@ fun SettingsScreen(
         }
     }
 
-    var showQrDialog by remember { mutableStateOf(false) }
+    var showWebLoginDialog by remember { mutableStateOf(false) }
+    val openWebLogin: () -> Unit = {
+        if (onOpenWebLogin != null) {
+            onOpenWebLogin()
+        } else {
+            showWebLoginDialog = true
+        }
+    }
     var showCustomAccentDialog by remember { mutableStateOf(false) }
     var showThemeModeDialog by remember { mutableStateOf(false) }
     var showExpressiveStyleDialog by remember { mutableStateOf(false) }
@@ -217,7 +222,7 @@ fun SettingsScreen(
                                         if (isLoggedIn) {
                                             showProfileDetailDialog = true
                                         } else {
-                                            showQrDialog = true
+                                            openWebLogin()
                                         }
                                     }
                                     .padding(horizontal = 18.dp, vertical = 14.dp),
@@ -323,10 +328,11 @@ fun SettingsScreen(
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Button(
-                                        onClick = { showQrDialog = true },
-                                        shape = RoundedCornerShape(20.dp)
+                                        onClick = openWebLogin,
+                                        shape = RoundedCornerShape(20.dp),
+                                        modifier = Modifier.testTag("btn_web_login")
                                     ) {
-                                        Text("扫码登录", fontWeight = FontWeight.Bold)
+                                        Text("网页登录", fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1495,6 +1501,7 @@ fun SettingsScreen(
             onDismiss = { showProfileDetailDialog = false },
             onLogout = {
                 sessionManager.clearSession()
+                NeteaseWebLoginHelper.clearWebViewCookies()
                 showProfileDetailDialog = false
                 Toast.makeText(context, "已退出登录", Toast.LENGTH_SHORT).show()
             }
@@ -1608,15 +1615,24 @@ fun SettingsScreen(
         )
     }
 
-    if (showQrDialog) {
-        QrLoginDialog(
-            ncmApi = ncmApi,
-            onDismiss = { showQrDialog = false },
-            onLoginSuccess = {
-                showQrDialog = false
-                Toast.makeText(context, "网易云账号登录成功！", Toast.LENGTH_SHORT).show()
-            }
-        )
+    if (showWebLoginDialog) {
+        Dialog(
+            onDismissRequest = { showWebLoginDialog = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false
+            )
+        ) {
+            WebViewLoginScreen(
+                sessionManager = sessionManager,
+                ncmApi = ncmApi,
+                onLoginSuccess = {
+                    showWebLoginDialog = false
+                    Toast.makeText(context, "网易云账号登录成功！", Toast.LENGTH_SHORT).show()
+                },
+                onBack = { showWebLoginDialog = false }
+            )
+        }
     }
 
     if (showUpdateChannelDialog) {
@@ -2019,220 +2035,6 @@ private fun UserProfileDetailDialog(
             )
         }
     )
-}
-
-@Composable
-private fun QrLoginDialog(
-    ncmApi: NcmApi,
-    onDismiss: () -> Unit,
-    onLoginSuccess: () -> Unit
-) {
-    val scope = rememberCoroutineScope()
-    var qrKey by remember { mutableStateOf<String?>(null) }
-    var qrImageBase64 by remember { mutableStateOf<String?>(null) }
-    var qrLoginUrl by remember { mutableStateOf<String?>(null) }
-    val context = LocalContext.current
-    var qrStatus by remember { mutableStateOf(QrStatus.WAITING) }
-    var statusMessage by remember { mutableStateOf("正在生成二维码...") }
-    var isLoading by remember { mutableStateOf(true) }
-
-    fun refreshQr() {
-        scope.launch {
-            isLoading = true
-            statusMessage = "正在生成二维码..."
-            val key = ncmApi.getQrKey()
-            if (key != null) {
-                qrKey = key
-                val qrResult = ncmApi.createQrUrl(key)
-                qrImageBase64 = qrResult?.first
-                qrLoginUrl = qrResult?.second ?: ("https://music.163.com/login?codekey=" + key)
-                qrStatus = QrStatus.WAITING
-                statusMessage = "请使用网易云音乐 App 扫码登录\n(或点击二维码直接拉起授权)"
-            } else {
-                statusMessage = "二维码生成失败，请检查网络或 API 服务地址"
-            }
-            isLoading = false
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        refreshQr()
-    }
-
-    LaunchedEffect(qrKey) {
-        val key = qrKey ?: return@LaunchedEffect
-        while (isActive && qrStatus != QrStatus.SUCCESS && qrStatus != QrStatus.EXPIRED) {
-            delay(2000)
-            val result = ncmApi.checkQrStatus(key)
-            qrStatus = result.status
-            when (result.status) {
-                QrStatus.WAITING -> statusMessage = "请使用网易云音乐 App 扫码登录"
-                QrStatus.SCANNING -> statusMessage = "已扫码，请在手机上确认登录"
-                QrStatus.EXPIRED -> statusMessage = "二维码已过期，请点击重新获取"
-                QrStatus.SUCCESS -> {
-                    statusMessage = "登录成功！"
-                    onLoginSuccess()
-                    break
-                }
-                QrStatus.UNKNOWN -> {}
-            }
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("网易云扫码登录", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(200.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator()
-                    } else if (!qrImageBase64.isNullOrBlank()) {
-                        val bitmap = remember(qrImageBase64) { parseQrBitmap(qrImageBase64!!) }
-                        if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap,
-                                contentDescription = "登录二维码",
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clickable {
-                                        qrLoginUrl?.let { url ->
-                                            try {
-                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "无法拉起浏览器或应用", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                            )
-                        } else {
-                            Text("二维码解析失败", color = MaterialTheme.colorScheme.error)
-                        }
-                    } else if (!qrLoginUrl.isNullOrBlank()) {
-                        val bitmap = remember(qrLoginUrl) { generateQrCodeBitmap(qrLoginUrl!!) }
-                        if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap,
-                                contentDescription = "登录二维码",
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clickable {
-                                        qrLoginUrl?.let { url ->
-                                            try {
-                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
-                                                context.startActivity(intent)
-                                            } catch (e: Exception) {
-                                                Toast.makeText(context, "无法拉起浏览器或应用", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                            )
-                        } else {
-                            Text("二维码生成失败", color = MaterialTheme.colorScheme.error)
-                        }
-                    } else {
-                        Text("无二维码数据", color = MaterialTheme.colorScheme.error)
-                    }
-
-                    if (qrStatus == QrStatus.EXPIRED) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.7f))
-                                .clickable { refreshQr() },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("二维码已过期\n点击刷新", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text(
-                    text = statusMessage,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-            }
-        },
-        confirmButton = {
-            val specs = buildList {
-                if (qrStatus == QrStatus.EXPIRED) {
-                    add(
-                        AdaptiveButtonSpec(
-                            text = "刷新二维码",
-                            onClick = { refreshQr() },
-                            style = ExpressiveButtonStyle.FILLED
-                        )
-                    )
-                }
-                add(
-                    AdaptiveButtonSpec(
-                        text = "取消",
-                        onClick = onDismiss,
-                        style = ExpressiveButtonStyle.TONAL
-                    )
-                )
-            }
-            AdaptiveButtonGroup(buttons = specs)
-        }
-    )
-}
-
-private fun generateQrCodeBitmap(content: String, size: Int = 512): ImageBitmap? {
-    return try {
-        val bitMatrix = com.google.zxing.qrcode.QRCodeWriter().encode(
-            content,
-            com.google.zxing.BarcodeFormat.QR_CODE,
-            size,
-            size
-        )
-        val width = bitMatrix.width
-        val height = bitMatrix.height
-        val pixels = IntArray(width * height)
-        for (y in 0 until height) {
-            val offset = y * width
-            for (x in 0 until width) {
-                pixels[offset + x] = if (bitMatrix.get(x, y)) android.graphics.Color.BLACK else android.graphics.Color.WHITE
-            }
-        }
-        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
-        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
-        bitmap.asImageBitmap()
-    } catch (e: Exception) {
-        android.util.Log.e("AME_QR_DEBUG", "generateQrCodeBitmap failed", e)
-        null
-    }
-}
-
-private fun parseQrBitmap(dataUriOrBase64: String): ImageBitmap? {
-    return try {
-        val base64Str = if (dataUriOrBase64.contains(",")) {
-            dataUriOrBase64.substringAfter(",")
-        } else {
-            dataUriOrBase64
-        }
-        val bytes = android.util.Base64.decode(base64Str, android.util.Base64.DEFAULT)
-        val androidBitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-        androidBitmap?.asImageBitmap()
-    } catch (e: Exception) {
-        android.util.Log.e("AME_QR_DEBUG", "parseQrBitmap failed", e)
-        null
-    }
 }
 
 @Composable

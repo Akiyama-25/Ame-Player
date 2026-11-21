@@ -105,7 +105,7 @@ import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
 enum class TopLevelScreen {
-    PLAYER, LOG, SETTINGS, SEARCH, MAIN
+    PLAYER, LOG, WEB_LOGIN, SETTINGS, SEARCH, MAIN
 }
 
 @UnstableApi
@@ -128,6 +128,7 @@ fun MainScreen(
     var showQueueBottomSheet by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
     var showLogScreen by remember { mutableStateOf(false) }
+    var showWebLoginScreen by remember { mutableStateOf(false) }
     var showSearchScreen by remember { mutableStateOf(false) }
     var showSyncCloudDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) } // 0: User Homepage, 1: Playlists
@@ -147,38 +148,43 @@ fun MainScreen(
         if (openPlayerCount > 0 && currentMedia != null) {
             showSettingsScreen = false
             showLogScreen = false
+            showWebLoginScreen = false
             showSearchScreen = false
             showPlayerScreen = true
         }
     }
 
-    // AOSP 预见性返回手势状态：按优先级响应日志页、设置页、搜索页、播放页、在线歌单详情页与本地歌单详情页
+    // AOSP 预见性返回手势状态：按优先级响应日志页、网页登录页、设置页、搜索页、播放页、在线歌单详情页与本地歌单详情页
     val logBackState = rememberPredictiveBackState(enabled = showLogScreen) {
         showLogScreen = false
     }
 
-    val settingsBackState = rememberPredictiveBackState(enabled = showSettingsScreen && !showLogScreen) {
+    val webLoginBackState = rememberPredictiveBackState(enabled = showWebLoginScreen && !showLogScreen) {
+        showWebLoginScreen = false
+    }
+
+    val settingsBackState = rememberPredictiveBackState(enabled = showSettingsScreen && !showLogScreen && !showWebLoginScreen) {
         showSettingsScreen = false
     }
 
-    val searchBackState = rememberPredictiveBackState(enabled = showSearchScreen && !showSettingsScreen && !showLogScreen) {
+    val searchBackState = rememberPredictiveBackState(enabled = showSearchScreen && !showSettingsScreen && !showLogScreen && !showWebLoginScreen) {
         showSearchScreen = false
     }
 
     val playerBackState = rememberPredictiveBackState(
-        enabled = showPlayerScreen && !showSettingsScreen && !showSearchScreen && !showLogScreen
+        enabled = showPlayerScreen && !showSettingsScreen && !showSearchScreen && !showLogScreen && !showWebLoginScreen
     ) {
         showPlayerScreen = false
     }
 
     val onlinePlaylistBackState = rememberPredictiveBackState(
-        enabled = selectedOnlinePlaylist != null && selectedTab == 0 && !showPlayerScreen && !showSettingsScreen && !showSearchScreen && !showLogScreen
+        enabled = selectedOnlinePlaylist != null && selectedTab == 0 && !showPlayerScreen && !showSettingsScreen && !showSearchScreen && !showLogScreen && !showWebLoginScreen
     ) {
         selectedOnlinePlaylist = null
     }
 
     val playlistDetailBackState = rememberPredictiveBackState(
-        enabled = selectedPlaylistForDetail != null && selectedTab == 1 && !showPlayerScreen && !showSettingsScreen && !showSearchScreen && !showLogScreen
+        enabled = selectedPlaylistForDetail != null && selectedTab == 1 && !showPlayerScreen && !showSettingsScreen && !showSearchScreen && !showLogScreen && !showWebLoginScreen
     ) {
         selectedPlaylistForDetail = null
     }
@@ -288,13 +294,14 @@ fun MainScreen(
     val topLevelScreen = when {
         showPlayerScreen -> TopLevelScreen.PLAYER
         showLogScreen -> TopLevelScreen.LOG
+        showWebLoginScreen -> TopLevelScreen.WEB_LOGIN
         showSettingsScreen -> TopLevelScreen.SETTINGS
         showSearchScreen -> TopLevelScreen.SEARCH
         else -> TopLevelScreen.MAIN
     }
 
     val isTopBackActive = (showPlayerScreen && playerBackState.isVisibleInBackground) ||
-        (showSettingsScreen && !showLogScreen && settingsBackState.isVisibleInBackground) ||
+        (showSettingsScreen && !showLogScreen && !showWebLoginScreen && settingsBackState.isVisibleInBackground) ||
         (showSearchScreen && searchBackState.isVisibleInBackground)
     val activeTopBackProgress = when {
         showSettingsScreen -> settingsBackState.progress
@@ -314,7 +321,7 @@ fun MainScreen(
     val mainQueueDrawerState = rememberPullDownDrawerState(
         isOpen = showQueueBottomSheet,
         isLandscape = isLandscape,
-        backEnabled = showQueueBottomSheet && !showPlayerScreen && !showSearchScreen && !showSettingsScreen && !showLogScreen,
+        backEnabled = showQueueBottomSheet && !showPlayerScreen && !showSearchScreen && !showSettingsScreen && !showLogScreen && !showWebLoginScreen,
         label = "MainQueueParallax",
         onDismiss = { showQueueBottomSheet = false }
     )
@@ -1150,6 +1157,11 @@ fun MainScreen(
                                 progress = logBackState.progress,
                                 swipeEdge = logBackState.swipeEdge
                             )
+                        } else if (showWebLoginScreen && webLoginBackState.isVisibleInBackground) {
+                            Modifier.predictiveBackBackground(
+                                progress = webLoginBackState.progress,
+                                swipeEdge = webLoginBackState.swipeEdge
+                            )
                         } else {
                             Modifier.predictiveBackForeground(state = settingsBackState, pullDownDp = 12f)
                         }
@@ -1160,7 +1172,36 @@ fun MainScreen(
                     ncmApi = ncmApi,
                     localFolderManager = localFolderManager,
                     onOpenLog = { showLogScreen = true },
+                    onOpenWebLogin = { showWebLoginScreen = true },
                     onBack = { showSettingsScreen = false }
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showWebLoginScreen,
+            enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
+            exit = if (webLoginBackState.isDismissedByGesture) {
+                ExitTransition.None
+            } else {
+                slideOutHorizontally(targetOffsetX = { it }, animationSpec = tween(320)) + fadeOut(tween(250))
+            },
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackForeground(state = webLoginBackState, pullDownDp = 12f)
+            ) {
+                WebViewLoginScreen(
+                    sessionManager = sessionManager,
+                    ncmApi = ncmApi,
+                    onLoginSuccess = {
+                        showWebLoginScreen = false
+                        homepageRefreshTrigger++
+                        Toast.makeText(context, "网易云账号登录成功！", Toast.LENGTH_SHORT).show()
+                    },
+                    onBack = { showWebLoginScreen = false }
                 )
             }
         }
