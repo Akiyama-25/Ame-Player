@@ -250,64 +250,61 @@ class NcmDataSource : DataSource {
         fun scanMetadata(cr: ContentResolver, uri: Uri): Triple<NcmMetadata, AudioFormat, ByteArray?>? {
             return try {
                 cr.openInputStream(uri)?.use { stream ->
-                    // Verify magic
-                    val magic = readBytesStatic(stream, 8)
-                    val magicHex = magic.joinToString("") { "%02x".format(it) }
-                    val magicStr = String(magic, Charsets.US_ASCII)
-                    // AppLogger.d("AmeScanner", "scanMetadata: first8bytes=[$magicHex] ascii=[$magicStr]")
-                    val expected = byteArrayOf(67, 84, 69, 78, 70, 68, 65, 77)
-                    if (!magic.contentEquals(expected)) {
-                        // AppLogger.d("AmeScanner", "scanMetadata: NOT NCM (magic mismatch)")
-                        return null
-                    }
-
-                    readBytesStatic(stream, 2) // skip
-
-                    // Skip key block
-                    val keyLen = readUint32LEStatic(stream)
-                    // AppLogger.d("AmeScanner", "scanMetadata: keyBlockLen=$keyLen")
-                    skipBytesStatic(stream, keyLen.toLong())
-
-                    // Read meta block
-                    val metaLen = readUint32LEStatic(stream)
-                    // AppLogger.d("AmeScanner", "scanMetadata: metaBlockLen=$metaLen")
-                    val metaEnc = readBytesStatic(stream, metaLen)
-                    for (i in metaEnc.indices) {
-                        metaEnc[i] = (metaEnc[i].toInt() xor 0x63).toByte()
-                    }
-
-                    val metadata = parseMetaBlockStatic(metaEnc)
-                    // AppLogger.d("AmeScanner", "scanMetadata: parsed id=${metadata.musicId}, name=${metadata.musicName}, format=${metadata.format}, artists=${metadata.artists}")
-                    // Invalid NCM if metadata is empty (magic matched but content is not NCM)
-                    if (metadata.musicId == 0L && metadata.musicName == "Unknown") {
-                        // AppLogger.d("AmeScanner", "scanMetadata: empty metadata, rejecting as NCM")
-                        return null
-                    }
-
-                    val format = if (metadata.format.equals("flac", ignoreCase = true)) {
-                        AudioFormat.FLAC
-                    } else AudioFormat.MP3
-
-                    // Extract embedded cover image
-                    skipBytesStatic(stream, 5) // Skip 5 bytes CRC/gap
-                    val imageLen = readUint32LEStatic(stream)
-                    // AppLogger.i("[AME_COVER_DEBUG]", "Embedded imageLen=$imageLen")
-                    val coverBytes = if (imageLen in 1..(20 * 1024 * 1024)) {
-                        try {
-                            readBytesStatic(stream, imageLen)
-                        } catch (e: Exception) {
-                            AppLogger.e("[AME_COVER_DEBUG]", "Failed to read image bytes: ${e.message}", e)
-                            null
-                        }
-                    } else null
-
-                    // AppLogger.i("[AME_COVER_DEBUG]", "Scan complete. format=$format, coverBytesSize=${coverBytes?.size ?: 0}")
-                    Triple(metadata, format, coverBytes)
+                    scanMetadataFromStream(stream)
                 }
             } catch (e: Exception) {
                 AppLogger.e("[AME_COVER_DEBUG]", "scanMetadata exception=${e.javaClass.simpleName}: ${e.message}", e)
                 null
             }
+        }
+
+        internal fun scanMetadataFromStream(stream: InputStream): Triple<NcmMetadata, AudioFormat, ByteArray?>? {
+            // Verify magic
+            val magic = readBytesStatic(stream, 8)
+            val expected = byteArrayOf(67, 84, 69, 78, 70, 68, 65, 77)
+            if (!magic.contentEquals(expected)) {
+                return null
+            }
+
+            readBytesStatic(stream, 2) // skip 2-byte header gap
+
+            // Skip key block
+            val keyLen = readUint32LEStatic(stream)
+            skipBytesStatic(stream, keyLen.toLong())
+
+            // Read meta block
+            val metaLen = readUint32LEStatic(stream)
+            val metaEnc = readBytesStatic(stream, metaLen)
+            for (i in metaEnc.indices) {
+                metaEnc[i] = (metaEnc[i].toInt() xor 0x63).toByte()
+            }
+
+            val metadata = parseMetaBlockStatic(metaEnc)
+            // Invalid NCM if metadata is empty (magic matched but content is not NCM)
+            if (metadata.musicId == 0L && metadata.musicName == "Unknown") {
+                return null
+            }
+
+            val format = if (metadata.format.equals("flac", ignoreCase = true)) {
+                AudioFormat.FLAC
+            } else AudioFormat.MP3
+
+            // Extract embedded cover image:
+            // NCM binary layout after meta block:
+            // [4 bytes CRC32] [1 byte gap] [4 bytes imageFrameSize] [4 bytes imageSize] [imageSize bytes image data]
+            skipBytesStatic(stream, 9) // Skip 4-byte CRC32 + 5-byte gap (including imageFrameSize)
+            val imageLen = readUint32LEStatic(stream)
+            val coverBytes = if (imageLen in 1..(20 * 1024 * 1024)) {
+                try {
+                    val raw = readBytesStatic(stream, imageLen)
+                    if (LocalMediaMetadataHelper.isValidImageHeader(raw)) raw else null
+                } catch (e: Exception) {
+                    AppLogger.e("[AME_COVER_DEBUG]", "Failed to read image bytes: ${e.message}", e)
+                    null
+                }
+            } else null
+
+            return Triple(metadata, format, coverBytes)
         }
 
         private fun parseMetaBlockStatic(data: ByteArray): NcmMetadata {
@@ -422,10 +419,14 @@ class NcmDataSource : DataSource {
             }
             val metadata = parseMetaBlockStatic(metaEncrypted)
 
-            // Gap block: skip
+            // CRC32 (4B) + gap (1B) + imageFrameSize (4B) + imageSize (4B) + image payload/padding
             skipBytesStatic(input, 5)
-            val gapSize = readUint32LEStatic(input)
-            skipBytesStatic(input, gapSize.toLong() + 4)
+            val imageFrameSize = readUint32LEStatic(input)
+            val imageSize = readUint32LEStatic(input)
+            val skipPayload = maxOf(imageFrameSize.toLong(), imageSize.toLong())
+            if (skipPayload > 0L) {
+                skipBytesStatic(input, skipPayload)
+            }
 
             val format = when (metadata.format.lowercase()) {
                 "flac" -> AudioFormat.FLAC

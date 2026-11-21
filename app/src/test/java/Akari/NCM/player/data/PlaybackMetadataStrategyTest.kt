@@ -362,4 +362,81 @@ class PlaybackMetadataStrategyTest {
         )
         assertNull(LocalMediaMetadataHelper.deriveParentDocumentId("invalid_doc_id"))
     }
+
+    private fun buildTestNcmStreamBytes(
+        musicId: Long = 2627117817L,
+        musicName: String = "I Wanna",
+        coverBytes: ByteArray,
+        extraFramePadding: Int = 0
+    ): ByteArray {
+        val out = ByteArrayOutputStream()
+        fun writeUint32LE(value: Int) {
+            out.write(value and 0xFF)
+            out.write((value ushr 8) and 0xFF)
+            out.write((value ushr 16) and 0xFF)
+            out.write((value ushr 24) and 0xFF)
+        }
+
+        // 1. Magic "CTENFDAM" + 2-byte gap
+        out.write("CTENFDAM".toByteArray(Charsets.US_ASCII))
+        out.write(byteArrayOf(0x70, 0x00))
+
+        // 2. Dummy key block (scanMetadata skips key block)
+        val dummyKey = ByteArray(16) { 0x11 }
+        writeUint32LE(dummyKey.size)
+        out.write(dummyKey)
+
+        // 3. Valid AES-ECB encrypted meta block ("163 key(Don't modify):" + Base64(AES_ECB("music:{...}"))) XOR 0x63
+        val metaJson = """music:{"musicId":$musicId,"musicName":"$musicName","artist":[["TestArtist",1]],"album":"TestAlbum","albumPic":"https://p1.music.126.net/test.jpg","format":"flac","duration":200000}"""
+        val metaKey = byteArrayOf(
+            0x23, 0x31, 0x34, 0x6C, 0x6A, 0x6B, 0x5F, 0x21,
+            0x5C, 0x5D, 0x26, 0x30, 0x55, 0x3C, 0x27, 0x28
+        )
+        val cipher = javax.crypto.Cipher.getInstance("AES/ECB/PKCS5Padding")
+        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, javax.crypto.spec.SecretKeySpec(metaKey, "AES"))
+        val encryptedJson = cipher.doFinal(metaJson.toByteArray(Charsets.UTF_8))
+        val b64 = android.util.Base64.encodeToString(encryptedJson, android.util.Base64.NO_WRAP)
+        val metaPlain = ("163 key(Don't modify):$b64").toByteArray(Charsets.US_ASCII)
+        val metaXor = ByteArray(metaPlain.size) { i -> (metaPlain[i].toInt() xor 0x63).toByte() }
+        writeUint32LE(metaXor.size)
+        out.write(metaXor)
+
+        // 4. CRC32 (4B) + gap0 (1B) + imageFrameSize (4B) + imageSize (4B) + image bytes + optional padding
+        writeUint32LE(0x12345678) // CRC32
+        out.write(0x00) // gap byte 0
+        writeUint32LE(coverBytes.size + extraFramePadding) // imageFrameSize
+        writeUint32LE(coverBytes.size) // imageSize
+        out.write(coverBytes)
+        if (extraFramePadding > 0) {
+            out.write(ByteArray(extraFramePadding))
+        }
+        return out.toByteArray()
+    }
+
+    @Test
+    fun `NCM内嵌封面跳过完整9字节头精确读取图片字节且校验魔数`() {
+        val jpegCover = byteArrayOf(
+            0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte(), 0xE0.toByte(),
+            0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
+            0xFF.toByte(), 0xD9.toByte()
+        )
+        val ncmBytes = buildTestNcmStreamBytes(coverBytes = jpegCover, extraFramePadding = 16)
+        val result = NcmDataSource.scanMetadataFromStream(java.io.ByteArrayInputStream(ncmBytes))
+
+        assertNotNull("应成功解析 NCM 元数据", result)
+        assertEquals(2627117817L, result!!.first.musicId)
+        assertEquals("I Wanna", result.first.musicName)
+        assertNotNull("应提取到精确对齐的 NCM 内嵌封面", result.third)
+        assertArrayEquals(jpegCover, result.third)
+
+        // 若为 0 字节封面或非法非图片字节（如 4 字节错位头），必须返回 null 以便回退云端封面
+        val emptyCoverNcm = buildTestNcmStreamBytes(coverBytes = ByteArray(0), extraFramePadding = 32)
+        val emptyResult = NcmDataSource.scanMetadataFromStream(java.io.ByteArrayInputStream(emptyCoverNcm))
+        assertNotNull(emptyResult)
+        assertNull(emptyResult!!.third)
+
+        val shiftedCorruptBytes = byteArrayOf(0x78, 0x24, 0x05, 0x00, 0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
+        assertEquals(false, LocalMediaMetadataHelper.isValidImageHeader(shiftedCorruptBytes))
+        assertTrue(LocalMediaMetadataHelper.isValidImageHeader(jpegCover))
+    }
 }

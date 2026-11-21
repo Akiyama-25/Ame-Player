@@ -229,7 +229,16 @@ class AmePlaybackService : MediaSessionService() {
                         "file" -> {
                             val file = File(uri.path ?: "")
                             if (file.exists()) {
-                                MediaMetadataHelper.decodeSafeBitmap(file.readBytes())
+                                val bytes = file.readBytes()
+                                MediaMetadataHelper.decodeSafeBitmap(bytes).also { decoded ->
+                                    if (decoded == null) {
+                                        val headHex = bytes.take(8).joinToString("") { "%02x".format(it) }
+                                        AppLogger.w(
+                                            "[AME_ONLINE_PLAY]",
+                                            "CoilSessionBitmapLoader.decodeSafeBitmap null for $uri (bytes=${bytes.size}, head=$headHex)"
+                                        )
+                                    }
+                                }
                             } else null
                         }
                         "content" -> {

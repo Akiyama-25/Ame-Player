@@ -64,28 +64,58 @@ object LocalMediaMetadataHelper {
         return null
     }
 
+    /**
+     * 快速校验字节数组是否具备常见图片格式的合法魔数头（JPEG / PNG / WebP / GIF / BMP），
+     * 防止偏移错位或零填充的无效字节被误当成封面写入缓存。
+     */
+    fun isValidImageHeader(bytes: ByteArray?): Boolean {
+        if (bytes == null || bytes.size < 4) return false
+        val b0 = bytes[0].toInt() and 0xFF
+        val b1 = bytes[1].toInt() and 0xFF
+        val b2 = bytes[2].toInt() and 0xFF
+        val b3 = bytes[3].toInt() and 0xFF
+
+        // JPEG: FF D8
+        if (b0 == 0xFF && b1 == 0xD8) return true
+        // PNG: 89 50 4E 47 0D 0A 1A 0A
+        if (bytes.size >= 8 && b0 == 0x89 && b1 == 0x50 && b2 == 0x4E && b3 == 0x47) return true
+        // WebP: RIFF....WEBP
+        if (bytes.size >= 12 &&
+            b0 == 'R'.code && b1 == 'I'.code && b2 == 'F'.code && b3 == 'F'.code &&
+            bytes[8].toInt() == 'W'.code && bytes[9].toInt() == 'E'.code &&
+            bytes[10].toInt() == 'B'.code && bytes[11].toInt() == 'P'.code
+        ) return true
+        // GIF: GIF8
+        if (bytes.size >= 6 && b0 == 'G'.code && b1 == 'I'.code && b2 == 'F'.code && b3 == '8'.code) return true
+        // BMP: BM
+        if (b0 == 'B'.code && b1 == 'M'.code) return true
+
+        return false
+    }
+
     fun extractEmbeddedCoverBytes(context: Context, uri: Uri, isNcm: Boolean): ByteArray? {
         if (isNcm) {
             // 1. NCM 文件头自带的内嵌封面图片字节
             val ncmHeaderCover = runCatching {
                 NcmDataSource.scanMetadata(context.contentResolver, uri)?.third
             }.getOrNull()
-            if (ncmHeaderCover != null && ncmHeaderCover.isNotEmpty()) {
+            if (isValidImageHeader(ncmHeaderCover)) {
                 return ncmHeaderCover
             }
             // 2. 解密音频流中的 FLAC PICTURE / MP3 APIC
-            return runCatching {
+            val streamCover = runCatching {
                 NcmDataSource.openDecryptedStream(context.contentResolver, uri)?.use {
                     parseEmbeddedCoverFromStream(it)
                 }
             }.getOrNull()
+            return streamCover?.takeIf { isValidImageHeader(it) }
         }
 
         // 非 NCM：先直接解析 FLAC PICTURE / MP3 APIC（不依赖设备编解码器，对 Hi-Res FLAC 也稳定）
         val directCover = runCatching {
             openInputStream(context, uri)?.use { parseEmbeddedCoverFromStream(it) }
         }.getOrNull()
-        if (directCover != null && directCover.isNotEmpty()) {
+        if (isValidImageHeader(directCover)) {
             return directCover
         }
 
@@ -97,7 +127,7 @@ object LocalMediaMetadataHelper {
             } else {
                 retriever.setDataSource(context, uri)
             }
-            retriever.embeddedPicture?.takeIf { it.isNotEmpty() }
+            retriever.embeddedPicture?.takeIf { isValidImageHeader(it) }
         } catch (_: Exception) {
             null
         } finally {

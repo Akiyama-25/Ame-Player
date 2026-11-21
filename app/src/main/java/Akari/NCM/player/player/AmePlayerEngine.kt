@@ -1914,6 +1914,7 @@ class AmePlayerEngine @Inject constructor(
             try {
                 var finalCoverUrl: String? = null
                 var localCoverBytes: ByteArray? = null
+                var preDecodedBitmap: Bitmap? = null
 
                 if (effectiveSourceType == PlaylistSourceType.LOCAL) {
                     if (currentMedia is PlayableMedia.LocalNcm) {
@@ -1946,18 +1947,31 @@ class AmePlayerEngine @Inject constructor(
                     if (currentMedia is PlayableMedia.LocalNcm) {
                         val coverDir = File(context.cacheDir, "covers")
                         if (!coverDir.exists()) coverDir.mkdirs()
-                        val embeddedCacheFile = File(coverDir, "embedded_${currentMedia.uri.hashCode()}.jpg")
+                        val uriHash = currentMedia.uri.hashCode()
+                        // 清理旧版可能因 NCM 偏移错位写入的损坏缓存文件
+                        val legacyCacheFile = File(coverDir, "embedded_${uriHash}.jpg")
+                        if (legacyCacheFile.exists()) {
+                            runCatching { legacyCacheFile.delete() }
+                        }
+                        val embeddedCacheFile = File(coverDir, "embedded_v2_${uriHash}.jpg")
 
                         val embeddedBytes = LocalMediaMetadataHelper.extractEmbeddedCoverBytes(
                             context = context,
                             uri = Uri.parse(currentMedia.uri),
                             isNcm = currentMedia.isNcm
                         )
-                        if (embeddedBytes != null && embeddedBytes.isNotEmpty()) {
+                        val decodedEmbedded = embeddedBytes?.takeIf { it.isNotEmpty() }?.let {
+                            MediaMetadataHelper.decodeSafeBitmap(it)
+                        }
+                        if (embeddedBytes != null && decodedEmbedded != null) {
                             localCoverBytes = embeddedBytes
+                            preDecodedBitmap = decodedEmbedded
                             runCatching { embeddedCacheFile.writeBytes(embeddedBytes) }
                             finalCoverUrl = "file://${embeddedCacheFile.absolutePath}"
                         } else {
+                            if (embeddedCacheFile.exists()) {
+                                runCatching { embeddedCacheFile.delete() }
+                            }
                             // 第 2 优先：读取云端封面（若已有非本地云端 URL 则沿用；否则仅按精确 ID 或 NCM 头补齐，绝不搜歌名）
                             if (finalCoverUrl.isNullOrBlank() || finalCoverUrl.startsWith("file://")) {
                                 var cloudUrl: String? = null
@@ -2010,6 +2024,7 @@ class AmePlayerEngine @Inject constructor(
 
                 // 解码 Bitmap 并生成压缩字节，确保 MediaSession 的 artworkData 与 artworkUri 同时就绪
                 val bitmap: Bitmap? = when {
+                    preDecodedBitmap != null -> preDecodedBitmap
                     localCoverBytes != null && localCoverBytes.isNotEmpty() -> {
                         MediaMetadataHelper.decodeSafeBitmap(localCoverBytes)
                     }
@@ -2025,8 +2040,8 @@ class AmePlayerEngine @Inject constructor(
                     else -> null
                 }
 
-                val artworkBytes = localCoverBytes?.takeIf { it.isNotEmpty() }
-                    ?: bitmap?.let { MediaMetadataHelper.bitmapToCompressedBytes(it) }
+                val artworkBytes = bitmap?.let { MediaMetadataHelper.bitmapToCompressedBytes(it) }
+                    ?: localCoverBytes?.takeIf { it.isNotEmpty() }
 
                 withContext(Dispatchers.Main) {
                     if (_currentMedia.value?.id == currentMedia.id) {
@@ -3010,14 +3025,16 @@ class AmePlayerEngine @Inject constructor(
             effectiveSource == PlaylistSourceType.ONLINE &&
             media is PlayableMedia.LocalNcm
         ) {
-            val embeddedFile = File(File(context.cacheDir, "covers"), "embedded_${media.uri.hashCode()}.jpg")
-            if (embeddedFile.exists()) runCatching { embeddedFile.readBytes() }.getOrNull() else null
+            val embeddedFile = File(File(context.cacheDir, "covers"), "embedded_v2_${media.uri.hashCode()}.jpg")
+            if (embeddedFile.exists()) {
+                runCatching { embeddedFile.readBytes() }.getOrNull()?.takeIf { LocalMediaMetadataHelper.isValidImageHeader(it) }
+            } else null
         } else null
 
         val initialArtworkUrl = if (effectiveSource == PlaylistSourceType.LOCAL) {
             media.coverUrl?.takeIf { it.startsWith("file://") || it.startsWith("content://") }
         } else {
-            media.coverUrl
+            media.coverUrl?.takeUnless { it.contains("/covers/embedded_") && !it.contains("/covers/embedded_v2_") }
         }
 
         val metadata = MediaMetadataHelper.buildTrackMediaMetadata(
