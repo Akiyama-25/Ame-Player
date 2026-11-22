@@ -225,7 +225,6 @@ cd Ame-Player
 - **[NeteaseCloudMusicApi Enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)** — 提供网易云音乐 API 结构参考与兼容后端支持。
 - **[rinchao0721/Melodia](https://github.com/rinchao0721/Melodia)** — 提供纯 Kotlin 加密直连网易云官方接口的架构与协议参考。
 - **[Ma145/decent-player](https://github.com/Ma145/decent-player)** — 提供 USB 独占模式下 192kHz+ 原生输出实现思路参考。
-- **[ncm-converter-android](https://github.com/NyaMisty/ncm-converter-android)** — 提供 NCM 格式解析与设置页布局参考。
 - **应用图标来源** — [kanae3792 (Pinterest)](https://jp.pinterest.com/kanae3792/)
 
 ---
