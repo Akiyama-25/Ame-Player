@@ -10,6 +10,14 @@ plugins {
 }
 
 val customApplicationId = providers.gradleProperty("customApplicationId").orNull
+val signingStoreFilePath = providers.gradleProperty("signingStoreFile")
+    .orElse(providers.gradleProperty("android.injected.signing.store.file")).orNull
+val signingStorePasswordVal = providers.gradleProperty("signingStorePassword")
+    .orElse(providers.gradleProperty("android.injected.signing.store.password")).orNull
+val signingKeyAliasVal = providers.gradleProperty("signingKeyAlias")
+    .orElse(providers.gradleProperty("android.injected.signing.key.alias")).orNull
+val signingKeyPasswordVal = providers.gradleProperty("signingKeyPassword")
+    .orElse(providers.gradleProperty("android.injected.signing.key.password")).orNull
 
 android {
     namespace = "Akari.NCM.player"
@@ -55,6 +63,18 @@ android {
         }
     }
 
+    signingConfigs {
+        if (!signingStoreFilePath.isNullOrBlank() && !signingStorePasswordVal.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(signingStoreFilePath)
+                storeType = "PKCS12"
+                storePassword = signingStorePasswordVal
+                keyAlias = signingKeyAliasVal ?: "key0"
+                keyPassword = signingKeyPasswordVal ?: signingStorePasswordVal
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -63,6 +83,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 

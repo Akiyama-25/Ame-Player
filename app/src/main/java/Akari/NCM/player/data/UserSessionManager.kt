@@ -3,6 +3,7 @@ package Akari.NCM.player.data
 import Akari.NCM.player.core.HomepageMode
 import Akari.NCM.player.core.QualityLevel
 import Akari.NCM.player.core.UserProfile
+import Akari.NCM.player.core.VipTier
 import android.content.Context
 import android.content.SharedPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -75,6 +76,19 @@ class UserSessionManager @Inject constructor(
     fun getQualityLevel(): QualityLevel {
         val value = prefs.getString(KEY_QUALITY, QualityLevel.EXHIGH.value) ?: QualityLevel.EXHIGH.value
         return QualityLevel.fromValue(value)
+    }
+
+    fun getEffectiveQualityLevel(): QualityLevel {
+        val vipTier = if (isLoggedIn()) (getUserProfile()?.vipTier ?: VipTier.NONE) else VipTier.NONE
+        val saved = getQualityLevel()
+        if (saved.requiredVipTier.level > vipTier.level) {
+            return when (vipTier) {
+                VipTier.SVIP -> QualityLevel.JYMASTER
+                VipTier.VIP -> QualityLevel.HIRES
+                VipTier.NONE -> QualityLevel.EXHIGH
+            }
+        }
+        return saved
     }
 
     fun saveQualityLevel(level: QualityLevel) {

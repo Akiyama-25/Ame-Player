@@ -5,6 +5,7 @@ import Akari.NCM.player.core.WordInfo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -12,7 +13,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.TextUnit
@@ -149,7 +149,7 @@ private fun WordItem(
                 text = word.text,
                 fontSize = fontSize,
                 fontWeight = fontWeight,
-                style = TextStyle(brush = sweepBrush),
+                style = LocalTextStyle.current.copy(brush = sweepBrush),
                 lineHeight = lineHeight
             )
         }

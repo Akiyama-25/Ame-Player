@@ -36,8 +36,13 @@ data class UserProfile(
     val nickname: String = "",
     val avatarUrl: String = "",
     val vipType: Int = 0,
-    val signature: String = ""
-)
+    val signature: String = "",
+    val isSvip: Boolean = false,
+    val redVipLevel: Int = 0
+) {
+    val vipTier: VipTier
+        get() = if (isSvip || vipType >= 100) VipTier.SVIP else if (vipType > 0) VipTier.VIP else VipTier.NONE
+}
 
 @Serializable
 data class NcmUserPlaylist(

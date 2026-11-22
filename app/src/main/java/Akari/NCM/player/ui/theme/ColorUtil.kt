@@ -634,10 +634,7 @@ fun buildPlayerExpressivePalette(
     )
 
     // 次级按钮容器（上一曲/下一曲/模式/列表/背景切换等）
-    val secondaryHue = when (variant) {
-        ColorVariant.EXPRESSIVE -> (accentHue + 38f) % 360f
-        else -> accentHue
-    }
+    val secondaryHue = accentHue
     val rawSecondaryBtn = if (isLightBg) {
         hslToColor(secondaryHue, (accentSat * 0.65f).coerceIn(28f, 68f), 82f - contrastLevel.levelValue * 8f)
     } else {

@@ -1,8 +1,13 @@
 package Akari.NCM.player.data
 
+import Akari.NCM.player.api.NcmApi
+import Akari.NCM.player.core.AppLogger
 import Akari.NCM.player.core.AudioFormat
+import Akari.NCM.player.core.NcmArtistBrief
+import Akari.NCM.player.core.NcmUserPlaylist
 import Akari.NCM.player.core.PlayableMedia
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -10,7 +15,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.security.SecureRandom
 import java.util.UUID
+import javax.crypto.Cipher
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 @Serializable
 data class PlayableMediaDTO(
@@ -25,7 +34,9 @@ data class PlayableMediaDTO(
     val isNcm: Boolean = false,
     val isLocal: Boolean = true,
     val alias: String? = null,
-    val transName: String? = null
+    val transName: String? = null,
+    val albumId: Long = 0L,
+    val artistsList: List<NcmArtistBrief> = emptyList()
 ) {
     fun toPlayableMedia(): PlayableMedia {
         val isRealLocalUri = uri != null && (uri.startsWith("content://") || uri.startsWith("file://"))
@@ -50,7 +61,9 @@ data class PlayableMediaDTO(
                 coverUrl = coverUrl,
                 durationMs = durationMs,
                 alias = alias,
-                transName = transName
+                transName = transName,
+                albumId = albumId,
+                artistsList = artistsList
             )
         }
     }
@@ -79,7 +92,9 @@ data class PlayableMediaDTO(
                     durationMs = media.durationMs,
                     isLocal = false,
                     alias = media.alias,
-                    transName = media.transName
+                    transName = media.transName,
+                    albumId = media.albumId,
+                    artistsList = media.artistsList
                 )
             }
         }
@@ -97,6 +112,15 @@ data class CustomPlaylist(
     val lastSyncedAt: Long = 0L             // 上次同步时间戳
 )
 
+@Serializable
+data class CloudFavoriteCacheData(
+    val uid: Long = 0L,
+    val likedSongIds: Set<String> = emptySet(),
+    val subscribedPlaylistIds: Set<Long> = emptySet(),
+    val favoriteCloudPlaylistId: Long? = null,
+    val updatedAt: Long = 0L
+)
+
 class PlaylistManager(private val context: Context) {
 
     private val json = Json {
@@ -105,9 +129,24 @@ class PlaylistManager(private val context: Context) {
     }
 
     private val playlistFile = File(context.filesDir, "custom_playlists.json")
+    private val favoriteCacheFile = File(context.filesDir, "cloud_favorites_aes256.enc")
+    private val favoriteKeyFile = File(context.filesDir, ".cloud_favorites_key256.bin")
+    private val favoriteCacheLock = Any()
 
     private val _playlists = MutableStateFlow<List<CustomPlaylist>>(emptyList())
     val playlists: StateFlow<List<CustomPlaylist>> = _playlists.asStateFlow()
+
+    private val _favoriteSongIds = MutableStateFlow<Set<String>>(emptySet())
+    val favoriteSongIds: StateFlow<Set<String>> = _favoriteSongIds.asStateFlow()
+
+    private val _subscribedPlaylistIds = MutableStateFlow<Set<Long>>(emptySet())
+    val subscribedPlaylistIds: StateFlow<Set<Long>> = _subscribedPlaylistIds.asStateFlow()
+
+    @Volatile
+    private var favoriteCloudPlaylistId: Long? = null
+
+    @Volatile
+    private var favoriteCacheUid: Long = 0L
 
     
     private var ncmIdMatchCache: Map<String, PlayableMedia.LocalNcm> = emptyMap()
@@ -333,6 +372,89 @@ class PlaylistManager(private val context: Context) {
 
 init {
         loadPlaylists()
+        loadEncryptedFavoritesCache()
+    }
+
+    private fun getOrCreateAes256Key(): SecretKeySpec {
+        synchronized(favoriteCacheLock) {
+            if (favoriteKeyFile.exists()) {
+                val existing = runCatching { favoriteKeyFile.readBytes() }.getOrNull()
+                if (existing != null && existing.size == 32) {
+                    return SecretKeySpec(existing, "AES")
+                }
+            }
+            val keyBytes = ByteArray(32)
+            SecureRandom().nextBytes(keyBytes)
+            runCatching { favoriteKeyFile.writeBytes(keyBytes) }
+            return SecretKeySpec(keyBytes, "AES")
+        }
+    }
+
+    private fun loadEncryptedFavoritesCache() {
+        synchronized(favoriteCacheLock) {
+            if (!favoriteCacheFile.exists()) {
+                _favoriteSongIds.value = emptySet()
+                _subscribedPlaylistIds.value = emptySet()
+                favoriteCloudPlaylistId = null
+                favoriteCacheUid = 0L
+                return
+            }
+            try {
+                val bytes = favoriteCacheFile.readBytes()
+                val headerSize = 4 + 12 // "ACF2" + 12-byte GCM IV
+                if (bytes.size <= headerSize ||
+                    bytes[0] != 'A'.code.toByte() ||
+                    bytes[1] != 'C'.code.toByte() ||
+                    bytes[2] != 'F'.code.toByte() ||
+                    bytes[3] != '2'.code.toByte()
+                ) {
+                    return
+                }
+                val iv = bytes.copyOfRange(4, 16)
+                val cipherText = bytes.copyOfRange(16, bytes.size)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.DECRYPT_MODE, getOrCreateAes256Key(), GCMParameterSpec(128, iv))
+                val plainBytes = cipher.doFinal(cipherText)
+                val cached = json.decodeFromString<CloudFavoriteCacheData>(plainBytes.decodeToString())
+                _favoriteSongIds.value = cached.likedSongIds
+                _subscribedPlaylistIds.value = cached.subscribedPlaylistIds
+                favoriteCloudPlaylistId = cached.favoriteCloudPlaylistId
+                favoriteCacheUid = cached.uid
+            } catch (e: Exception) {
+                AppLogger.w("AME_CLOUD_SYNC", "Failed to load AES-256 favorite cache: ${e.message}")
+            }
+        }
+    }
+
+    private fun saveEncryptedFavoritesCache() {
+        synchronized(favoriteCacheLock) {
+            try {
+                val payload = CloudFavoriteCacheData(
+                    uid = favoriteCacheUid,
+                    likedSongIds = _favoriteSongIds.value,
+                    subscribedPlaylistIds = _subscribedPlaylistIds.value,
+                    favoriteCloudPlaylistId = favoriteCloudPlaylistId,
+                    updatedAt = System.currentTimeMillis()
+                )
+                val plainBytes = json.encodeToString(payload).encodeToByteArray()
+                val iv = ByteArray(12)
+                SecureRandom().nextBytes(iv)
+                val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+                cipher.init(Cipher.ENCRYPT_MODE, getOrCreateAes256Key(), GCMParameterSpec(128, iv))
+                val cipherText = cipher.doFinal(plainBytes)
+
+                val out = ByteArray(4 + iv.size + cipherText.size)
+                out[0] = 'A'.code.toByte()
+                out[1] = 'C'.code.toByte()
+                out[2] = 'F'.code.toByte()
+                out[3] = '2'.code.toByte()
+                System.arraycopy(iv, 0, out, 4, iv.size)
+                System.arraycopy(cipherText, 0, out, 16, cipherText.size)
+                favoriteCacheFile.writeBytes(out)
+            } catch (e: Exception) {
+                AppLogger.w("AME_CLOUD_SYNC", "Failed to save AES-256 favorite cache: ${e.message}")
+            }
+        }
     }
 
     private fun loadPlaylists() {
@@ -397,9 +519,159 @@ init {
             )
         }
 
-        _playlists.value = _playlists.value.filterNot { it.id == updatedPlaylist.id } + updatedPlaylist
+        _playlists.value = if (existing != null) {
+            _playlists.value.map { if (it.id == updatedPlaylist.id) updatedPlaylist else it }
+        } else {
+            _playlists.value + updatedPlaylist
+        }
         savePlaylists()
+
+        if (ncmPlaylistId > 0L) {
+            val isFavoriteCloudPlaylist = (favoriteCloudPlaylistId != null && ncmPlaylistId == favoriteCloudPlaylistId) ||
+                name.contains("喜欢的音乐") || name.contains("我喜欢的音乐")
+            if (isFavoriteCloudPlaylist) {
+                if (favoriteCloudPlaylistId == null) {
+                    favoriteCloudPlaylistId = ncmPlaylistId
+                }
+                val cloudSongIds = songs.map { it.id }.toSet()
+                if (cloudSongIds.isNotEmpty() || _favoriteSongIds.value.isNotEmpty()) {
+                    _favoriteSongIds.value = cloudSongIds
+                    saveEncryptedFavoritesCache()
+                }
+            }
+        }
+
         return updatedPlaylist
+    }
+
+    suspend fun syncCloudFavorites(
+        ncmApi: NcmApi,
+        sessionManager: UserSessionManager,
+        cloudPlaylists: List<NcmUserPlaylist>? = null
+    ) {
+        if (!sessionManager.isLoggedIn()) return
+        try {
+            val uid = sessionManager.getUserProfile()?.userId
+                ?: ncmApi.getUserProfile()?.userId
+                ?: 0L
+            if (uid <= 0L) return
+
+            val playlists = cloudPlaylists ?: runCatching { ncmApi.getUserPlaylists(uid) }.getOrNull().orEmpty()
+            var cacheChanged = false
+
+            if (favoriteCacheUid != uid) {
+                favoriteCacheUid = uid
+                cacheChanged = true
+            }
+
+            if (playlists.isNotEmpty()) {
+                val cloudIds = playlists.map { it.id }.toSet()
+                if (_subscribedPlaylistIds.value != cloudIds) {
+                    _subscribedPlaylistIds.value = cloudIds
+                    cacheChanged = true
+                }
+                val favCloudId = playlists.firstOrNull {
+                    it.name.contains("喜欢的音乐") || it.name.contains("我喜欢的音乐")
+                }?.id
+                if (favCloudId != null && favoriteCloudPlaylistId != favCloudId) {
+                    favoriteCloudPlaylistId = favCloudId
+                    cacheChanged = true
+                }
+            }
+
+            val likedIds = ncmApi.getLikedSongIds(uid)
+            if (likedIds != null) {
+                if (_favoriteSongIds.value != likedIds) {
+                    _favoriteSongIds.value = likedIds
+                    cacheChanged = true
+                }
+            } else {
+                val favCloudId = favoriteCloudPlaylistId
+                if (favCloudId != null) {
+                    val syncedFav = _playlists.value.firstOrNull { it.ncmPlaylistId == favCloudId }
+                    if (syncedFav != null && syncedFav.songs.isNotEmpty()) {
+                        val syncedIds = syncedFav.songs.map { it.id }.toSet()
+                        if (_favoriteSongIds.value != syncedIds) {
+                            _favoriteSongIds.value = syncedIds
+                            cacheChanged = true
+                        }
+                    }
+                }
+            }
+
+            if (cacheChanged) {
+                saveEncryptedFavoritesCache()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.w("AME_CLOUD_SYNC", "syncCloudFavorites failed: ${e.message}")
+        }
+    }
+
+    suspend fun syncAllCloudPlaylistsSilently(
+        ncmApi: NcmApi,
+        sessionManager: UserSessionManager
+    ) {
+        if (!sessionManager.isLoggedIn()) return
+        try {
+            val uid = sessionManager.getUserProfile()?.userId
+                ?: ncmApi.getUserProfile()?.userId
+                ?: 0L
+            if (uid <= 0L) return
+
+            val cloudPlaylists = ncmApi.getUserPlaylists(uid)
+            syncCloudFavorites(ncmApi, sessionManager, cloudPlaylists)
+
+            if (cloudPlaylists.isEmpty()) return
+
+            val linkedNcmIds = _playlists.value.mapNotNull { it.ncmPlaylistId }.toMutableSet()
+            var boundAny = false
+            val updatedBindings = _playlists.value.map { local ->
+                if (local.ncmPlaylistId == null) {
+                    val matchedCloud = cloudPlaylists.firstOrNull { it.name == local.name }
+                    if (matchedCloud != null && linkedNcmIds.add(matchedCloud.id)) {
+                        boundAny = true
+                        local.copy(
+                            ncmPlaylistId = matchedCloud.id,
+                            coverImgUrl = matchedCloud.coverImgUrl.ifBlank { local.coverImgUrl }
+                        )
+                    } else {
+                        local
+                    }
+                } else {
+                    local
+                }
+            }
+            if (boundAny) {
+                _playlists.value = updatedBindings
+                savePlaylists()
+            }
+
+            val toSync = _playlists.value.filter { it.ncmPlaylistId != null && it.ncmPlaylistId > 0L }
+            for (local in toSync) {
+                val ncmId = local.ncmPlaylistId ?: continue
+                try {
+                    val detail = ncmApi.getPlaylistDetailAndTracks(ncmId)
+                    if (detail.playlist != null || detail.tracks.isNotEmpty()) {
+                        saveOrUpdateSyncedPlaylist(
+                            ncmPlaylistId = ncmId,
+                            name = detail.playlist?.name?.ifBlank { local.name } ?: local.name,
+                            coverImgUrl = detail.playlist?.coverImgUrl?.ifBlank { local.coverImgUrl } ?: local.coverImgUrl,
+                            songs = detail.tracks
+                        )
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    AppLogger.w("AME_CLOUD_SYNC", "Silent sync failed for playlist $ncmId: ${e.message}")
+                }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppLogger.w("AME_CLOUD_SYNC", "syncAllCloudPlaylistsSilently failed: ${e.message}")
+        }
     }
 
     fun renamePlaylist(playlistId: String, newName: String) {
@@ -439,31 +711,34 @@ init {
         savePlaylists()
     }
 
-    fun getOrCreateFavoritePlaylist(): CustomPlaylist {
-        val favorite = _playlists.value.find {
-            it.name.contains("喜欢的音乐") || it.name.contains("My Favorite") || it.name.contains("红心歌单")
-        }
-        if (favorite != null) return favorite
-        return createPlaylist("我喜欢的音乐")
+    fun isFavorite(songId: String): Boolean {
+        return _favoriteSongIds.value.contains(songId)
     }
 
-    fun isFavorite(songId: String): Boolean {
-        val favorite = _playlists.value.find {
-            it.name.contains("喜欢的音乐") || it.name.contains("My Favorite") || it.name.contains("红心歌单")
-        } ?: return false
-        return favorite.songs.any { it.id == songId }
+    fun setFavorite(songId: String, isFav: Boolean) {
+        val current = _favoriteSongIds.value
+        val updated = if (isFav) current + songId else current - songId
+        if (updated != current) {
+            _favoriteSongIds.value = updated
+            saveEncryptedFavoritesCache()
+        }
     }
 
     fun toggleFavorite(song: PlayableMedia): Boolean {
-        val favorite = getOrCreateFavoritePlaylist()
-        val isFav = favorite.songs.any { it.id == song.id }
-        if (isFav) {
-            removeSongFromPlaylist(favorite.id, song.id)
-            return false
-        } else {
-            addSongToPlaylist(favorite.id, song)
-            return true
+        val nextFav = !_favoriteSongIds.value.contains(song.id)
+        setFavorite(song.id, nextFav)
+        val favCloudId = favoriteCloudPlaylistId
+        if (favCloudId != null && favCloudId > 0L) {
+            val cloudFavPlaylist = _playlists.value.find { it.ncmPlaylistId == favCloudId }
+            if (cloudFavPlaylist != null) {
+                if (nextFav) {
+                    addSongToPlaylist(cloudFavPlaylist.id, song)
+                } else {
+                    removeSongFromPlaylist(cloudFavPlaylist.id, song.id)
+                }
+            }
         }
+        return nextFav
     }
 
     /**

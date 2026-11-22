@@ -1,5 +1,6 @@
 package Akari.NCM.player.ui.theme
 
+import Akari.NCM.player.data.CustomFontManager
 import Akari.NCM.player.data.ThemePrefs
 import android.app.Activity
 import android.app.WallpaperManager
@@ -16,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -99,6 +101,27 @@ val AmeExpressiveTypography = Typography(
     )
 )
 
+fun Typography.withFontFamily(fontFamily: FontFamily?): Typography {
+    if (fontFamily == null) return this
+    return copy(
+        displayLarge = displayLarge.copy(fontFamily = fontFamily),
+        displayMedium = displayMedium.copy(fontFamily = fontFamily),
+        displaySmall = displaySmall.copy(fontFamily = fontFamily),
+        headlineLarge = headlineLarge.copy(fontFamily = fontFamily),
+        headlineMedium = headlineMedium.copy(fontFamily = fontFamily),
+        headlineSmall = headlineSmall.copy(fontFamily = fontFamily),
+        titleLarge = titleLarge.copy(fontFamily = fontFamily),
+        titleMedium = titleMedium.copy(fontFamily = fontFamily),
+        titleSmall = titleSmall.copy(fontFamily = fontFamily),
+        bodyLarge = bodyLarge.copy(fontFamily = fontFamily),
+        bodyMedium = bodyMedium.copy(fontFamily = fontFamily),
+        bodySmall = bodySmall.copy(fontFamily = fontFamily),
+        labelLarge = labelLarge.copy(fontFamily = fontFamily),
+        labelMedium = labelMedium.copy(fontFamily = fontFamily),
+        labelSmall = labelSmall.copy(fontFamily = fontFamily)
+    )
+}
+
 @Composable
 fun rememberIsDarkTheme(): Boolean {
     val themeMode by ThemePrefs.themeFlow.collectAsState()
@@ -115,6 +138,12 @@ fun AmePlayerTheme(
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
+    remember(context) { CustomFontManager.init(context) }
+    val customFontFamily by CustomFontManager.currentFontFamilyFlow.collectAsState()
+    val typography = remember(customFontFamily) {
+        AmeExpressiveTypography.withFontFamily(customFontFamily)
+    }
+
     val darkTheme = rememberIsDarkTheme()
     val useMonet by ThemePrefs.monetFlow.collectAsState()
     val colorVariant by ThemePrefs.colorVariantFlow.collectAsState()
@@ -185,7 +214,7 @@ fun AmePlayerTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         shapes = AmeExpressiveShapes,
-        typography = AmeExpressiveTypography,
+        typography = typography,
         content = content
     )
 }

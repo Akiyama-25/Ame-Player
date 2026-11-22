@@ -7,6 +7,7 @@ import Akari.NCM.player.core.PlayerState
 import Akari.NCM.player.core.RepeatMode
 import Akari.NCM.player.data.ThemePrefs
 import Akari.NCM.player.ui.theme.PlayerExpressivePalette
+import Akari.NCM.player.ui.theme.blend
 import Akari.NCM.player.ui.theme.buildPlayerExpressivePalette
 import Akari.NCM.player.ui.theme.extractAverageColorFromBitmap
 import Akari.NCM.player.ui.theme.extractSeedColorFromBitmap
@@ -865,9 +866,17 @@ fun SaltQueueTrackRow(
     onClick: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = if (isSelected) palette.secondaryButtonContainer else Color.Transparent,
-        border = if (isSelected) BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.5f)) else null,
+        shape = RoundedCornerShape(20.dp),
+        color = if (isSelected) {
+            blend(palette.cardSurfaceColor, palette.primaryButtonContainer, 0.28f).copy(alpha = 0.92f)
+        } else {
+            palette.cardSurfaceColor.copy(alpha = 0.65f)
+        },
+        border = if (isSelected) {
+            BorderStroke(1.dp, palette.playedLyricColor.copy(alpha = 0.55f))
+        } else {
+            BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.22f))
+        },
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
@@ -883,7 +892,7 @@ fun SaltQueueTrackRow(
                     text = media.title,
                     fontSize = 15.sp,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSelected) palette.onSecondaryButton else palette.primaryTextColor,
+                    color = if (isSelected) palette.playedLyricColor else palette.primaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -894,7 +903,7 @@ fun SaltQueueTrackRow(
                         if (media.album.isNotBlank()) append(" - ${media.album}")
                     },
                     fontSize = 12.sp,
-                    color = if (isSelected) palette.onSecondaryButton.copy(alpha = 0.8f) else palette.secondaryTextColor,
+                    color = palette.secondaryTextColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -904,7 +913,7 @@ fun SaltQueueTrackRow(
                 Icon(
                     Icons.Rounded.Equalizer,
                     contentDescription = "正在播放",
-                    tint = palette.onSecondaryButton,
+                    tint = palette.playedLyricColor,
                     modifier = Modifier.size(20.dp)
                 )
             }

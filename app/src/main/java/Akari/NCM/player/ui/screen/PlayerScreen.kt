@@ -3,10 +3,13 @@ package Akari.NCM.player.ui.screen
 import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.core.LyricLine
 import Akari.NCM.player.core.LyricSource
+import Akari.NCM.player.core.NcmArtistBrief
 import Akari.NCM.player.core.PlayableMedia
 import Akari.NCM.player.core.PlayerController
 import Akari.NCM.player.core.PlayerState
+import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.core.RepeatMode
+import Akari.NCM.player.core.extractArtistCandidates
 import Akari.NCM.player.data.LyricResult
 import Akari.NCM.player.data.LyricsManager
 import Akari.NCM.player.data.PlaylistManager
@@ -94,6 +97,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import coil.imageLoader
@@ -124,7 +129,9 @@ fun PlayerScreen(
     playlistManager: PlaylistManager? = null,
     onBackClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit,
-    onToggleQueueClick: () -> Unit
+    onToggleQueueClick: () -> Unit,
+    onNavigateToArtist: ((NcmArtistBrief) -> Unit)? = null,
+    onNavigateToAlbum: ((albumId: Long, albumName: String, artistName: String, coverUrl: String?) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -224,12 +231,15 @@ fun PlayerScreen(
                 playerController = playerController,
                 displayedTrack = activeTrack,
                 ncmApi = ncmApi,
+                playlistManager = effectivePlaylistManager,
                 palette = palette,
                 blurCoverBg = blurCoverBg,
                 isQueueOpen = showPlayQueuePage || showQuickFunctionsPage,
                 onBackClick = onBackClick,
                 onOpenQueueClick = { showPlayQueuePage = true },
-                onOpenQuickFunctionsClick = { showQuickFunctionsPage = true }
+                onOpenQuickFunctionsClick = { showQuickFunctionsPage = true },
+                onNavigateToArtist = onNavigateToArtist,
+                onNavigateToAlbum = onNavigateToAlbum
             )
         }
 
@@ -364,18 +374,27 @@ private fun PlayerMainContentView(
     playerController: PlayerController,
     displayedTrack: PlayableMedia?,
     ncmApi: NcmApi,
+    playlistManager: PlaylistManager,
     palette: PlayerExpressivePalette,
     blurCoverBg: Boolean,
     isQueueOpen: Boolean = false,
     onBackClick: () -> Unit,
     onOpenQueueClick: () -> Unit,
-    onOpenQuickFunctionsClick: () -> Unit
+    onOpenQuickFunctionsClick: () -> Unit,
+    onNavigateToArtist: ((NcmArtistBrief) -> Unit)? = null,
+    onNavigateToAlbum: ((albumId: Long, albumName: String, artistName: String, coverUrl: String?) -> Unit)? = null
 ) {
     val currentTrack = displayedTrack
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val favoriteSongIds by playlistManager.favoriteSongIds.collectAsState()
+    val playlistSourceType by playerState.playlistSourceType.collectAsState()
+    val isFromLocalPlaylist = playlistSourceType == PlaylistSourceType.LOCAL
+    val isFavorite = remember(currentTrack?.id, favoriteSongIds) {
+        currentTrack?.let { favoriteSongIds.contains(it.id) } ?: false
+    }
 
     // ── 播放状态（不在此顶层订阅高频 currentPositionMs / rememberSmoothPosition，避免整页 60~120Hz 全量重组） ──
     val isPlaying by playerState.isPlaying.collectAsState()
@@ -390,7 +409,6 @@ private fun PlayerMainContentView(
         val collected by engineLyricsFlow.collectAsState()
         collected
     } else {
-        val playlistSourceType by playerState.playlistSourceType.collectAsState()
         val lyricsManager = remember { LyricsManager(context, ncmApi) }
         var fallbackResult by remember { mutableStateOf(LyricResult(emptyList(), LyricSource.NONE)) }
         LaunchedEffect(currentTrack?.id, playlistSourceType) {
@@ -497,6 +515,14 @@ private fun PlayerMainContentView(
         )
 
         val TitleAndArtistBlock: @Composable (Modifier) -> Unit = { modifier ->
+            val artistCandidates = remember(currentTrack) {
+                currentTrack?.extractArtistCandidates().orEmpty()
+            }
+            val onlineAlbumId = (currentTrack as? PlayableMedia.Online)?.albumId ?: 0L
+            val hasAlbum = !currentTrack?.album.isNullOrBlank()
+            var showArtistSelector by remember(currentTrack?.id) { mutableStateOf(false) }
+            var artistAnchorHeightPx by remember { mutableIntStateOf(0) }
+
             Column(modifier = modifier) {
                 Text(
                     text = currentTrack?.title ?: "未在播放",
@@ -507,17 +533,117 @@ private fun PlayerMainContentView(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    text = buildString {
-                        append(currentTrack?.artist ?: "未知歌手")
-                        if (!currentTrack?.album.isNullOrBlank()) append(" · ${currentTrack?.album}")
-                    },
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = palette.secondaryTextColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .onSizeChanged { artistAnchorHeightPx = it.height }
+                    ) {
+                        Text(
+                            text = currentTrack?.artist ?: "未知歌手",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = palette.secondaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable(enabled = currentTrack != null && artistCandidates.isNotEmpty()) {
+                                    if (artistCandidates.size > 1) {
+                                        showArtistSelector = true
+                                    } else {
+                                        artistCandidates.firstOrNull()?.let { onNavigateToArtist?.invoke(it) }
+                                    }
+                                }
+                                .testTag("player_artist_click")
+                        )
+                        if (showArtistSelector && artistCandidates.size > 1) {
+                            Popup(
+                                alignment = Alignment.TopStart,
+                                offset = IntOffset(0, artistAnchorHeightPx + with(density) { 6.dp.roundToPx() }),
+                                onDismissRequest = { showArtistSelector = false },
+                                properties = PopupProperties(focusable = true)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = palette.cardSurfaceColor.copy(alpha = 0.96f),
+                                    border = BorderStroke(1.dp, palette.cardOutlineColor.copy(alpha = 0.45f)),
+                                    shadowElevation = 8.dp,
+                                    modifier = Modifier
+                                        .widthIn(min = 160.dp, max = 260.dp)
+                                        .testTag("player_artist_selector_box")
+                                ) {
+                                    Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                                        Text(
+                                            text = "选择歌手",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = palette.secondaryTextColor,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+                                        )
+                                        artistCandidates.forEach { candidate ->
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        showArtistSelector = false
+                                                        onNavigateToArtist?.invoke(candidate)
+                                                    }
+                                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Person,
+                                                    contentDescription = null,
+                                                    tint = palette.playedLyricColor,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(
+                                                    text = candidate.name,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = palette.primaryTextColor,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (hasAlbum) {
+                        Text(
+                            text = " · ",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = palette.secondaryTextColor
+                        )
+                        Text(
+                            text = currentTrack?.album.orEmpty(),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = palette.secondaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable(enabled = currentTrack != null && (onlineAlbumId > 0L || onNavigateToAlbum != null)) {
+                                    val albumName = currentTrack?.album.orEmpty()
+                                    val artistName = currentTrack?.artist.orEmpty()
+                                    onNavigateToAlbum?.invoke(onlineAlbumId, albumName, artistName, currentTrack?.coverUrl)
+                                }
+                                .testTag("player_album_click")
+                        )
+                    }
+                }
             }
         }
 
@@ -710,6 +836,34 @@ private fun PlayerMainContentView(
                             tint = bottomIconColor,
                             modifier = Modifier.size(iconSize)
                         )
+                    }
+                }
+
+                if (!isFromLocalPlaylist) {
+                    Surface(
+                        onClick = {
+                            val track = currentTrack ?: return@Surface
+                            val isNowFav = playlistManager.toggleFavorite(track)
+                            val msg = if (isNowFav) "已添加到云端喜欢" else "已取消云端喜欢"
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                            scope.launch(Dispatchers.IO) {
+                                ncmApi.likeSong(track.id, isNowFav)
+                            }
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.Transparent,
+                        modifier = Modifier
+                            .size(btnSize)
+                            .testTag("btn_favorite_song")
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                                contentDescription = if (isFavorite) "取消喜欢" else "喜欢",
+                                tint = if (isFavorite) palette.playedLyricColor else bottomIconColor,
+                                modifier = Modifier.size(iconSize)
+                            )
+                        }
                     }
                 }
             }
@@ -2023,7 +2177,7 @@ private fun QuickFunctionsCards(
     // ── 1. 播放页模糊封面背景切换开关 ──
     Surface(
         onClick = onToggleBlurCoverBg,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         color = surfaceColor,
         border = cardBorder,
         modifier = Modifier
@@ -2056,6 +2210,7 @@ private fun QuickFunctionsCards(
             Switch(
                 checked = blurCoverBg,
                 onCheckedChange = { onToggleBlurCoverBg() },
+                colors = playerSwitchColors(palette),
                 modifier = Modifier.testTag("switch_player_blur_cover_bg")
             )
         }
@@ -2069,7 +2224,7 @@ private fun QuickFunctionsCards(
         label = "StatusChevronRotation"
     )
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         color = surfaceColor,
         border = cardBorder,
         modifier = Modifier.fillMaxWidth()
@@ -2133,7 +2288,7 @@ private fun QuickFunctionsCards(
     )
 
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         color = surfaceColor,
         border = cardBorder,
         modifier = Modifier.fillMaxWidth()
@@ -2246,7 +2401,7 @@ private fun QuickFunctionsCards(
     // ── 4. 音量均衡快捷开关 ──
     Surface(
         onClick = onToggleLoudness,
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         color = surfaceColor,
         border = cardBorder,
         modifier = Modifier
@@ -2314,7 +2469,7 @@ private fun QuickFunctionsCards(
         label = "PlaylistChevronRotation"
     )
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(20.dp),
         color = surfaceColor,
         border = cardBorder,
         modifier = Modifier.fillMaxWidth()
@@ -2422,6 +2577,7 @@ private fun UsbExclusiveSubMenuContent(
                     checked = isExclusive,
                     onCheckedChange = { onToggleExclusive(it) },
                     enabled = hasDevice || isExclusive,
+                    colors = playerSwitchColors(palette),
                     modifier = Modifier.testTag("switch_usb_exclusive")
                 )
             }
@@ -2584,8 +2740,12 @@ private fun PlaybackStatusSubMenuContent(
         val sourceText = if (isLocal) {
             "本地存储 (Local)"
         } else {
-            val qLabel = audioFormatInfo.qualityLevel?.let { Akari.NCM.player.core.QualityLevel.fromValue(it).label }
-            if (!qLabel.isNullOrBlank()) "云端在线 (Cloud) · $qLabel" else "云端在线 (Cloud)"
+            "云端在线 (Cloud) · ${Akari.NCM.player.core.QualityLevel.displayLabelFor(audioFormatInfo.qualityLevel)}"
+        }
+        val actualQualityText = if (audioFormatInfo.qualityLevel != null) {
+            "${Akari.NCM.player.core.QualityLevel.displayLabelFor(audioFormatInfo.qualityLevel)} (${audioFormatInfo.qualityLevel})"
+        } else {
+            "正在解析..."
         }
 
         val fileSizeText = remember(media, audioFormatInfo.fileSizeBytes) {
@@ -2623,6 +2783,9 @@ private fun PlaybackStatusSubMenuContent(
         InfoRow("专辑名称", media.album, cardSubText, cardText)
         HorizontalDivider(color = cardSubText.copy(alpha = 0.16f))
         InfoRow("音频来源", sourceText, cardSubText, cardText)
+        if (!isLocal) {
+            InfoRow("实际音质层级", actualQualityText, cardSubText, cardText)
+        }
         if (fileSizeText != null) {
             val sizeLabel = if (isLocal) "本地文件大小" else "音频文件大小"
             InfoRow(sizeLabel, fileSizeText, cardSubText, cardText)
@@ -2891,3 +3054,18 @@ private fun InfoRow(
         Text(value, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = valueColor)
     }
 }
+
+@Composable
+private fun playerSwitchColors(palette: PlayerExpressivePalette): SwitchColors = SwitchDefaults.colors(
+    checkedThumbColor = palette.onPrimaryButton,
+    checkedTrackColor = palette.primaryButtonContainer,
+    checkedBorderColor = palette.primaryButtonContainer,
+    uncheckedThumbColor = palette.secondaryTextColor,
+    uncheckedTrackColor = palette.secondaryButtonContainer.copy(alpha = 0.65f),
+    uncheckedBorderColor = palette.cardOutlineColor.copy(alpha = 0.55f),
+    disabledCheckedThumbColor = palette.onPrimaryButton.copy(alpha = 0.5f),
+    disabledCheckedTrackColor = palette.primaryButtonContainer.copy(alpha = 0.4f),
+    disabledUncheckedThumbColor = palette.secondaryTextColor.copy(alpha = 0.4f),
+    disabledUncheckedTrackColor = palette.secondaryButtonContainer.copy(alpha = 0.3f),
+    disabledUncheckedBorderColor = palette.cardOutlineColor.copy(alpha = 0.25f)
+)

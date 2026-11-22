@@ -4,11 +4,16 @@ import Akari.NCM.player.BuildConfig
 import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.core.AppLogger
 import Akari.NCM.player.core.LogLevel
+import Akari.NCM.player.core.QualityLevel
 import Akari.NCM.player.core.UserProfile
+import Akari.NCM.player.core.VipTier
 import Akari.NCM.player.data.AppPackageVariant
 import Akari.NCM.player.data.AppUpdateManager
 import Akari.NCM.player.data.ColorVariant
 import Akari.NCM.player.data.ContrastLevel
+import Akari.NCM.player.data.CustomFontManager
+import Akari.NCM.player.data.FontItemInfo
+import Akari.NCM.player.data.FontSource
 import Akari.NCM.player.data.ThemePrefs
 import Akari.NCM.player.data.UpdateChannel
 import Akari.NCM.player.data.UpdateCheckResult
@@ -33,6 +38,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -49,6 +55,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -67,8 +74,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @UnstableApi
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -124,6 +133,21 @@ fun SettingsScreen(
     var showLogLevelDialog by remember { mutableStateOf(false) }
     var showLogSizeDialog by remember { mutableStateOf(false) }
     var showLoudnessDialog by remember { mutableStateOf(false) }
+    var showQualityDialog by remember { mutableStateOf(false) }
+    var showFontDialog by remember { mutableStateOf(false) }
+
+    val selectedQuality by sessionManager.qualityState.collectAsState()
+    val userVipTier = userProfile?.vipTier ?: VipTier.NONE
+    val effectiveQuality = remember(selectedQuality, userProfile) {
+        sessionManager.getEffectiveQualityLevel()
+    }
+
+    LaunchedEffect(Unit) {
+        CustomFontManager.init(context)
+    }
+    val selectedFontInfo by CustomFontManager.selectedFontInfoFlow.collectAsState()
+    val selectedFontId by CustomFontManager.selectedFontIdFlow.collectAsState()
+    val importedFonts by CustomFontManager.importedFontsFlow.collectAsState()
 
     val updateChannel by ThemePrefs.updateChannelFlow.collectAsState()
     var showUpdateChannelDialog by remember { mutableStateOf(false) }
@@ -414,6 +438,15 @@ fun SettingsScreen(
 
                         SettingsInnerDivider()
 
+                        SettingItem(
+                            title = "应用字体",
+                            subtitle = selectedFontInfo?.displayName ?: "系统默认",
+                            onClick = { showFontDialog = true },
+                            modifier = Modifier.testTag("setting_app_font")
+                        )
+
+                        SettingsInnerDivider()
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -565,10 +598,30 @@ fun SettingsScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     SectionHeader("音频与声音")
                     SettingsGroupCard {
+                        SettingItem(
+                            title = "在线播放音质",
+                            subtitle = "${effectiveQuality.label} · ${userVipTier.label} (${effectiveQuality.description})",
+                            onClick = { showQualityDialog = true },
+                            modifier = Modifier.testTag("setting_playback_quality")
+                        )
+
+                        SettingsInnerDivider()
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { ThemePrefs.enableJyEffect = !enableJyEffect }
+                                .clickable {
+                                    val next = !enableJyEffect
+                                    ThemePrefs.enableJyEffect = next
+                                    if (!next && (selectedQuality == QualityLevel.JYEFFECT || selectedQuality == QualityLevel.JYMASTER)) {
+                                        val fallback = if (userVipTier.level >= QualityLevel.HIRES.requiredVipTier.level) {
+                                            QualityLevel.HIRES
+                                        } else {
+                                            QualityLevel.EXHIGH
+                                        }
+                                        sessionManager.saveQualityLevel(fallback)
+                                    }
+                                }
                                 .padding(horizontal = 18.dp, vertical = 12.dp)
                                 .testTag("setting_enable_jy_effect"),
                             verticalAlignment = Alignment.CenterVertically
@@ -591,7 +644,17 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Switch(
                                 checked = enableJyEffect,
-                                onCheckedChange = { ThemePrefs.enableJyEffect = it },
+                                onCheckedChange = { next ->
+                                    ThemePrefs.enableJyEffect = next
+                                    if (!next && (selectedQuality == QualityLevel.JYEFFECT || selectedQuality == QualityLevel.JYMASTER)) {
+                                        val fallback = if (userVipTier.level >= QualityLevel.HIRES.requiredVipTier.level) {
+                                            QualityLevel.HIRES
+                                        } else {
+                                            QualityLevel.EXHIGH
+                                        }
+                                        sessionManager.saveQualityLevel(fallback)
+                                    }
+                                },
                                 modifier = Modifier.testTag("switch_enable_jy_effect")
                             )
                         }
@@ -1380,6 +1443,29 @@ fun SettingsScreen(
         )
     }
 
+    if (showQualityDialog) {
+        QualitySelectionDialog(
+            currentQuality = effectiveQuality,
+            userVipTier = userVipTier,
+            onSelectQuality = { quality ->
+                sessionManager.saveQualityLevel(quality)
+                if (quality == QualityLevel.JYEFFECT || quality == QualityLevel.JYMASTER) {
+                    ThemePrefs.enableJyEffect = true
+                }
+                showQualityDialog = false
+            },
+            onDismiss = { showQualityDialog = false }
+        )
+    }
+
+    if (showFontDialog) {
+        FontSelectionDialog(
+            selectedFontId = selectedFontId,
+            importedFonts = importedFonts,
+            onDismiss = { showFontDialog = false }
+        )
+    }
+
     if (showThemeModeDialog) {
         val currentThemeMode = ThemePrefs.themeFlow.collectAsState().value
         AlertDialog(
@@ -2101,5 +2187,391 @@ private fun ColorPickerRow(
                 modifier = Modifier.size(18.dp)
             )
         }
+    }
+}
+
+@Composable
+private fun QualitySelectionDialog(
+    currentQuality: QualityLevel,
+    userVipTier: VipTier,
+    onSelectQuality: (QualityLevel) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(
+                    "选择在线播放音质",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "当前账号权益: ${userVipTier.label}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                QualityLevel.entries.forEach { quality ->
+                    val isUnlocked = quality.requiredVipTier.level <= userVipTier.level
+                    val isSelected = currentQuality == quality
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                        } else {
+                            Color.Transparent
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .alpha(if (isUnlocked) 1f else 0.48f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable(enabled = isUnlocked) { onSelectQuality(quality) }
+                            .testTag("quality_option_${quality.value}")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = if (isUnlocked) ({ onSelectQuality(quality) }) else null,
+                                enabled = isUnlocked
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = quality.label,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (quality.requiredVipTier != VipTier.NONE) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (quality.requiredVipTier == VipTier.SVIP) {
+                                                MaterialTheme.colorScheme.tertiaryContainer
+                                            } else {
+                                                MaterialTheme.colorScheme.secondaryContainer
+                                            }
+                                        ) {
+                                            Text(
+                                                text = quality.requiredVipTier.badgeText,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (quality.requiredVipTier == VipTier.SVIP) {
+                                                    MaterialTheme.colorScheme.onTertiaryContainer
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                                },
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (isUnlocked) {
+                                        quality.description
+                                    } else {
+                                        "需要${quality.requiredVipTier.label}解锁 · ${quality.description}"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            AdaptiveButtonGroup(
+                buttons = listOf(
+                    AdaptiveButtonSpec(
+                        text = "取消",
+                        onClick = onDismiss,
+                        style = ExpressiveButtonStyle.TONAL
+                    )
+                )
+            )
+        }
+    )
+}
+
+@Composable
+private fun FontSelectionDialog(
+    selectedFontId: String?,
+    importedFonts: List<FontItemInfo>,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var availableFonts by remember(importedFonts) {
+        mutableStateOf(CustomFontManager.getAvailableFonts(context))
+    }
+
+    val fontPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    CustomFontManager.importFontFromUri(context, uri)
+                }
+                result.onSuccess { info ->
+                    availableFonts = CustomFontManager.getAvailableFonts(context)
+                    Toast.makeText(context, "已导入并应用字体: ${info.displayName}", Toast.LENGTH_SHORT).show()
+                }.onFailure { err ->
+                    Toast.makeText(context, "字体导入失败: ${err.message ?: "无效字体文件"}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    val systemFonts = remember(availableFonts) {
+        availableFonts.filter { it.source == FontSource.SYSTEM_FILE }
+    }
+    val customFonts = remember(availableFonts) {
+        availableFonts.filter { it.source == FontSource.IMPORTED }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                "选择应用字体",
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { fontPickerLauncher.launch(arrayOf("*/*")) },
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("btn_import_custom_font")
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.UploadFile,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("导入字体文件 (.ttf/.ttc/.otf/.otc)")
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    item(key = "system_default") {
+                        FontOptionRow(
+                            title = "系统默认",
+                            subtitle = "使用系统与 Compose 默认字体排版",
+                            isSelected = selectedFontId == null,
+                            inspection = null,
+                            onSelect = {
+                                CustomFontManager.selectFont(context, null)
+                                onDismiss()
+                            }
+                        )
+                    }
+
+                    if (customFonts.isNotEmpty()) {
+                        item(key = "header_imported") {
+                            Text(
+                                text = "已导入字体 (${customFonts.size})",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(start = 6.dp, top = 8.dp, bottom = 2.dp)
+                            )
+                        }
+                        items(customFonts, key = { it.id }) { font ->
+                            FontOptionRow(
+                                title = font.displayName,
+                                subtitle = "已导入本地字体",
+                                isSelected = selectedFontId == font.id,
+                                inspection = font.inspection,
+                                onSelect = {
+                                    CustomFontManager.selectFont(context, font.id)
+                                    onDismiss()
+                                },
+                                onDelete = {
+                                    CustomFontManager.deleteImportedFont(context, font.id)
+                                    availableFonts = CustomFontManager.getAvailableFonts(context)
+                                }
+                            )
+                        }
+                    }
+
+                    if (systemFonts.isNotEmpty()) {
+                        item(key = "header_system") {
+                            Text(
+                                text = "本地系统字体 (${systemFonts.size})",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(start = 6.dp, top = 8.dp, bottom = 2.dp)
+                            )
+                        }
+                        items(systemFonts, key = { it.id }) { font ->
+                            FontOptionRow(
+                                title = font.displayName,
+                                subtitle = font.filePath ?: "系统字体文件",
+                                isSelected = selectedFontId == font.id,
+                                inspection = font.inspection,
+                                onSelect = {
+                                    CustomFontManager.selectFont(context, font.id)
+                                    onDismiss()
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            AdaptiveButtonGroup(
+                buttons = listOf(
+                    AdaptiveButtonSpec(
+                        text = "完成",
+                        onClick = onDismiss,
+                        style = ExpressiveButtonStyle.TONAL
+                    )
+                )
+            )
+        }
+    )
+}
+
+@Composable
+private fun FontOptionRow(
+    title: String,
+    subtitle: String,
+    isSelected: Boolean,
+    inspection: Akari.NCM.player.core.font.FontInspectionResult?,
+    onSelect: () -> Unit,
+    onDelete: (() -> Unit)? = null
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = if (isSelected) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+        } else {
+            Color.Transparent
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onSelect)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            RadioButton(
+                selected = isSelected,
+                onClick = onSelect
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (inspection != null && (inspection.isVariableFont || inspection.isCff2)) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (inspection.isVariableFont) {
+                            val wghtText = inspection.weightAxis?.let {
+                                "可变字重 (VF) · wght ${it.minValue.toInt()}–${it.maxValue.toInt()}"
+                            } ?: "可变字重 (VF)"
+                            FontFeatureBadge(
+                                text = wghtText,
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                        if (inspection.isCff2) {
+                            FontFeatureBadge(
+                                text = "OpenType CFF2",
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+            if (onDelete != null) {
+                IconButton(onClick = onDelete) {
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = "删除字体",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FontFeatureBadge(
+    text: String,
+    containerColor: Color,
+    contentColor: Color
+) {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = containerColor
+    ) {
+        Text(
+            text = text,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = contentColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+        )
     }
 }

@@ -35,6 +35,13 @@ internal object NeteaseEndpoints {
     const val PATH_EAPI_USER_DETAIL = "/api/v1/user/detail"
     const val URL_EAPI_USER_DETAIL = "$HOST_SERVICE/eapi/v1/user/detail"
 
+    const val PATH_EAPI_VIP_INFO = "/api/music-vip-membership/client/vip/info"
+    const val URL_EAPI_VIP_INFO = "$HOST_SERVICE/eapi/music-vip-membership/client/vip/info"
+
+    const val PATH_EAPI_SONG_LIKE_GET = "/api/song/like/get"
+    const val URL_EAPI_SONG_LIKE_GET = "$HOST_SERVICE/eapi/song/like/get"
+    const val URL_WEAPI_SONG_LIKE_GET = "$HOST_DEFAULT/weapi/song/like/get"
+
     const val PATH_EAPI_HOMEPAGE_BLOCK = "/api/homepage/block/page"
     const val URL_EAPI_HOMEPAGE_BLOCK = "$HOST_SERVICE/eapi/homepage/block/page"
 

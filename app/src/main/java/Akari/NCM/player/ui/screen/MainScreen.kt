@@ -130,6 +130,7 @@ fun MainScreen(
     var showLogScreen by remember { mutableStateOf(false) }
     var showWebLoginScreen by remember { mutableStateOf(false) }
     var showSearchScreen by remember { mutableStateOf(false) }
+    var isSearchInputInProgress by remember { mutableStateOf(false) }
     var showSyncCloudDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableIntStateOf(0) } // 0: User Homepage, 1: Playlists
     var selectedPlaylistForDetail by remember { mutableStateOf<CustomPlaylist?>(null) }
@@ -231,9 +232,11 @@ fun MainScreen(
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             localFolderManager.scanAllFolders()
+            playlistManager.syncAllCloudPlaylistsSilently(ncmApi, sessionManager)
         }
     }
     val customPlaylists by playlistManager.playlists.collectAsState()
+    val favoriteSongIds by playlistManager.favoriteSongIds.collectAsState()
     val showMatchStatusPreference by ThemePrefs.showMatchStatusFlow.collectAsState()
     var matchFilterMode by remember { mutableStateOf(0) } // 0: 全部, 1: 仅已匹配, 2: 仅未匹配
     LaunchedEffect(showMatchStatusPreference) {
@@ -280,6 +283,7 @@ fun MainScreen(
                         coverImgUrl = target.coverImgUrl,
                         songs = tracks
                     )
+                    playlistManager.syncCloudFavorites(ncmApi, sessionManager)
                     withContext(Dispatchers.Main) {
                         if (selectedPlaylistForDetail?.id == target.id) {
                             selectedPlaylistForDetail = updated
@@ -598,6 +602,9 @@ fun MainScreen(
                                                                 actionMedia = media
                                                                 actionPlaylistContext = pContext
                                                                 actionRemoveCallback = null
+                                                            },
+                                                            onOpenPlaylistTarget = { nextTarget ->
+                                                                selectedOnlinePlaylist = nextTarget
                                                             }
                                                         )
                                                     }
@@ -1030,7 +1037,7 @@ fun MainScreen(
 
                             // 常驻悬浮底部播放状态栏（无外圈背景遮罩，直接悬浮于主页面内容上方）
                             androidx.compose.animation.AnimatedVisibility(
-                                visible = !showPlayerScreen,
+                                visible = !showPlayerScreen && !showSearchScreen,
                                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                                 modifier = Modifier
@@ -1073,36 +1080,6 @@ fun MainScreen(
             }
 
         AnimatedVisibility(
-            visible = showPlayerScreen,
-            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
-            exit = if (playerBackState.isDismissedByGesture) {
-                ExitTransition.None
-            } else {
-                slideOutVertically(targetOffsetY = { it }, animationSpec = tween(320)) + fadeOut(tween(250))
-            },
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .predictiveBackForeground(state = playerBackState, pullDownDp = 42f)
-            ) {
-                PlayerScreen(
-                    playerState = playerEngine,
-                    playerController = playerEngine,
-                    ncmApi = ncmApi,
-                    playlistManager = playlistManager,
-                    onBackClick = { showPlayerScreen = false },
-                    onAddToPlaylistClick = { songToAddToPlaylist = currentMedia },
-                    onToggleQueueClick = {
-                        showPlayerScreen = false
-                        selectedTab = 0
-                    }
-                )
-            }
-        }
-
-        AnimatedVisibility(
             visible = showSearchScreen,
             enter = slideInHorizontally(initialOffsetX = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
             exit = if (searchBackState.isDismissedByGesture) {
@@ -1133,6 +1110,88 @@ fun MainScreen(
                         selectedOnlinePlaylist = target
                         selectedTab = 0
                         showSearchScreen = false
+                    },
+                    onInputProgressChanged = { inProgress ->
+                        isSearchInputInProgress = inProgress
+                    }
+                )
+            }
+        }
+
+        // 搜索页悬浮迷你播放条（位于 SearchScreen 上方，低于 PlayerScreen / SettingsScreen / PlayQueueDrawer）
+        AnimatedVisibility(
+            visible = showSearchScreen && !showPlayerScreen && !showSettingsScreen && !showLogScreen && !showWebLoginScreen && !isSearchInputInProgress,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+        ) {
+            MiniPlayerBar(
+                media = currentMedia,
+                isPlaying = isPlaying,
+                positionMsFlow = playerEngine.currentPositionMs,
+                durationMs = durationMs,
+                onTogglePlayPause = { playerEngine.togglePlayPause() },
+                onClick = {
+                    if (currentMedia != null) {
+                        showPlayerScreen = true
+                    }
+                },
+                onSkipNext = { playerEngine.skipToNext() },
+                onSkipPrevious = { playerEngine.skipToPrevious() },
+                onQueueClick = { showQueueBottomSheet = true }
+            )
+        }
+
+        AnimatedVisibility(
+            visible = showPlayerScreen,
+            enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(400)) + fadeIn(tween(300)),
+            exit = if (playerBackState.isDismissedByGesture) {
+                ExitTransition.None
+            } else {
+                slideOutVertically(targetOffsetY = { it }, animationSpec = tween(320)) + fadeOut(tween(250))
+            },
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .predictiveBackForeground(state = playerBackState, pullDownDp = 42f)
+            ) {
+                PlayerScreen(
+                    playerState = playerEngine,
+                    playerController = playerEngine,
+                    ncmApi = ncmApi,
+                    playlistManager = playlistManager,
+                    onBackClick = { showPlayerScreen = false },
+                    onAddToPlaylistClick = { songToAddToPlaylist = currentMedia },
+                    onToggleQueueClick = {
+                        showPlayerScreen = false
+                        selectedTab = 0
+                    },
+                    onNavigateToArtist = { artist ->
+                        showPlayerScreen = false
+                        selectedTab = 0
+                        selectedOnlinePlaylist = OnlinePlaylistTarget(
+                            id = artist.id,
+                            title = artist.name,
+                            creatorName = artist.name,
+                            description = "歌手精选 · ${artist.name}",
+                            isArtist = true
+                        )
+                    },
+                    onNavigateToAlbum = { albumId, albumName, artistName, coverUrl ->
+                        showPlayerScreen = false
+                        selectedTab = 0
+                        selectedOnlinePlaylist = OnlinePlaylistTarget(
+                            id = albumId,
+                            title = albumName,
+                            coverImgUrl = coverUrl ?: "",
+                            creatorName = artistName,
+                            description = "专辑 · $artistName",
+                            isAlbum = true
+                        )
                     }
                 )
             }
@@ -1199,6 +1258,9 @@ fun MainScreen(
                     onLoginSuccess = {
                         showWebLoginScreen = false
                         homepageRefreshTrigger++
+                        scope.launch(Dispatchers.IO) {
+                            playlistManager.syncAllCloudPlaylistsSilently(ncmApi, sessionManager)
+                        }
                         Toast.makeText(context, "网易云账号登录成功！", Toast.LENGTH_SHORT).show()
                     },
                     onBack = { showWebLoginScreen = false }
@@ -1273,14 +1335,16 @@ fun MainScreen(
 
     // 歌曲操作弹窗 (Song Action BottomSheet)
     if (actionMedia != null) {
-        val isFav = remember(actionMedia, customPlaylists) {
-            playlistManager.isFavorite(actionMedia!!.id)
+        val isFav = remember(actionMedia?.id, favoriteSongIds) {
+            actionMedia?.let { playlistManager.isFavorite(it.id) } ?: false
         }
+        val isLocalPlaylistAction = actionPlaylistContext != null &&
+            (actionPlaylistContext!!.ncmPlaylistId == null || actionPlaylistContext!!.ncmPlaylistId == -9999L)
         SongActionBottomSheet(
             media = actionMedia!!,
             currentPlaylist = actionPlaylistContext,
             isFavorite = isFav,
-            showFavoriteAction = hasApi && isLoggedIn,
+            showFavoriteAction = hasApi && isLoggedIn && !isLocalPlaylistAction,
             onDismiss = {
                 actionMedia = null
                 actionPlaylistContext = null
@@ -1293,7 +1357,7 @@ fun MainScreen(
             onToggleFavorite = {
                 val mediaToFav = actionMedia!!
                 val isNowFav = playlistManager.toggleFavorite(mediaToFav)
-                val msg = if (isNowFav) "已添加到我喜欢的音乐" else "已从我喜欢的音乐移除"
+                val msg = if (isNowFav) "已添加到云端喜欢" else "已取消云端喜欢"
                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 scope.launch(Dispatchers.IO) {
                     ncmApi.likeSong(mediaToFav.id, isNowFav)
@@ -1691,6 +1755,7 @@ private fun SyncCloudPlaylistsDialog(
                                             songs = tracks
                                         )
                                     }
+                                    playlistManager.syncCloudFavorites(ncmApi, sessionManager, cloudPlaylists)
                                     withContext(Dispatchers.Main) {
                                         isImporting = false
                                         onDismiss()

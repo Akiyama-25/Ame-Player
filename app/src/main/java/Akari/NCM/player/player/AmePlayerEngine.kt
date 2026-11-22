@@ -505,17 +505,23 @@ class AmePlayerEngine @Inject constructor(
                 val cachedDetails = resolvedDetailsCache[media.id]
                 val url = if (!cachedUrl.isNullOrBlank()) {
                     AppLogger.d("[AME_ONLINE_PLAY]", ">>> Using cached resolved URL for '${media.title}' (id=${media.id}): $cachedUrl")
-                    if (_currentMedia.value?.id == media.id &&
-                        ThemePrefs.volumeNormalizationEnabled &&
-                        !isUsbBitPerfectActive()
-                    ) {
-                        val syncData = loudnessManager.getCachedLoudnessSync(
-                            media = media,
-                            qualityLevel = cachedDetails?.level.orEmpty(),
-                            fileSignature = cachedDetails?.fileSignature.orEmpty()
-                        )
-                        if (syncData != null) {
-                            loudnessAudioProcessor.resetForTrack(media.id, syncData)
+                    if (_currentMedia.value?.id == media.id) {
+                        if (cachedDetails != null) {
+                            scope.launch(Dispatchers.Main) {
+                                if (_currentMedia.value?.id == media.id) {
+                                    applyAudioFormatFromResolvedDetails(cachedDetails)
+                                }
+                            }
+                        }
+                        if (ThemePrefs.volumeNormalizationEnabled && !isUsbBitPerfectActive()) {
+                            val syncData = loudnessManager.getCachedLoudnessSync(
+                                media = media,
+                                qualityLevel = cachedDetails?.level.orEmpty(),
+                                fileSignature = cachedDetails?.fileSignature.orEmpty()
+                            )
+                            if (syncData != null) {
+                                loudnessAudioProcessor.resetForTrack(media.id, syncData)
+                            }
                         }
                     }
                     cachedUrl
@@ -572,7 +578,9 @@ class AmePlayerEngine @Inject constructor(
             .setUpstreamDataSourceFactory(httpFactory)
             .setCacheKeyFactory { dataSpec ->
                 val media = mediaMap[dataSpec.key ?: dataSpec.uri.toString()]
-                if (media is PlayableMedia.Online) "${media.id}#cached" else ""
+                if (media is PlayableMedia.Online) {
+                    "${media.id}#${sessionManager.getEffectiveQualityLevel().value}"
+                } else ""
             }
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
@@ -941,10 +949,17 @@ class AmePlayerEngine @Inject constructor(
             }
         }
 
-        // Observe JYEffect preference changes to clear URL cache dynamically
+        // Observe JYEffect and Quality preference changes to clear URL cache dynamically
         scope.launch {
             ThemePrefs.enableJyEffectFlow.collect { enabled ->
                 AppLogger.i("[AME_ONLINE_PLAY]", ">>> JYEffect preference changed to $enabled, clearing resolved URL cache.")
+                resolvedUrlCache.clear()
+                resolvedDetailsCache.clear()
+            }
+        }
+        scope.launch {
+            sessionManager.qualityState.collect { quality ->
+                AppLogger.i("[AME_ONLINE_PLAY]", ">>> Quality preference changed to ${quality.value}, clearing resolved URL cache.")
                 resolvedUrlCache.clear()
                 resolvedDetailsCache.clear()
             }
@@ -1128,7 +1143,8 @@ class AmePlayerEngine @Inject constructor(
         }
         val deferred = scope.async(Dispatchers.IO) {
             try {
-                val details = ncmApi.getSongUrlDetails(media, ThemePrefs.enableJyEffect)
+                val targetQuality = sessionManager.getEffectiveQualityLevel()
+                val details = ncmApi.getSongUrlDetails(media, quality = targetQuality)
                 if (details != null) {
                     resolvedUrlCache[media.id] = details.url
                     resolvedDetailsCache[media.id] = details

@@ -24,6 +24,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.media3.common.util.UnstableApi
@@ -87,11 +88,11 @@ class DebugFeaturesAndMatchFilterTest {
         }
         composeTestRule.waitForIdle()
 
-        composeTestRule.onNodeWithText("调试功能").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("setting_log_record").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("setting_show_match_status").assertIsDisplayed()
-        composeTestRule.onNodeWithText("开启后在歌单详情页快速过滤已匹配/未匹配本地源的歌曲").assertIsDisplayed()
-        composeTestRule.onNodeWithTag("btn_open_log_screen").assertIsDisplayed()
+        composeTestRule.onNodeWithText("调试功能").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("setting_log_record").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("setting_show_match_status").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("开启后在歌单详情页快速过滤已匹配/未匹配本地源的歌曲").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_open_log_screen").performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -169,7 +170,7 @@ class DebugFeaturesAndMatchFilterTest {
         composeTestRule.waitForIdle()
 
         assertFalse(ThemePrefs.showMatchStatus)
-        composeTestRule.onNodeWithTag("switch_show_match_status").performClick()
+        composeTestRule.onNodeWithTag("switch_show_match_status").performScrollTo().performClick()
         composeTestRule.waitForIdle()
         assertTrue(ThemePrefs.showMatchStatus)
 

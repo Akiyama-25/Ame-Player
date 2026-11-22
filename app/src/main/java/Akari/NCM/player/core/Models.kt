@@ -36,7 +36,9 @@ sealed class PlayableMedia {
         val st: Int? = null,
         val alias: String? = null,
         val transName: String? = null,
-        val matchedLyric: String? = null
+        val matchedLyric: String? = null,
+        val albumId: Long = 0L,
+        val artistsList: List<NcmArtistBrief> = emptyList()
     ) : PlayableMedia()
 
     val isLocal: Boolean get() = this is LocalNcm
@@ -72,17 +74,61 @@ enum class AudioFormat(val mimeType: String, val extension: String) {
     FLAC("audio/flac", "flac")
 }
 
-enum class QualityLevel(val value: String, val label: String) {
-    STANDARD("standard", "标准音质"),
-    EXHIGH("exhigh", "极高音质 (320k)"),
-    LOSSLESS("lossless", "无损音质 (FLAC)"),
-    HIRES("hires", "Hi-Res 高解析"),
-    JYMASTER("jymaster", "超清母带"),
-    JYEFFECT("jyeffect", "高清臻音");
+@Serializable
+enum class VipTier(val level: Int, val label: String, val badgeText: String) {
+    NONE(0, "普通用户", ""),
+    VIP(1, "黑胶 VIP", "VIP"),
+    SVIP(2, "黑胶 SVIP", "SVIP")
+}
+
+@Serializable
+data class NcmArtistBrief(
+    val id: Long = 0L,
+    val name: String
+)
+
+fun PlayableMedia.extractArtistCandidates(): List<NcmArtistBrief> {
+    if (this is PlayableMedia.Online && artistsList.isNotEmpty()) {
+        return artistsList.filter { it.name.isNotBlank() }
+    }
+    return artist.split('/', ',')
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .map { NcmArtistBrief(id = 0L, name = it) }
+}
+
+enum class QualityLevel(
+    val value: String,
+    val label: String,
+    val description: String = "",
+    val requiredVipTier: VipTier = VipTier.NONE
+) {
+    STANDARD("standard", "标准音质", "128 kbps MP3 · 极速缓冲与节省流量", VipTier.NONE),
+    EXHIGH("exhigh", "极高音质 (320k)", "320 kbps MP3 · 高保真立体声，均衡推荐", VipTier.NONE),
+    LOSSLESS("lossless", "无损音质 (FLAC)", "FLAC 16-bit / 44.1 kHz · CD 级无损音质", VipTier.VIP),
+    HIRES("hires", "Hi-Res 高解析", "FLAC 24-bit / up to 192 kHz · 高解析度无损音频", VipTier.VIP),
+    JYEFFECT("jyeffect", "高清臻音", "空间环绕臻音 · 沉浸式声场增强", VipTier.VIP),
+    JYMASTER("jymaster", "超清母带", "24-bit / 192 kHz · 录音室母带级重制", VipTier.SVIP);
 
     companion object {
         fun fromValue(value: String): QualityLevel {
             return entries.find { it.value.equals(value, ignoreCase = true) } ?: EXHIGH
+        }
+
+        fun displayLabelFor(rawLevel: String?): String {
+            return when (rawLevel?.lowercase()) {
+                "standard" -> STANDARD.label
+                "higher" -> "较高音质 (192k)"
+                "exhigh" -> EXHIGH.label
+                "lossless" -> LOSSLESS.label
+                "hires" -> HIRES.label
+                "jyeffect" -> JYEFFECT.label
+                "jymaster" -> JYMASTER.label
+                "sky" -> "沉浸环绕声"
+                "dolby" -> "杜比全景声"
+                else -> rawLevel?.takeIf { it.isNotBlank() } ?: EXHIGH.label
+            }
         }
     }
 }

@@ -12,8 +12,11 @@ import Akari.NCM.player.core.PlayerState
 import Akari.NCM.player.data.CustomPlaylist
 import Akari.NCM.player.data.PlaylistManager
 import Akari.NCM.player.data.SearchHistoryManager
+import Akari.NCM.player.data.ThemePrefs
+import Akari.NCM.player.player.AmePlayerEngine
+import Akari.NCM.player.ui.component.predictiveBackForeground
+import Akari.NCM.player.ui.component.rememberPredictiveBackState
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,10 +40,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -74,20 +81,64 @@ fun SearchScreen(
     initialQuery: String = "",
     onBack: () -> Unit,
     onSongActionClick: (PlayableMedia, CustomPlaylist?) -> Unit,
-    onOpenPlaylistTarget: ((OnlinePlaylistTarget) -> Unit)? = null
+    onOpenPlaylistTarget: ((OnlinePlaylistTarget) -> Unit)? = null,
+    onInputProgressChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
 
     var searchQuery by remember { mutableStateOf(initialQuery) }
     var selectedCategory by remember { mutableStateOf(SearchCategory.MIXED) }
 
+    // 内部详情页返回栈（支持歌手/专辑多级跳转且保留搜索现场）
+    var detailStack by remember { mutableStateOf<List<OnlinePlaylistTarget>>(emptyList()) }
+    val detailBackState = rememberPredictiveBackState(enabled = detailStack.isNotEmpty()) {
+        detailStack = detailStack.dropLast(1)
+    }
+
+    // 输入焦点与实时预览状态
+    var isSearchFieldFocused by remember { mutableStateOf(false) }
+    var livePreviewSongs by remember { mutableStateOf<List<PlayableMedia.Online>>(emptyList()) }
+    var isLivePreviewLoading by remember { mutableStateOf(false) }
+
     // 各模式结果状态
     var isSearching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var hasSearched by remember { mutableStateOf(false) }
+
+    val isInputInProgress = detailStack.isEmpty() && isSearchFieldFocused && !hasSearched
+    LaunchedEffect(isInputInProgress) {
+        onInputProgressChanged(isInputInProgress)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onInputProgressChanged(false) }
+    }
+
+    // 实时输入预览（前 5 条，250ms 防抖）
+    LaunchedEffect(searchQuery, hasSearched) {
+        val trimmed = searchQuery.trim()
+        if (trimmed.isNotBlank() && !hasSearched) {
+            isLivePreviewLoading = true
+            delay(250)
+            try {
+                val preview = withContext(Dispatchers.IO) {
+                    ncmApi.searchSongs(trimmed, limit = 5, offset = 0)
+                }
+                livePreviewSongs = preview.take(5)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                livePreviewSongs = emptyList()
+            } finally {
+                isLivePreviewLoading = false
+            }
+        } else {
+            livePreviewSongs = emptyList()
+            isLivePreviewLoading = false
+        }
+    }
 
     // 混合模式结果 (单曲<=10, 专辑<=5, 歌手按名称匹配)
     var mixedResult by remember { mutableStateOf(NcmMixedSearchResult()) }
@@ -122,6 +173,7 @@ fun SearchScreen(
         if (trimmed.isNotBlank()) {
             if (!isLoadMore) {
                 keyboardController?.hide()
+                focusManager.clearFocus()
                 searchHistoryManager.addSearchQuery(trimmed)
                 isSearching = true
                 hasSearched = true
@@ -252,49 +304,42 @@ fun SearchScreen(
         }
     }
 
-    // 点击专辑打开曲目详情
+    // 点击专辑打开曲目详情（压入内部返回栈）
     val handleAlbumClick: (NcmAlbum) -> Unit = { album ->
-        scope.launch {
-            Toast.makeText(context, "正在获取专辑《${album.name}》...", Toast.LENGTH_SHORT).show()
-            try {
-                val target = OnlinePlaylistTarget(
-                    id = album.id,
-                    title = album.name,
-                    coverImgUrl = album.picUrl ?: "",
-                    trackCount = album.songCount,
-                    creatorName = album.artistName,
-                    description = "专辑 · ${album.artistName}",
-                    isAlbum = true
-                )
-                onOpenPlaylistTarget?.invoke(target)
-            } catch (e: Exception) {
-                Toast.makeText(context, "无法获取专辑信息: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
+        keyboardController?.hide()
+        focusManager.clearFocus()
+        val target = OnlinePlaylistTarget(
+            id = album.id,
+            title = album.name,
+            coverImgUrl = album.picUrl ?: "",
+            trackCount = album.songCount,
+            creatorName = album.artistName,
+            description = "专辑 · ${album.artistName}",
+            isAlbum = true
+        )
+        detailStack = detailStack + target
     }
 
-    // 点击歌手打开热门歌曲
+    // 点击歌手打开歌手详情（压入内部返回栈）
     val handleArtistClick: (NcmArtist) -> Unit = { artist ->
-        scope.launch {
-            Toast.makeText(context, "正在获取歌手《${artist.name}》热门曲目...", Toast.LENGTH_SHORT).show()
-            try {
-                val target = OnlinePlaylistTarget(
-                    id = artist.id,
-                    title = "${artist.name} - 热门曲目",
-                    coverImgUrl = artist.picUrl ?: "",
-                    trackCount = artist.songCount,
-                    creatorName = artist.name,
-                    description = "歌手精选 · ${artist.name}",
-                    isAlbum = false,
-                    isArtist = true
-                )
-                onOpenPlaylistTarget?.invoke(target)
-            } catch (e: Exception) {
-                Toast.makeText(context, "无法获取歌手歌曲: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
+        keyboardController?.hide()
+        focusManager.clearFocus()
+        val target = OnlinePlaylistTarget(
+            id = artist.id,
+            title = artist.name,
+            coverImgUrl = artist.picUrl ?: "",
+            trackCount = artist.songCount,
+            creatorName = artist.name,
+            description = "歌手精选 · ${artist.name}",
+            isAlbum = false,
+            isArtist = true
+        )
+        detailStack = detailStack + target
     }
 
+    val showMatchStatusPreference by ThemePrefs.showMatchStatusFlow.collectAsState()
+
+    Box(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -322,10 +367,19 @@ fun SearchScreen(
 
                     TextField(
                         value = searchQuery,
-                        onValueChange = { searchQuery = it },
+                        onValueChange = { newVal ->
+                            if (newVal != searchQuery) {
+                                searchQuery = newVal
+                                hasSearched = false
+                                searchError = null
+                            }
+                        },
                         modifier = Modifier
                             .weight(1f)
-                            .focusRequester(focusRequester),
+                            .focusRequester(focusRequester)
+                            .onFocusChanged { focusState ->
+                                isSearchFieldFocused = focusState.isFocused
+                            },
                         placeholder = {
                             Text(
                                 "搜索歌曲、专辑、歌手、歌词...",
@@ -549,7 +603,7 @@ fun SearchScreen(
                         } else {
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
+                                contentPadding = PaddingValues(bottom = navBarBottom + 96.dp)
                             ) {
                                 // 1. 歌手模块（仅在名称匹配时展示）
                                 if (mixedResult.artists.isNotEmpty()) {
@@ -686,7 +740,7 @@ fun SearchScreen(
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
+                                contentPadding = PaddingValues(bottom = navBarBottom + 96.dp)
                             ) {
                                 item {
                                     Row(
@@ -760,7 +814,7 @@ fun SearchScreen(
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
+                                contentPadding = PaddingValues(bottom = navBarBottom + 96.dp)
                             ) {
                                 items(categoryAlbums, key = { it.id }) { album ->
                                     AlbumRowItem(album = album, onClick = { handleAlbumClick(album) })
@@ -780,7 +834,7 @@ fun SearchScreen(
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
+                                contentPadding = PaddingValues(bottom = navBarBottom + 96.dp)
                             ) {
                                 items(categoryArtists, key = { it.id }) { artist ->
                                     ArtistCardItem(artist = artist, onClick = { handleArtistClick(artist) })
@@ -800,7 +854,7 @@ fun SearchScreen(
                             LazyColumn(
                                 state = listState,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = navBarBottom + 32.dp)
+                                contentPadding = PaddingValues(bottom = navBarBottom + 96.dp)
                             ) {
                                 item {
                                     Text(
@@ -841,7 +895,92 @@ fun SearchScreen(
                         }
                     }
                 }
-            } else if (searchQuery.isBlank()) {
+            } else if (searchQuery.isNotBlank()) {
+                // 实时输入预览（前 5 条）
+                if (isLivePreviewLoading && livePreviewSongs.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
+                    }
+                } else if (livePreviewSongs.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "继续输入或点击搜索查看完整结果",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag("search_live_preview_list"),
+                        contentPadding = PaddingValues(bottom = navBarBottom + 96.dp)
+                    ) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "实时预览",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                TextButton(
+                                    onClick = { executeSearch(searchQuery, selectedCategory, false) },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text("查看全部结果", fontSize = 12.sp)
+                                    Icon(
+                                        Icons.Rounded.ChevronRight,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                        itemsIndexed(livePreviewSongs.take(5), key = { index, s -> "preview_${s.id}_$index" }) { index, onlineMedia ->
+                            val localMatch = remember(onlineMedia.id) {
+                                playlistManager.findLocalMatch(onlineMedia)
+                            }
+                            val targetMedia = localMatch ?: onlineMedia
+                            val isCurrent = currentMedia?.id == onlineMedia.id
+                            SongItem(
+                                media = targetMedia,
+                                isCurrentTrack = isCurrent,
+                                isPlaying = isPlaying && isCurrent,
+                                isLocalMatch = localMatch != null,
+                                onClick = {
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
+                                    val playableList = livePreviewSongs.take(5).map { m ->
+                                        playlistManager.findLocalMatch(m) ?: m
+                                    }
+                                    playerController.loadPlaylist(playableList, index, PlaylistSourceType.ONLINE)
+                                    playerController.play()
+                                },
+                                onActionClick = {
+                                    onSongActionClick(targetMedia, null)
+                                }
+                            )
+                        }
+                    }
+                }
+            } else {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -867,6 +1006,35 @@ fun SearchScreen(
                 }
             }
         }
+    }
+
+    // 内部详情页栈顶（歌手 / 专辑），覆盖在 SearchScreen 上方并保留底层搜索现场
+    val topDetailTarget = detailStack.lastOrNull()
+    val engine = playerController as? AmePlayerEngine
+    if (topDetailTarget != null && engine != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .statusBarsPadding()
+                .predictiveBackForeground(state = detailBackState, pullDownDp = 12f)
+        ) {
+            OnlinePlaylistDetailView(
+                target = topDetailTarget,
+                ncmApi = ncmApi,
+                playlistManager = playlistManager,
+                playerEngine = engine,
+                currentMedia = currentMedia,
+                isPlaying = isPlaying,
+                showMatchStatusPreference = showMatchStatusPreference,
+                onBack = { detailStack = detailStack.dropLast(1) },
+                onSongAction = onSongActionClick,
+                onOpenPlaylistTarget = { nextTarget ->
+                    detailStack = detailStack + nextTarget
+                }
+            )
+        }
+    }
     }
 }
 

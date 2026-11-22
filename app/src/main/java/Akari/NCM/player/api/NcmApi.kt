@@ -177,11 +177,23 @@ class NcmApi @Inject constructor(
     suspend fun searchLyrics(keyword: String, limit: Int = 30, offset: Int = 0): List<PlayableMedia.Online> {
         val json = searchCloudRaw(keyword, type = 1006, limit = limit, offset = offset) ?: return emptyList()
         val songs = json["songs"]?.jsonArray ?: return emptyList()
+        val htmlTagRegex = Regex("</?b>", RegexOption.IGNORE_CASE)
+        val timestampRegex = Regex("\\[\\d+:\\d+(?:[.:]\\d+)?\\]")
         return songs.mapNotNull { element ->
             val obj = element.asJsonObjectOrNull ?: return@mapNotNull null
             val lyricsArray = obj["lyrics"]?.jsonArray
-            val rawLyric = lyricsArray?.firstOrNull()?.jsonPrimitive?.contentOrNull
-            val cleanLyric = rawLyric?.replace(Regex("\\[\\d+:\\d+.*?\\]"), "")?.trim()
+                ?: obj["lyrics"]?.asJsonObjectOrNull?.get("txt")?.jsonPrimitive?.contentOrNull
+                    ?.lines()?.let { JsonArray(it.map { line -> JsonPrimitive(line) }) }
+            val rawLines = lyricsArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+            val highlighted = rawLines.filter { it.contains("<b>", ignoreCase = true) }
+            val pickedLines = (if (highlighted.isNotEmpty()) highlighted else rawLines.take(1))
+                .map { line ->
+                    line.replace(htmlTagRegex, "")
+                        .replace(timestampRegex, "")
+                        .trim()
+                }
+                .filter { it.isNotBlank() }
+            val cleanLyric = pickedLines.take(2).joinToString(" / ").takeIf { it.isNotBlank() }
             parseSong(obj, matchedLyric = cleanLyric)
         }
     }
@@ -205,12 +217,19 @@ class NcmApi @Inject constructor(
         val rawAlbums = albumsDeferred.await()
         val rawArtists = artistsDeferred.await()
 
+        val lyricMap = lyricSongs.associateBy { it.id }
+
         // 单曲组合：优先歌曲名匹配，歌词命中补充，按 id 去重，最多 10 首
         val combinedSongs = mutableListOf<PlayableMedia.Online>()
         val seenIds = mutableSetOf<String>()
         for (s in directSongs) {
             if (seenIds.add(s.id)) {
-                combinedSongs.add(s)
+                val matched = lyricMap[s.id]?.matchedLyric
+                combinedSongs.add(
+                    if (s.matchedLyric.isNullOrBlank() && !matched.isNullOrBlank()) {
+                        s.copy(matchedLyric = matched)
+                    } else s
+                )
             }
         }
         for (s in lyricSongs) {
@@ -299,6 +318,142 @@ class NcmApi @Inject constructor(
         }
     }
 
+    suspend fun getArtistSongs(
+        artistId: Long,
+        limit: Int = 50,
+        offset: Int = 0
+    ): Pair<List<PlayableMedia.Online>, Boolean> {
+        var parsedSongs: List<PlayableMedia.Online>? = null
+        var hasMore = false
+
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject {
+                    put("id", artistId)
+                    put("order", "hot")
+                    put("limit", limit)
+                    put("offset", offset)
+                    put("private_cloud", true)
+                    put("work_type", 1)
+                }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    "${NeteaseEndpoints.HOST_SERVICE}/eapi/v1/artist/songs",
+                    "/api/v1/artist/songs",
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val songs = json?.get("songs")?.jsonArray
+                if (songs != null) {
+                    parsedSongs = songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    hasMore = json["more"]?.jsonPrimitive?.booleanOrNull ?: false
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_NCM_API", "Direct getArtistSongs failed: ${e.message}")
+            }
+        }
+
+        if (parsedSongs == null) {
+            try {
+                val response = client.get("$baseUrl/artist/songs") {
+                    parameter("id", artistId)
+                    parameter("order", "hot")
+                    parameter("limit", limit)
+                    parameter("offset", offset)
+                }
+                val body = response.bodyAsText()
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val songs = json?.get("songs")?.jsonArray
+                if (songs != null) {
+                    parsedSongs = songs.mapNotNull { parseSong(it.asJsonObjectOrNull) }
+                    hasMore = json["more"]?.jsonPrimitive?.booleanOrNull ?: false
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+            }
+        }
+
+        var list = parsedSongs ?: emptyList()
+        if (list.isEmpty() && offset == 0) {
+            val top = getArtistTopSongs(artistId)
+            return top to false
+        }
+
+        val missingCoverIds = list.filter { it.coverUrl.isNullOrBlank() }.map { it.id }
+        if (missingCoverIds.isNotEmpty()) {
+            val details = try {
+                getSongDetails(missingCoverIds)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                emptyList()
+            }
+            if (details.isNotEmpty()) {
+                val detailMap = details.associateBy { it.id }
+                list = list.map { song ->
+                    val d = detailMap[song.id]
+                    if (d != null && song.coverUrl.isNullOrBlank()) {
+                        song.copy(
+                            coverUrl = d.coverUrl ?: song.coverUrl,
+                            albumId = if (song.albumId == 0L) d.albumId else song.albumId,
+                            album = song.album.ifBlank { d.album }
+                        )
+                    } else song
+                }
+            }
+        }
+
+        return list to hasMore
+    }
+
+    suspend fun getArtistAlbums(
+        artistId: Long,
+        limit: Int = 30,
+        offset: Int = 0
+    ): Pair<List<NcmAlbum>, Boolean> {
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject {
+                    put("limit", limit)
+                    put("offset", offset)
+                    put("total", true)
+                }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    "${NeteaseEndpoints.HOST_SERVICE}/eapi/artist/albums/$artistId",
+                    "/api/artist/albums/$artistId",
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val hotAlbums = json?.get("hotAlbums")?.jsonArray
+                if (hotAlbums != null) {
+                    val list = hotAlbums.mapNotNull { parseAlbum(it.asJsonObjectOrNull) }
+                    val more = json["more"]?.jsonPrimitive?.booleanOrNull ?: false
+                    return list to more
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_NCM_API", "Direct getArtistAlbums failed: ${e.message}")
+            }
+        }
+        return try {
+            val response = client.get("$baseUrl/artist/album") {
+                parameter("id", artistId)
+                parameter("limit", limit)
+                parameter("offset", offset)
+            }
+            val body = response.bodyAsText()
+            val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+            val hotAlbums = json?.get("hotAlbums")?.jsonArray ?: return emptyList<NcmAlbum>() to false
+            val list = hotAlbums.mapNotNull { parseAlbum(it.asJsonObjectOrNull) }
+            val more = json["more"]?.jsonPrimitive?.booleanOrNull ?: false
+            list to more
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            emptyList<NcmAlbum>() to false
+        }
+    }
+
     suspend fun getSongDetails(songIds: List<String>): List<PlayableMedia.Online> {
         if (songIds.isEmpty()) return emptyList()
         val results = mutableListOf<PlayableMedia.Online>()
@@ -356,20 +511,27 @@ class NcmApi @Inject constructor(
     }
 
     /**
-     * 获取歌曲播放链接与音频特征元数据 (按账号可用权益由高至低逐级递减尝试，音质由服务端控制)
-     * @param enableJyEffect 是否优先尝试高清臻音 / 超清母带音质 (由用户偏好开关控制)
+     * 获取歌曲播放链接与音频特征元数据 (从指定音质或当前账号有效音质向下逐级递减尝试，绝不向上越级)
      */
     suspend fun getSongUrlDetails(
         song: PlayableMedia.Online,
+        quality: QualityLevel? = null,
         enableJyEffect: Boolean = ThemePrefs.enableJyEffect
     ): ResolvedSongUrl? {
-        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (enableJyEffect=$enableJyEffect, isDirectMode=$isDirectMode)")
+        val targetQuality = quality ?: sessionManager?.getEffectiveQualityLevel() ?: QualityLevel.EXHIGH
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (targetQuality=${targetQuality.value}, enableJyEffect=$enableJyEffect, isDirectMode=$isDirectMode)")
 
-        // 默认按账号可获取的最高级别链依次尝试: (JYMASTER / JYEFFECT) -> HIRES -> LOSSLESS -> EXHIGH -> STANDARD
-        val qualitiesToTry = if (enableJyEffect) {
-            listOf(QualityLevel.JYMASTER, QualityLevel.JYEFFECT, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
-        } else {
-            listOf(QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+        val qualitiesToTry = when (targetQuality) {
+            QualityLevel.JYMASTER -> if (enableJyEffect) {
+                listOf(QualityLevel.JYMASTER, QualityLevel.JYEFFECT, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+            } else {
+                listOf(QualityLevel.JYMASTER, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+            }
+            QualityLevel.JYEFFECT -> listOf(QualityLevel.JYEFFECT, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+            QualityLevel.HIRES -> listOf(QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+            QualityLevel.LOSSLESS -> listOf(QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
+            QualityLevel.EXHIGH -> listOf(QualityLevel.EXHIGH, QualityLevel.STANDARD)
+            QualityLevel.STANDARD -> listOf(QualityLevel.STANDARD)
         }
 
         var trialFallbackUrl: ResolvedSongUrl? = null
@@ -505,11 +667,27 @@ class NcmApi @Inject constructor(
         return null
     }
 
+    suspend fun getSongUrlDetails(
+        song: PlayableMedia.Online,
+        enableJyEffect: Boolean
+    ): ResolvedSongUrl? = getSongUrlDetails(song, quality = null, enableJyEffect = enableJyEffect)
+
     /**
      * 获取歌曲播放链接
      */
-    suspend fun getSongUrl(song: PlayableMedia.Online, enableJyEffect: Boolean = ThemePrefs.enableJyEffect): String? {
-        return getSongUrlDetails(song, enableJyEffect)?.url
+    suspend fun getSongUrl(
+        song: PlayableMedia.Online,
+        quality: QualityLevel? = null,
+        enableJyEffect: Boolean = ThemePrefs.enableJyEffect
+    ): String? {
+        return getSongUrlDetails(song, quality, enableJyEffect)?.url
+    }
+
+    suspend fun getSongUrl(
+        song: PlayableMedia.Online,
+        enableJyEffect: Boolean
+    ): String? {
+        return getSongUrlDetails(song, quality = null, enableJyEffect = enableJyEffect)?.url
     }
 
     private suspend fun getForcedMp3Details(songId: String, bitrate: Int): ResolvedSongUrl? {
@@ -1025,14 +1203,17 @@ class NcmApi @Inject constructor(
                 }
 
                 if (nickname.isNotBlank() || userId > 0L) {
+                    val (isSvip, redVipLevel) = fetchVipEntitlement()
                     val profile = UserProfile(
                         userId = userId,
                         nickname = nickname.ifBlank { "网易云用户$userId" },
                         avatarUrl = avatarUrl,
                         vipType = vipType,
-                        signature = signature
+                        signature = signature,
+                        isSvip = isSvip,
+                        redVipLevel = redVipLevel
                     )
-                    AppLogger.i("AME_LOGIN_DEBUG", "Direct getUserProfile success: userId=$userId, nickname=${profile.nickname}")
+                    AppLogger.i("AME_LOGIN_DEBUG", "Direct getUserProfile success: userId=$userId, nickname=${profile.nickname}, isSvip=$isSvip, redVipLevel=$redVipLevel")
                     sessionManager?.saveUserProfile(profile)
                     return profile
                 }
@@ -1106,14 +1287,17 @@ class NcmApi @Inject constructor(
             }
 
             if (nickname.isNotBlank() || userId > 0L) {
+                val (isSvip, redVipLevel) = fetchVipEntitlement()
                 val profile = UserProfile(
                     userId = userId,
                     nickname = nickname.ifBlank { "网易云用户$userId" },
                     avatarUrl = avatarUrl,
                     vipType = vipType,
-                    signature = signature
+                    signature = signature,
+                    isSvip = isSvip,
+                    redVipLevel = redVipLevel
                 )
-                AppLogger.i("AME_LOGIN_DEBUG", "getUserProfile success: userId=$userId, nickname=${profile.nickname}, avatar=$avatarUrl")
+                AppLogger.i("AME_LOGIN_DEBUG", "getUserProfile success: userId=$userId, nickname=${profile.nickname}, avatar=$avatarUrl, isSvip=$isSvip, redVipLevel=$redVipLevel")
                 sessionManager?.saveUserProfile(profile)
                 return profile
             }
@@ -1123,6 +1307,54 @@ class NcmApi @Inject constructor(
             AppLogger.e("AME_LOGIN_DEBUG", "getUserProfile Exception", e)
             null
         }
+    }
+
+    private suspend fun fetchVipEntitlement(): Pair<Boolean, Int> {
+        var json: JsonObject? = null
+        if (isDirectMode) {
+            try {
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_VIP_INFO,
+                    NeteaseEndpoints.PATH_EAPI_VIP_INFO,
+                    "{}"
+                )
+                json = Json.parseToJsonElement(body).asJsonObjectOrNull
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+            }
+        }
+        if (json == null) {
+            for (path in listOf("$baseUrl/vip/info/v2", "$baseUrl/vip/info")) {
+                try {
+                    val resp = client.get(path) {
+                        parameter("timestamp", System.currentTimeMillis())
+                    }
+                    val parsed = Json.parseToJsonElement(resp.bodyAsText()).asJsonObjectOrNull
+                    if (parsed != null && (parsed["code"]?.jsonPrimitive?.intOrNull == 200 || parsed["data"] != null)) {
+                        json = parsed
+                        break
+                    }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                }
+            }
+        }
+        if (json == null) return false to 0
+        val data = json["data"]?.asJsonObjectOrNull ?: json
+        val vipRights = data["vipRights"]?.asJsonObjectOrNull
+        val redplus = data["redplus"]?.asJsonObjectOrNull ?: vipRights?.get("redplus")?.asJsonObjectOrNull
+        val associator = data["associator"]?.asJsonObjectOrNull ?: vipRights?.get("associator")?.asJsonObjectOrNull
+        val now = System.currentTimeMillis()
+        val redplusActive = redplus != null && (
+            (redplus["expireTime"]?.jsonPrimitive?.longOrNull ?: 0L) > now ||
+                (redplus["vipCode"]?.jsonPrimitive?.intOrNull ?: 0) > 0
+            )
+        val redVipLevel = data["redVipLevel"]?.jsonPrimitive?.intOrNull
+            ?: vipRights?.get("redVipLevel")?.jsonPrimitive?.intOrNull
+            ?: associator?.get("vipLevel")?.jsonPrimitive?.intOrNull
+            ?: 0
+        return redplusActive to redVipLevel
     }
 
     suspend fun getHomepageDragonBalls(): List<HomepageDragonBall> {
@@ -1994,6 +2226,85 @@ data class NcmPlaylistDetailResult(
     }
 
     /**
+     * 获取云端已喜欢的歌曲 ID 列表 (Netease API: /api/song/like/get 或 /likelist)
+     * @return 成功返回 ID 集合（可能为空），失败返回 null
+     */
+    suspend fun getLikedSongIds(uid: Long = 0L): Set<String>? {
+        val targetUid = if (uid > 0L) uid else (sessionManager?.getUserProfile()?.userId ?: 0L)
+        if (isDirectMode) {
+            val payload = buildJsonObject {
+                if (targetUid > 0L) put("uid", targetUid)
+                put("csrf_token", "")
+            }.toString()
+            try {
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_SONG_LIKE_GET,
+                    NeteaseEndpoints.PATH_EAPI_SONG_LIKE_GET,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
+                if (code == 200) {
+                    val ids = json?.get("ids")?.jsonArray
+                        ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                        ?.toSet()
+                        ?: emptySet()
+                    AppLogger.i("AME_CLOUD_SYNC", "Direct EAPI getLikedSongIds uid=$targetUid count=${ids.size}")
+                    return ids
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_CLOUD_SYNC", "Direct EAPI getLikedSongIds failed: ${e.message}")
+            }
+            try {
+                val (body, _) = directClient.postWeapi(
+                    client,
+                    NeteaseEndpoints.URL_WEAPI_SONG_LIKE_GET,
+                    payload
+                )
+                val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+                val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
+                if (code == 200) {
+                    val ids = json?.get("ids")?.jsonArray
+                        ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                        ?.toSet()
+                        ?: emptySet()
+                    AppLogger.i("AME_CLOUD_SYNC", "Direct WEAPI getLikedSongIds uid=$targetUid count=${ids.size}")
+                    return ids
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_CLOUD_SYNC", "Direct WEAPI getLikedSongIds failed: ${e.message}")
+            }
+        }
+        return try {
+            val response = client.get("$baseUrl/likelist") {
+                if (targetUid > 0L) parameter("uid", targetUid)
+                parameter("timestamp", System.currentTimeMillis())
+            }
+            val body = response.bodyAsText()
+            val json = Json.parseToJsonElement(body).asJsonObjectOrNull
+            val code = json?.get("code")?.jsonPrimitive?.intOrNull ?: 0
+            if (code == 200) {
+                val ids = json?.get("ids")?.jsonArray
+                    ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                    ?.toSet()
+                    ?: emptySet()
+                AppLogger.i("AME_CLOUD_SYNC", "getLikedSongIds uid=$targetUid count=${ids.size}")
+                ids
+            } else {
+                AppLogger.w("AME_CLOUD_SYNC", "getLikedSongIds unexpected code=$code")
+                null
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            AppLogger.e("AME_CLOUD_SYNC", "getLikedSongIds failed for uid=$targetUid", e)
+            null
+        }
+    }
+
+    /**
      * 云端喜欢 / 取消喜欢歌曲 (Netease API: GET /like?id=xxx&like=true/false)
      */
     suspend fun likeSong(songId: String, like: Boolean): Boolean {
@@ -2087,14 +2398,17 @@ data class NcmPlaylistDetailResult(
         return try {
             val id = json["id"]?.jsonPrimitive?.longOrNull ?: return null
             val name = json["name"]?.jsonPrimitive?.contentOrNull ?: ""
-            val artists = json["ar"]?.jsonArray?.mapNotNull {
-                it.asJsonObjectOrNull?.get("name")?.jsonPrimitive?.contentOrNull
-            }?.joinToString("/")
-                ?: json["artists"]?.jsonArray?.mapNotNull {
-                    it.asJsonObjectOrNull?.get("name")?.jsonPrimitive?.contentOrNull
-                }?.joinToString("/") ?: ""
+            val rawArtistsArray = json["ar"]?.jsonArray ?: json["artists"]?.jsonArray
+            val artistsList = rawArtistsArray?.mapNotNull { el ->
+                val obj = el.asJsonObjectOrNull ?: return@mapNotNull null
+                val artistName = obj["name"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val artistId = obj["id"]?.jsonPrimitive?.longOrNull ?: 0L
+                NcmArtistBrief(id = artistId, name = artistName)
+            } ?: emptyList()
+            val artists = artistsList.joinToString("/") { it.name }
 
             val albumObj = json["al"]?.asJsonObjectOrNull ?: json["album"]?.asJsonObjectOrNull
+            val albumId = albumObj?.get("id")?.jsonPrimitive?.longOrNull ?: 0L
             val albumName = albumObj?.get("name")?.jsonPrimitive?.contentOrNull ?: ""
             val picUrl = albumObj?.get("picUrl")?.jsonPrimitive?.contentOrNull
 
@@ -2129,7 +2443,9 @@ data class NcmPlaylistDetailResult(
                 fee = json["fee"]?.jsonPrimitive?.intOrNull ?: 0,
                 alias = alias,
                 transName = transName,
-                matchedLyric = matchedLyric
+                matchedLyric = matchedLyric,
+                albumId = albumId,
+                artistsList = artistsList
             )
         } catch (_: Exception) {
             null
