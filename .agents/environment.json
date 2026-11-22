@@ -1,0 +1,3 @@
+{
+  "install": "sed -i '/case \\$- in/,/esac/d' ~/.bashrc 2>/dev/null || true; ANDROID_SDK=\"${ANDROID_HOME:-/opt/android-sdk}\"; SDKMANAGER=\"$(find \"$ANDROID_SDK/cmdline-tools\" -name sdkmanager -type f -print -quit 2>/dev/null || true)\"; if [ -n \"$SDKMANAGER\" ]; then yes | \"$SDKMANAGER\" --licenses >/dev/null 2>&1 || true; \"$SDKMANAGER\" --install \"cmake;3.22.1\" >/dev/null; fi; chmod +x ./gradlew; ./gradlew --version --no-daemon >/dev/null"
+}
