@@ -367,6 +367,8 @@ jobs:
             "$HOME/.gradle/daemon" \
             "$HOME/.gradle/tmp" \
             "$HOME/.android/build-cache" \
+            "${TMPDIR:-/tmp}"/gradle* \
+            "${TMPDIR:-/tmp}"/kotlin* \
             "$RUNNER_TEMP/"* \
             /tmp/gradle* /tmp/kotlin* /tmp/sdk.log 2>/dev/null || true
           echo ">>> Disk usage after cleanup:"
