@@ -752,7 +752,11 @@ fun MainScreen(
                                                                 verticalAlignment = Alignment.CenterVertically
                                                             ) {
                                                                 IconButton(onClick = { selectedPlaylistForDetail = null }) {
-                                                                    Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
+                                                                    Icon(
+                                                                        Icons.AutoMirrored.Rounded.ArrowBack,
+                                                                        contentDescription = "返回",
+                                                                        tint = MaterialTheme.colorScheme.onSurface
+                                                                    )
                                                                 }
                                                                 Column(
                                                                     modifier = Modifier
@@ -763,6 +767,7 @@ fun MainScreen(
                                                                         currentPlaylist.name,
                                                                         style = MaterialTheme.typography.titleLarge,
                                                                         fontWeight = FontWeight.Bold,
+                                                                        color = MaterialTheme.colorScheme.onSurface,
                                                                         maxLines = 1,
                                                                         overflow = TextOverflow.Ellipsis
                                                                     )
@@ -1459,7 +1464,10 @@ private fun PlaylistsView(
                             .fillMaxWidth()
                             .padding(vertical = 6.dp)
                             .clickable { onSelectPlaylist(playlist) },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
                     ) {
                         Row(
                             modifier = Modifier

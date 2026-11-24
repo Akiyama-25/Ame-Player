@@ -579,4 +579,26 @@ class OnlinePlaylistBrowseTest {
         composeTestRule.onNodeWithText("∞").assertIsDisplayed()
         composeTestRule.onNode(androidx.compose.ui.test.hasContentDescription("无限模式")).assertIsDisplayed()
     }
+
+    @Test
+    fun testAmePlayerTheme_darkMode_providesLightLocalContentColorOutsideScaffold() {
+        ThemePrefs.init(context)
+        ThemePrefs.setTheme(context, ThemePrefs.THEME_DARK)
+        var capturedContentColor = androidx.compose.ui.graphics.Color.Unspecified
+        var capturedOnBackground = androidx.compose.ui.graphics.Color.Unspecified
+
+        composeTestRule.setContent {
+            Akari.NCM.player.ui.theme.AmePlayerTheme {
+                capturedContentColor = androidx.compose.material3.LocalContentColor.current
+                capturedOnBackground = androidx.compose.material3.MaterialTheme.colorScheme.onBackground
+            }
+        }
+
+        composeTestRule.waitForIdle()
+        assertEquals(capturedOnBackground, capturedContentColor)
+        assertTrue(
+            "Dark theme LocalContentColor must be light instead of Color.Black",
+            capturedContentColor.red * 0.2126f + capturedContentColor.green * 0.7152f + capturedContentColor.blue * 0.0722f > 0.5f
+        )
+    }
 }

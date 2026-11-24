@@ -214,7 +214,11 @@ fun AmePlayerTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         shapes = AmeExpressiveShapes,
-        typography = typography,
-        content = content
-    )
+        typography = typography
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalContentColor provides colorScheme.onBackground,
+            content = content
+        )
+    }
 }

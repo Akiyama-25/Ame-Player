@@ -8,6 +8,8 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import androidx.annotation.FontRes
+import androidx.annotation.VisibleForTesting
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
@@ -21,23 +23,35 @@ import kotlin.math.roundToInt
 
 enum class FontSource {
     SYSTEM_DEFAULT,
-    SYSTEM_FILE,
-    IMPORTED
+    PRESET,
+    IMPORTED,
+    /** 仅用于兼容旧版本持久化的 system:... 选中态，不再参与系统目录扫描 */
+    SYSTEM_FILE
 }
+
+data class PresetFontConfig(
+    val id: String,
+    val displayName: String,
+    val subtitle: String = "预设字体",
+    val candidatePaths: List<String> = emptyList(),
+    @FontRes val resId: Int? = null
+)
 
 data class FontItemInfo(
     val id: String,
     val displayName: String,
     val filePath: String?,
     val source: FontSource,
-    val inspection: FontInspectionResult?
+    val inspection: FontInspectionResult?,
+    val subtitle: String? = null,
+    @FontRes val resId: Int? = null
 )
 
 /**
  * 全局自定义字体管理器。
  *
  * 支持：
- * - 扫描系统字体目录与用户导入字体目录 (`filesDir/custom_fonts`)
+ * - 展示「系统默认 + 显式配置的预设字体 + 用户手动导入字体 (`filesDir/custom_fonts`)」
  * - 通过 SAF `Uri` 导入并校验 `.ttf/.otf/.ttc/.otc` 字体
  * - 可变字体 `wght` 轴 9 档字重映射 (`W100..W900`) 与安全回退
  * - 持久化已选字体 ID 并通过 `StateFlow` 驱动 `AmePlayerTheme`
@@ -50,12 +64,11 @@ object CustomFontManager {
     const val SYSTEM_DEFAULT_ID = "system_default"
 
     private val SUPPORTED_EXTENSIONS = setOf("ttf", "otf", "ttc", "otc")
-    private val SYSTEM_FONT_DIRS = listOf(
-        "/system/fonts",
-        "/system/product/fonts",
-        "/product/fonts",
-        "/vendor/fonts"
-    )
+    private val DEFAULT_PRESET_FONTS: List<PresetFontConfig> = emptyList()
+
+    @VisibleForTesting
+    internal var presetFontsProvider: () -> List<PresetFontConfig> = { DEFAULT_PRESET_FONTS }
+
     private val COMPOSE_WEIGHTS = listOf(
         FontWeight.W100,
         FontWeight.W200,
@@ -84,6 +97,19 @@ object CustomFontManager {
     private val _importedFontsFlow = MutableStateFlow<List<FontItemInfo>>(emptyList())
     val importedFontsFlow: StateFlow<List<FontItemInfo>> = _importedFontsFlow.asStateFlow()
 
+    @VisibleForTesting
+    internal fun resetForTest() {
+        synchronized(this) {
+            initialized = false
+            prefs = null
+            presetFontsProvider = { DEFAULT_PRESET_FONTS }
+            _currentFontFamilyFlow.value = null
+            _selectedFontIdFlow.value = null
+            _selectedFontInfoFlow.value = null
+            _importedFontsFlow.value = emptyList()
+        }
+    }
+
     fun init(context: Context) {
         if (initialized) return
         synchronized(this) {
@@ -103,14 +129,14 @@ object CustomFontManager {
 
     fun getAvailableFonts(context: Context): List<FontItemInfo> {
         init(context)
+        val presetFonts = loadPresetFonts()
         val imported = scanImportedFonts(context.applicationContext)
         _importedFontsFlow.value = imported
-        val systemFonts = scanSystemFonts()
 
-        val result = ArrayList<FontItemInfo>(1 + imported.size + systemFonts.size)
+        val result = ArrayList<FontItemInfo>(1 + presetFonts.size + imported.size)
         result.add(systemDefaultInfo())
+        result.addAll(presetFonts)
         result.addAll(imported)
-        result.addAll(systemFonts)
         return result
     }
 
@@ -201,7 +227,8 @@ object CustomFontManager {
 
         val info = findFontById(context, normalizedId)
         val file = info?.filePath?.let { File(it) }?.takeIf { it.exists() && it.isFile }
-        if (info == null || file == null) {
+        val resId = info?.resId
+        if (info == null || (file == null && resId == null)) {
             _selectedFontIdFlow.value = null
             _selectedFontInfoFlow.value = systemDefaultInfo()
             _currentFontFamilyFlow.value = null
@@ -211,7 +238,7 @@ object CustomFontManager {
             return
         }
 
-        val family = buildComposeFontFamily(file, info.inspection)
+        val family = buildComposeFontFamily(file = file, resId = resId, inspection = info.inspection)
         if (family == null) {
             _selectedFontIdFlow.value = null
             _selectedFontInfoFlow.value = systemDefaultInfo()
@@ -233,6 +260,10 @@ object CustomFontManager {
     private fun findFontById(context: Context, id: String): FontItemInfo? {
         _importedFontsFlow.value.firstOrNull { it.id == id }?.let { return it }
 
+        if (id.startsWith("preset:")) {
+            loadPresetFonts().firstOrNull { it.id == id }?.let { return it }
+        }
+
         if (id.startsWith("imported:")) {
             val file = File(customFontsDir(context), id.removePrefix("imported:"))
             if (file.exists() && file.isFile) {
@@ -241,11 +272,12 @@ object CustomFontManager {
             }
         }
 
+        // 兼容旧版本持久化的 system:... 选中态（单文件定向查找，不再做全量系统扫描）
         if (id.startsWith("system:")) {
             val file = File(id.removePrefix("system:"))
             if (file.exists() && file.isFile) {
                 val inspection = OpenTypeFontInspector.inspect(file)
-                if (inspection.isValidFont) return buildSystemFontInfo(file, inspection)
+                if (inspection.isValidFont) return buildLegacySystemFontInfo(file, inspection)
             }
         }
 
@@ -253,9 +285,20 @@ object CustomFontManager {
     }
 
     private fun buildComposeFontFamily(
-        file: File,
+        file: File?,
+        @FontRes resId: Int?,
         inspection: FontInspectionResult?
     ): FontFamily? {
+        if (resId != null) {
+            return runCatching {
+                FontFamily(Font(resId = resId))
+            }.onFailure { err ->
+                AppLogger.w(TAG, "Resource FontFamily build failed for resId=$resId: ${err.message}")
+            }.getOrNull()
+        }
+
+        if (file == null) return null
+
         val weightAxis = inspection?.weightAxis
         if (weightAxis != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !inspection.isCollection) {
             val variableFamily = runCatching {
@@ -289,6 +332,53 @@ object CustomFontManager {
         }.getOrNull()
     }
 
+    private fun loadPresetFonts(): List<FontItemInfo> {
+        val configs = presetFontsProvider()
+        if (configs.isEmpty()) return emptyList()
+
+        val result = ArrayList<FontItemInfo>(configs.size)
+        for (config in configs) {
+            var matchedFile: File? = null
+            var matchedInspection: FontInspectionResult? = null
+            for (path in config.candidatePaths) {
+                val candidate = File(path)
+                if (!candidate.exists() || !candidate.isFile) continue
+                val inspection = OpenTypeFontInspector.inspect(candidate)
+                if (inspection.isValidFont) {
+                    matchedFile = candidate
+                    matchedInspection = inspection
+                    break
+                }
+            }
+
+            if (matchedFile != null && matchedInspection != null) {
+                result.add(
+                    FontItemInfo(
+                        id = config.id,
+                        displayName = config.displayName,
+                        filePath = matchedFile.absolutePath,
+                        source = FontSource.PRESET,
+                        inspection = matchedInspection,
+                        subtitle = config.subtitle
+                    )
+                )
+            } else if (config.resId != null) {
+                result.add(
+                    FontItemInfo(
+                        id = config.id,
+                        displayName = config.displayName,
+                        filePath = null,
+                        source = FontSource.PRESET,
+                        inspection = null,
+                        subtitle = config.subtitle,
+                        resId = config.resId
+                    )
+                )
+            }
+        }
+        return result
+    }
+
     private fun scanImportedFonts(context: Context): List<FontItemInfo> {
         val dir = customFontsDir(context)
         val files = dir.listFiles() ?: return emptyList()
@@ -302,26 +392,6 @@ object CustomFontManager {
             .toList()
     }
 
-    private fun scanSystemFonts(): List<FontItemInfo> {
-        val seenPaths = HashSet<String>()
-        val list = ArrayList<FontItemInfo>()
-        for (dirPath in SYSTEM_FONT_DIRS) {
-            val dir = File(dirPath)
-            if (!dir.exists() || !dir.isDirectory) continue
-            val files = dir.listFiles() ?: continue
-            for (file in files) {
-                if (!file.isFile || !hasSupportedExtension(file)) continue
-                val canonical = runCatching { file.canonicalPath }.getOrDefault(file.absolutePath)
-                if (!seenPaths.add(canonical)) continue
-                val inspection = OpenTypeFontInspector.inspect(file)
-                if (inspection.isValidFont) {
-                    list.add(buildSystemFontInfo(file, inspection))
-                }
-            }
-        }
-        return list.sortedBy { it.displayName.lowercase(Locale.ROOT) }
-    }
-
     private fun buildImportedFontInfo(
         file: File,
         inspection: FontInspectionResult
@@ -331,11 +401,12 @@ object CustomFontManager {
             displayName = file.nameWithoutExtension,
             filePath = file.absolutePath,
             source = FontSource.IMPORTED,
-            inspection = inspection
+            inspection = inspection,
+            subtitle = "已导入本地字体"
         )
     }
 
-    private fun buildSystemFontInfo(
+    private fun buildLegacySystemFontInfo(
         file: File,
         inspection: FontInspectionResult
     ): FontItemInfo {
@@ -344,7 +415,8 @@ object CustomFontManager {
             displayName = file.nameWithoutExtension,
             filePath = file.absolutePath,
             source = FontSource.SYSTEM_FILE,
-            inspection = inspection
+            inspection = inspection,
+            subtitle = file.absolutePath
         )
     }
 
@@ -354,7 +426,8 @@ object CustomFontManager {
             displayName = "系统默认",
             filePath = null,
             source = FontSource.SYSTEM_DEFAULT,
-            inspection = null
+            inspection = null,
+            subtitle = "使用系统与 Compose 默认字体排版"
         )
     }
 

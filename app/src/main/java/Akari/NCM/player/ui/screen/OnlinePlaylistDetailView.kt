@@ -470,13 +470,17 @@ fun OnlinePlaylistDetailView(
         )
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .wrapContentWidth(Alignment.CenterHorizontally)
-            .widthIn(max = 840.dp)
+    Surface(
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        modifier = Modifier.fillMaxSize()
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .widthIn(max = 840.dp)
+        ) {
         if (target.isArtist && artistTab == 1) {
             // 歌手专辑标签页
             if (isAlbumsLoading || albumsError != null || artistAlbums.isEmpty()) {
@@ -692,6 +696,7 @@ fun OnlinePlaylistDetailView(
                 }
             }
         }
+        }
     }
 }
 
@@ -715,7 +720,11 @@ private fun OnlinePlaylistTopBar(
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
+            Icon(
+                Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = "返回",
+                tint = MaterialTheme.colorScheme.onSurface
+            )
         }
         Text(
             text = when {
@@ -726,6 +735,7 @@ private fun OnlinePlaylistTopBar(
             },
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
@@ -789,7 +799,8 @@ private fun OnlinePlaylistHeaderCard(
             .padding(horizontal = 16.dp, vertical = 6.dp),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            contentColor = MaterialTheme.colorScheme.onSurface
         )
     ) {
         Row(
@@ -827,7 +838,8 @@ private fun OnlinePlaylistHeaderCard(
                             .align(Alignment.BottomEnd)
                             .padding(4.dp),
                         shape = RoundedCornerShape(6.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
                     ) {
                         Text(
                             text = "▶ ${formatPlayCount(playlistMeta.playCount)}",
@@ -857,6 +869,7 @@ private fun OnlinePlaylistHeaderCard(
                     },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -994,7 +1007,10 @@ private fun ArtistAlbumRowItem(
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            contentColor = MaterialTheme.colorScheme.onSurface
+        )
     ) {
         Row(
             modifier = Modifier
@@ -1040,6 +1056,7 @@ private fun ArtistAlbumRowItem(
                     text = displayName,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )

@@ -2085,7 +2085,10 @@ private fun UserProfileDetailDialog(
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                        contentColor = MaterialTheme.colorScheme.onSurface
+                    )
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2321,8 +2324,12 @@ private fun FontSelectionDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var availableFonts by remember(importedFonts) {
-        mutableStateOf(CustomFontManager.getAvailableFonts(context))
+    var availableFonts by remember { mutableStateOf<List<FontItemInfo>>(emptyList()) }
+
+    LaunchedEffect(importedFonts) {
+        availableFonts = withContext(Dispatchers.IO) {
+            CustomFontManager.getAvailableFonts(context)
+        }
     }
 
     val fontPickerLauncher = rememberLauncherForActivityResult(
@@ -2334,7 +2341,9 @@ private fun FontSelectionDialog(
                     CustomFontManager.importFontFromUri(context, uri)
                 }
                 result.onSuccess { info ->
-                    availableFonts = CustomFontManager.getAvailableFonts(context)
+                    availableFonts = withContext(Dispatchers.IO) {
+                        CustomFontManager.getAvailableFonts(context)
+                    }
                     Toast.makeText(context, "已导入并应用字体: ${info.displayName}", Toast.LENGTH_SHORT).show()
                 }.onFailure { err ->
                     Toast.makeText(context, "字体导入失败: ${err.message ?: "无效字体文件"}", Toast.LENGTH_SHORT).show()
@@ -2343,8 +2352,8 @@ private fun FontSelectionDialog(
         }
     }
 
-    val systemFonts = remember(availableFonts) {
-        availableFonts.filter { it.source == FontSource.SYSTEM_FILE }
+    val presetFonts = remember(availableFonts) {
+        availableFonts.filter { it.source == FontSource.PRESET }
     }
     val customFonts = remember(availableFonts) {
         availableFonts.filter { it.source == FontSource.IMPORTED }
@@ -2399,6 +2408,30 @@ private fun FontSelectionDialog(
                         )
                     }
 
+                    if (presetFonts.isNotEmpty()) {
+                        item(key = "header_preset") {
+                            Text(
+                                text = "预设字体 (${presetFonts.size})",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(start = 6.dp, top = 8.dp, bottom = 2.dp)
+                            )
+                        }
+                        items(presetFonts, key = { it.id }) { font ->
+                            FontOptionRow(
+                                title = font.displayName,
+                                subtitle = font.subtitle ?: "预设字体",
+                                isSelected = selectedFontId == font.id,
+                                inspection = font.inspection,
+                                onSelect = {
+                                    CustomFontManager.selectFont(context, font.id)
+                                    onDismiss()
+                                }
+                            )
+                        }
+                    }
+
                     if (customFonts.isNotEmpty()) {
                         item(key = "header_imported") {
                             Text(
@@ -2412,7 +2445,7 @@ private fun FontSelectionDialog(
                         items(customFonts, key = { it.id }) { font ->
                             FontOptionRow(
                                 title = font.displayName,
-                                subtitle = "已导入本地字体",
+                                subtitle = font.subtitle ?: "已导入本地字体",
                                 isSelected = selectedFontId == font.id,
                                 inspection = font.inspection,
                                 onSelect = {
@@ -2420,33 +2453,26 @@ private fun FontSelectionDialog(
                                     onDismiss()
                                 },
                                 onDelete = {
-                                    CustomFontManager.deleteImportedFont(context, font.id)
-                                    availableFonts = CustomFontManager.getAvailableFonts(context)
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            CustomFontManager.deleteImportedFont(context, font.id)
+                                        }
+                                        availableFonts = withContext(Dispatchers.IO) {
+                                            CustomFontManager.getAvailableFonts(context)
+                                        }
+                                    }
                                 }
                             )
                         }
                     }
 
-                    if (systemFonts.isNotEmpty()) {
-                        item(key = "header_system") {
+                    if (presetFonts.isEmpty() && customFonts.isEmpty()) {
+                        item(key = "empty_font_hint") {
                             Text(
-                                text = "本地系统字体 (${systemFonts.size})",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(start = 6.dp, top = 8.dp, bottom = 2.dp)
-                            )
-                        }
-                        items(systemFonts, key = { it.id }) { font ->
-                            FontOptionRow(
-                                title = font.displayName,
-                                subtitle = font.filePath ?: "系统字体文件",
-                                isSelected = selectedFontId == font.id,
-                                inspection = font.inspection,
-                                onSelect = {
-                                    CustomFontManager.selectFont(context, font.id)
-                                    onDismiss()
-                                }
+                                text = "点击上方按钮导入本地字体文件",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
                             )
                         }
                     }
