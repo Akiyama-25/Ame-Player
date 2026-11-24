@@ -583,7 +583,7 @@ class OnlinePlaylistBrowseTest {
     @Test
     fun testAmePlayerTheme_darkMode_providesLightLocalContentColorOutsideScaffold() {
         ThemePrefs.init(context)
-        ThemePrefs.setTheme(context, ThemePrefs.THEME_DARK)
+        ThemePrefs.themeMode = ThemePrefs.THEME_DARK
         var capturedContentColor = androidx.compose.ui.graphics.Color.Unspecified
         var capturedOnBackground = androidx.compose.ui.graphics.Color.Unspecified
 
