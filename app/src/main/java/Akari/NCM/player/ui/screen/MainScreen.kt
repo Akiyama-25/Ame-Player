@@ -1482,6 +1482,7 @@ fun MainScreen(
             defaultQuality = effectiveDefaultDownloadQuality,
             userVipTier = userVipTier,
             isAlreadyDownloaded = audioDownloadManager.isDownloaded(songToDownload.id),
+            loadAvailableQualities = { ncmApi.getAvailableSongQualities(songToDownload.id) },
             onConfirmDownload = { chosenQuality ->
                 pendingDownloadSong = null
                 Toast.makeText(

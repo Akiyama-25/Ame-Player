@@ -48,6 +48,16 @@ data class ResolvedSongUrl(
         }
 }
 
+data class AvailableSongQuality(
+    val quality: QualityLevel,
+    val bitrateBps: Int = 0,
+    val sampleRateHz: Int = 0,
+    val fileSizeBytes: Long = 0L
+) {
+    val bitrateKbps: Int
+        get() = if (bitrateBps > 0) bitrateBps / 1000 else 0
+}
+
 @Singleton
 class NcmApi @Inject constructor(
     private val sessionManager: UserSessionManager? = null,
@@ -796,6 +806,82 @@ class NcmApi @Inject constructor(
         return null
     }
 
+    /**
+     * 向云端请求指定歌曲所有实际可用的音质档位及其文件大小/采样率/比特率信息。
+     * 优先查询 `/song/music/detail`（覆盖 l/m/h/sq/hr/je/db/sk/jm 全部高规格档位），
+     * 失败或为空时回退 `/v3/song/detail`（覆盖基础档位 l/m/h/sq/hr）。
+     */
+    suspend fun getAvailableSongQualities(songId: String): List<AvailableSongQuality> {
+        val idLong = songId.toLongOrNull() ?: return emptyList()
+
+        // 1. 优先查询 /song/music/detail
+        if (isDirectMode) {
+            try {
+                val payload = buildJsonObject { put("songId", idLong) }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_SONG_MUSIC_DETAIL,
+                    NeteaseEndpoints.PATH_EAPI_SONG_MUSIC_DETAIL,
+                    payload
+                )
+                val parsed = parseAvailableQualitiesFromMusicDetailJson(body)
+                if (parsed.isNotEmpty()) {
+                    AppLogger.i("AME_DOWNLOAD", "Direct /song/music/detail qualities for $songId: ${parsed.map { it.quality.value }}")
+                    return parsed
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_DOWNLOAD", "Direct /song/music/detail failed for $songId: ${e.message}")
+            }
+        } else {
+            try {
+                val resp = client.get("$baseUrl/song/music/detail") {
+                    parameter("id", songId)
+                }
+                val parsed = parseAvailableQualitiesFromMusicDetailJson(resp.bodyAsText())
+                if (parsed.isNotEmpty()) {
+                    AppLogger.i("AME_DOWNLOAD", "Proxy /song/music/detail qualities for $songId: ${parsed.map { it.quality.value }}")
+                    return parsed
+                }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_DOWNLOAD", "Proxy /song/music/detail failed for $songId: ${e.message}")
+            }
+        }
+
+        // 2. 回退查询 /v3/song/detail
+        if (isDirectMode) {
+            try {
+                val cArray = buildJsonArray { add(buildJsonObject { put("id", idLong) }) }.toString()
+                val payload = buildJsonObject { put("c", cArray) }.toString()
+                val body = directClient.postEapi(
+                    client,
+                    NeteaseEndpoints.URL_EAPI_SONG_DETAIL,
+                    NeteaseEndpoints.PATH_EAPI_SONG_DETAIL,
+                    payload
+                )
+                val parsed = parseAvailableQualitiesFromSongDetailJson(body)
+                if (parsed.isNotEmpty()) return parsed
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_DOWNLOAD", "Direct /song/detail quality fallback failed for $songId: ${e.message}")
+            }
+        } else {
+            try {
+                val resp = client.get("$baseUrl/song/detail") {
+                    parameter("ids", songId)
+                }
+                val parsed = parseAvailableQualitiesFromSongDetailJson(resp.bodyAsText())
+                if (parsed.isNotEmpty()) return parsed
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AppLogger.w("AME_DOWNLOAD", "Proxy /song/detail quality fallback failed for $songId: ${e.message}")
+            }
+        }
+
+        return emptyList()
+    }
+
     companion object {
         const val MIN_VALID_GAIN_OR_VD_DB = 0.001
         const val NETEASE_GAIN_REFERENCE_LUFS = -18.0f     // 实测 /song/url/v1 gain 及 je/jm/db.vd 基准 (-18.0 LUFS)
@@ -1022,6 +1108,59 @@ class NcmApi @Inject constructor(
                 if (normalized != null) return normalized
             }
             return null
+        }
+
+        internal fun parseAvailableQualitiesFromMusicDetailJson(body: String): List<AvailableSongQuality> {
+            return try {
+                val root = Json.parseToJsonElement(body).asJsonObjectOrNull ?: return emptyList()
+                val dataObj = root["data"]?.asJsonObjectOrNull ?: root
+                extractAvailableQualitiesFromObject(dataObj)
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
+        internal fun parseAvailableQualitiesFromSongDetailJson(body: String): List<AvailableSongQuality> {
+            return try {
+                val root = Json.parseToJsonElement(body).asJsonObjectOrNull ?: return emptyList()
+                val firstSong = root["songs"]?.jsonArray?.firstOrNull()?.asJsonObjectOrNull ?: return emptyList()
+                extractAvailableQualitiesFromObject(firstSong)
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+
+        private fun extractAvailableQualitiesFromObject(container: JsonObject): List<AvailableSongQuality> {
+            val fieldToQuality = listOf(
+                "l" to QualityLevel.STANDARD,
+                "h" to QualityLevel.EXHIGH,
+                "sq" to QualityLevel.LOSSLESS,
+                "hr" to QualityLevel.HIRES,
+                "je" to QualityLevel.JYEFFECT,
+                "db" to QualityLevel.DOLBY,
+                "sk" to QualityLevel.SKY,
+                "jm" to QualityLevel.JYMASTER
+            )
+            val result = mutableListOf<AvailableSongQuality>()
+            for ((field, qualityLevel) in fieldToQuality) {
+                val obj = container[field]?.asJsonObjectOrNull
+                    ?: if (field == "l") container["m"]?.asJsonObjectOrNull else null
+                if (obj == null) continue
+                val br = obj["br"]?.jsonPrimitive?.intOrNull ?: 0
+                val sr = obj["sr"]?.jsonPrimitive?.intOrNull ?: 0
+                val size = obj["size"]?.jsonPrimitive?.longOrNull ?: 0L
+                if (size > 0L || br > 0 || sr > 0) {
+                    result.add(
+                        AvailableSongQuality(
+                            quality = qualityLevel,
+                            bitrateBps = br,
+                            sampleRateHz = sr,
+                            fileSizeBytes = size
+                        )
+                    )
+                }
+            }
+            return result
         }
     }
 

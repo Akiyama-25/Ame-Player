@@ -10,7 +10,9 @@ import Akari.NCM.player.ui.theme.PlayerExpressivePalette
 import Akari.NCM.player.ui.theme.blend
 import Akari.NCM.player.ui.theme.buildPlayerExpressivePalette
 import Akari.NCM.player.ui.theme.extractAverageColorFromBitmap
+import Akari.NCM.player.ui.theme.extractBottomStripAverageColor
 import Akari.NCM.player.ui.theme.extractSeedColorFromBitmap
+import Akari.NCM.player.ui.theme.extractTopStripAverageColor
 import Akari.NCM.player.ui.theme.rememberIsDarkTheme
 import android.graphics.drawable.BitmapDrawable
 import androidx.compose.animation.AnimatedVisibility
@@ -118,6 +120,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 private val DrawerEaseInOut = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)
 
+private data class ExtractedCoverColors(
+    val seed: Color,
+    val avg: Color,
+    val topAvg: Color,
+    val bottomAvg: Color
+)
+
 @Composable
 fun rememberPlayerCoverPalette(
     rawTrack: PlayableMedia?
@@ -134,6 +143,8 @@ fun rememberPlayerCoverPalette(
     var displayedTrack by remember { mutableStateOf(rawTrack) }
     var extractedSeedColor by remember { mutableStateOf(defaultSeedColor) }
     var extractedAvgColor by remember { mutableStateOf<Color?>(null) }
+    var extractedTopAvgColor by remember { mutableStateOf<Color?>(null) }
+    var extractedBottomAvgColor by remember { mutableStateOf<Color?>(null) }
 
     LaunchedEffect(rawTrack, defaultSeedColor) {
         val target = rawTrack
@@ -141,10 +152,12 @@ fun rememberPlayerCoverPalette(
             displayedTrack = null
             extractedSeedColor = defaultSeedColor
             extractedAvgColor = null
+            extractedTopAvgColor = null
+            extractedBottomAvgColor = null
         } else {
             val url = target.coverUrl
             if (!url.isNullOrEmpty()) {
-                val pair = withTimeoutOrNull(650) {
+                val extracted = withTimeoutOrNull(650) {
                     withContext(Dispatchers.IO) {
                         runCatching {
                             val request = ImageRequest.Builder(context)
@@ -157,21 +170,29 @@ fun rememberPlayerCoverPalette(
                             if (bmp != null) {
                                 val seed = extractSeedColorFromBitmap(bmp, defaultSeedColor)
                                 val avg = extractAverageColorFromBitmap(bmp, Color(0xFF16161D))
-                                seed to avg
+                                val topAvg = extractTopStripAverageColor(bmp, avg)
+                                val bottomAvg = extractBottomStripAverageColor(bmp, avg)
+                                ExtractedCoverColors(seed, avg, topAvg, bottomAvg)
                             } else null
                         }.getOrNull()
                     }
                 }
-                if (pair != null) {
-                    extractedSeedColor = pair.first
-                    extractedAvgColor = pair.second
+                if (extracted != null) {
+                    extractedSeedColor = extracted.seed
+                    extractedAvgColor = extracted.avg
+                    extractedTopAvgColor = extracted.topAvg
+                    extractedBottomAvgColor = extracted.bottomAvg
                 } else {
                     extractedSeedColor = defaultSeedColor
                     extractedAvgColor = null
+                    extractedTopAvgColor = null
+                    extractedBottomAvgColor = null
                 }
             } else {
                 extractedSeedColor = defaultSeedColor
                 extractedAvgColor = null
+                extractedTopAvgColor = null
+                extractedBottomAvgColor = null
             }
             displayedTrack = target
         }
@@ -187,11 +208,25 @@ fun rememberPlayerCoverPalette(
         animationSpec = tween(480, easing = FastOutSlowInEasing),
         label = "PlayerCoverAvgColor"
     )
+    val animatedTopAvgColor by animateColorAsState(
+        targetValue = extractedTopAvgColor ?: extractedAvgColor ?: Color(0xFF16161D),
+        animationSpec = tween(480, easing = FastOutSlowInEasing),
+        label = "PlayerCoverTopAvgColor"
+    )
+    val animatedBottomAvgColor by animateColorAsState(
+        targetValue = extractedBottomAvgColor ?: extractedAvgColor ?: Color(0xFF16161D),
+        animationSpec = tween(480, easing = FastOutSlowInEasing),
+        label = "PlayerCoverBottomAvgColor"
+    )
 
     val palette = remember(
         animatedSeedColor,
         animatedAvgColor,
+        animatedTopAvgColor,
+        animatedBottomAvgColor,
         extractedAvgColor,
+        extractedTopAvgColor,
+        extractedBottomAvgColor,
         isDarkTheme,
         colorVariant,
         contrastLevel,
@@ -205,7 +240,9 @@ fun rememberPlayerCoverPalette(
             variant = colorVariant,
             contrastLevel = contrastLevel,
             blurCoverBackground = blurCoverBg,
-            useMaterialBackground = useMaterialBg
+            useMaterialBackground = useMaterialBg,
+            coverTopAverageColor = if (extractedTopAvgColor != null) animatedTopAvgColor else null,
+            coverBottomAverageColor = if (extractedBottomAvgColor != null) animatedBottomAvgColor else null
         )
     }
 

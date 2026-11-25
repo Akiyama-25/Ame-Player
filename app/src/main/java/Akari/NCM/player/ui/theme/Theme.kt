@@ -5,14 +5,18 @@ import Akari.NCM.player.data.ThemePrefs
 import android.app.Activity
 import android.app.WallpaperManager
 import android.os.Build
+import android.view.WindowManager
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -22,6 +26,50 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+
+data class SystemBarAppearanceOverride(
+    val key: String,
+    val isLightStatusBars: Boolean,
+    val isLightNavigationBars: Boolean
+)
+
+/**
+ * 统一管理系统状态栏/导航栏图标明暗覆写栈，避免子页面（如播放页）与主题层互相覆盖或退出时误还原。
+ */
+class SystemBarAppearanceController {
+    private val overrides = mutableStateListOf<SystemBarAppearanceOverride>()
+
+    fun setOverride(
+        key: String,
+        isLightStatusBars: Boolean,
+        isLightNavigationBars: Boolean
+    ) {
+        val next = SystemBarAppearanceOverride(
+            key = key,
+            isLightStatusBars = isLightStatusBars,
+            isLightNavigationBars = isLightNavigationBars
+        )
+        val existingIdx = overrides.indexOfFirst { it.key == key }
+        if (existingIdx >= 0) {
+            if (overrides[existingIdx] != next) {
+                overrides[existingIdx] = next
+            }
+        } else {
+            overrides.add(next)
+        }
+    }
+
+    fun clearOverride(key: String) {
+        val idx = overrides.indexOfFirst { it.key == key }
+        if (idx >= 0) {
+            overrides.removeAt(idx)
+        }
+    }
+
+    fun activeOverrideOrNull(): SystemBarAppearanceOverride? = overrides.lastOrNull()
+}
+
+val LocalSystemBarAppearanceController = staticCompositionLocalOf<SystemBarAppearanceController?> { null }
 
 val AmeExpressiveShapes = Shapes(
     extraSmall = RoundedCornerShape(10.dp),
@@ -134,6 +182,48 @@ fun rememberIsDarkTheme(): Boolean {
 }
 
 @Composable
+private fun SystemBarAppearanceEffect(
+    controller: SystemBarAppearanceController,
+    baseLightStatusBars: Boolean,
+    baseLightNavigationBars: Boolean
+) {
+    val view = LocalView.current
+    val activeOverride = controller.activeOverrideOrNull()
+    val effectiveLightStatusBars = activeOverride?.isLightStatusBars ?: baseLightStatusBars
+    val effectiveLightNavigationBars = activeOverride?.isLightNavigationBars ?: baseLightNavigationBars
+
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as? Activity)?.window ?: return@SideEffect
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            @Suppress("DEPRECATION")
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            @Suppress("DEPRECATION")
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val desiredCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                } else {
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                }
+                if (window.attributes.layoutInDisplayCutoutMode != desiredCutoutMode) {
+                    window.attributes = window.attributes.apply {
+                        layoutInDisplayCutoutMode = desiredCutoutMode
+                    }
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                window.isStatusBarContrastEnforced = false
+                window.isNavigationBarContrastEnforced = false
+            }
+            val insetsController = WindowCompat.getInsetsController(window, view)
+            insetsController.isAppearanceLightStatusBars = effectiveLightStatusBars
+            insetsController.isAppearanceLightNavigationBars = effectiveLightNavigationBars
+        }
+    }
+}
+
+@Composable
 fun AmePlayerTheme(
     content: @Composable () -> Unit
 ) {
@@ -194,30 +284,23 @@ fun AmePlayerTheme(
         )
     }
 
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as? Activity)?.window ?: return@SideEffect
-            @Suppress("DEPRECATION")
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
-            @Suppress("DEPRECATION")
-            window.navigationBarColor = android.graphics.Color.TRANSPARENT
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                window.isNavigationBarContrastEnforced = false
-            }
-            val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.isAppearanceLightStatusBars = !darkTheme
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
-        }
-    }
+    val systemBarController = remember { SystemBarAppearanceController() }
+    val baseLightStatusBars = shouldUseDarkSystemBarIcons(colorScheme.background)
+    val baseLightNavigationBars = shouldUseDarkSystemBarIcons(colorScheme.surfaceContainer)
+    SystemBarAppearanceEffect(
+        controller = systemBarController,
+        baseLightStatusBars = baseLightStatusBars,
+        baseLightNavigationBars = baseLightNavigationBars
+    )
 
     MaterialTheme(
         colorScheme = colorScheme,
         shapes = AmeExpressiveShapes,
         typography = typography
     ) {
-        androidx.compose.runtime.CompositionLocalProvider(
+        CompositionLocalProvider(
             LocalContentColor provides colorScheme.onBackground,
+            LocalSystemBarAppearanceController provides systemBarController,
             content = content
         )
     }

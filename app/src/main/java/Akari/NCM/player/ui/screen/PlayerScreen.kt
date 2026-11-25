@@ -1,5 +1,6 @@
 package Akari.NCM.player.ui.screen
 
+import Akari.NCM.player.api.AvailableSongQuality
 import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.core.AudioQualityClassifier
 import Akari.NCM.player.core.LyricLine
@@ -39,6 +40,7 @@ import Akari.NCM.player.ui.component.rememberPlayerCoverPalette
 import Akari.NCM.player.ui.component.rememberPredictiveBackState
 import Akari.NCM.player.ui.component.rememberPullDownDrawerState
 import Akari.NCM.player.ui.component.rememberSmoothPosition
+import Akari.NCM.player.ui.theme.LocalSystemBarAppearanceController
 import Akari.NCM.player.ui.theme.PlayerExpressivePalette
 import Akari.NCM.player.ui.theme.ensureContrast
 import android.annotation.SuppressLint
@@ -138,6 +140,7 @@ fun PlayerScreen(
     sessionManager: UserSessionManager? = null,
     audioDownloadManager: AudioDownloadManager? = null,
     onRequestDownload: ((PlayableMedia.Online) -> Unit)? = null,
+    availableQualitiesProvider: (suspend (PlayableMedia.Online) -> List<AvailableSongQuality>)? = null,
     onBackClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit,
     onToggleQueueClick: () -> Unit,
@@ -162,21 +165,29 @@ fun PlayerScreen(
     val rawTrack by playerState.currentMedia.collectAsState()
     val (activeTrack, palette, blurCoverBg) = rememberPlayerCoverPalette(rawTrack)
 
-    // 根据播放页面当前背景明暗动态调整状态栏与导航栏图标颜色，退出时恢复
+    // 根据播放页面状态栏与导航栏背后的真实背景明暗同步系统栏图标颜色，避免被主题层覆盖或退出时误还原
+    val systemBarController = LocalSystemBarAppearanceController.current
     val view = LocalView.current
     if (!view.isInEditMode) {
-        DisposableEffect(view, palette.isLightBackground) {
-            val window = (view.context as? Activity)?.window
-            val insetsController = window?.let { WindowCompat.getInsetsController(it, view) }
-            val originalLightStatusBars = insetsController?.isAppearanceLightStatusBars ?: false
-            val originalLightNavBars = insetsController?.isAppearanceLightNavigationBars ?: false
-
-            insetsController?.isAppearanceLightStatusBars = palette.isLightBackground
-            insetsController?.isAppearanceLightNavigationBars = palette.isLightBackground
-
-            onDispose {
-                insetsController?.isAppearanceLightStatusBars = originalLightStatusBars
-                insetsController?.isAppearanceLightNavigationBars = originalLightNavBars
+        if (systemBarController != null) {
+            DisposableEffect(systemBarController) {
+                onDispose {
+                    systemBarController.clearOverride("player_screen")
+                }
+            }
+            SideEffect {
+                systemBarController.setOverride(
+                    key = "player_screen",
+                    isLightStatusBars = palette.isLightStatusBarBackground,
+                    isLightNavigationBars = palette.isLightNavigationBarBackground
+                )
+            }
+        } else {
+            SideEffect {
+                val window = (view.context as? Activity)?.window ?: return@SideEffect
+                val insetsController = WindowCompat.getInsetsController(window, view)
+                insetsController.isAppearanceLightStatusBars = palette.isLightStatusBarBackground
+                insetsController.isAppearanceLightNavigationBars = palette.isLightNavigationBarBackground
             }
         }
     }
@@ -411,6 +422,10 @@ fun PlayerScreen(
                 defaultQuality = effectiveDefaultDownloadQuality,
                 userVipTier = userVipTier,
                 isAlreadyDownloaded = effectiveDownloadManager.isDownloaded(songToDownload.id),
+                loadAvailableQualities = {
+                    availableQualitiesProvider?.invoke(songToDownload)
+                        ?: ncmApi.getAvailableSongQualities(songToDownload.id)
+                },
                 onConfirmDownload = { chosenQuality ->
                     localPendingDownloadSong = null
                     Toast.makeText(

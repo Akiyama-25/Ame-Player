@@ -1,5 +1,6 @@
 package Akari.NCM.player.data
 
+import Akari.NCM.player.api.AvailableSongQuality
 import Akari.NCM.player.api.NcmApi
 import Akari.NCM.player.api.ResolvedSongUrl
 import Akari.NCM.player.core.AppLogger
@@ -18,15 +19,25 @@ import Akari.NCM.player.core.UsbDeviceDetails
 import Akari.NCM.player.core.UserProfile
 import Akari.NCM.player.core.VipTier
 import Akari.NCM.player.core.loudness.LoudnessNormalizationState
+import Akari.NCM.player.ui.component.pickInitialDownloadQuality
 import Akari.NCM.player.ui.screen.PlayerScreen
 import Akari.NCM.player.ui.screen.SettingsScreen
+import Akari.NCM.player.ui.theme.SystemBarAppearanceController
+import Akari.NCM.player.ui.theme.buildPlayerExpressivePalette
+import Akari.NCM.player.ui.theme.computeEffectiveStatusBarColor
+import Akari.NCM.player.ui.theme.extractBottomStripAverageColor
+import Akari.NCM.player.ui.theme.extractTopStripAverageColor
+import Akari.NCM.player.ui.theme.shouldUseDarkSystemBarIcons
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -38,6 +49,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -524,6 +536,7 @@ class DownloadAndQualityDisplayTest {
             durationMs = 200_000L
         )
         val controller = FakeDownloadTestPlayer(onlineTrack)
+        val queriedSongIds = CopyOnWriteArrayList<String>()
 
         composeTestRule.setContent {
             PlayerScreen(
@@ -533,6 +546,15 @@ class DownloadAndQualityDisplayTest {
                 playlistManager = playlistManager,
                 sessionManager = sessionManager,
                 audioDownloadManager = downloadManager,
+                availableQualitiesProvider = { song ->
+                    queriedSongIds.add(song.id)
+                    listOf(
+                        AvailableSongQuality(QualityLevel.STANDARD, bitrateBps = 128_000, sampleRateHz = 44100, fileSizeBytes = 3_200_000L),
+                        AvailableSongQuality(QualityLevel.EXHIGH, bitrateBps = 320_000, sampleRateHz = 44100, fileSizeBytes = 8_000_000L),
+                        AvailableSongQuality(QualityLevel.LOSSLESS, bitrateBps = 950_000, sampleRateHz = 44100, fileSizeBytes = 25_000_000L),
+                        AvailableSongQuality(QualityLevel.HIRES, bitrateBps = 2_304_000, sampleRateHz = 96000, fileSizeBytes = 62_000_000L)
+                    )
+                },
                 onBackClick = {},
                 onAddToPlaylistClick = {},
                 onToggleQueueClick = {}
@@ -545,9 +567,17 @@ class DownloadAndQualityDisplayTest {
         composeTestRule.onNodeWithTag("quick_card_download_audio").performScrollTo().performClick()
         composeTestRule.waitForIdle()
 
-        // Quality prompt dialog MUST appear BEFORE any download starts
+        // Quality prompt dialog MUST appear and query cloud available qualities BEFORE any download starts
         composeTestRule.onNodeWithTag("download_quality_dialog").assertIsDisplayed()
+        composeTestRule.waitUntil(timeoutMillis = 5_000L) {
+            composeTestRule.onAllNodesWithTag("download_quality_option_hires").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertEquals(listOf(onlineTrack.id), queriedSongIds.toList())
         assertTrue(capturedQualities.isEmpty())
+
+        // Unavailable cloud qualities (e.g. JYMASTER / DOLBY) must NOT be displayed
+        composeTestRule.onNodeWithTag("download_quality_option_jymaster").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("download_quality_option_dolby").assertDoesNotExist()
 
         // Pick Hi-Res and confirm download
         composeTestRule.onNodeWithTag("download_quality_option_hires").performClick()
@@ -560,6 +590,137 @@ class DownloadAndQualityDisplayTest {
         }
         assertTrue(downloadManager.isDownloaded(onlineTrack.id))
         assertEquals(listOf(QualityLevel.HIRES), capturedQualities.toList())
+    }
+
+    @Test
+    fun testCloudAvailableQualitiesParsingAndInitialSelection() {
+        val musicDetailJson = """
+            {
+              "code": 200,
+              "data": {
+                "songId": 123456,
+                "l": {"br": 128000, "size": 3100000, "sr": 44100},
+                "h": {"br": 320000, "size": 7800000, "sr": 44100},
+                "sq": {"br": 950000, "size": 24000000, "sr": 44100},
+                "hr": {"br": 2304000, "size": 61000000, "sr": 96000},
+                "db": null,
+                "sk": {"br": 0, "size": 0, "sr": 0},
+                "jm": {"br": 3800000, "size": 115000000, "sr": 192000}
+              }
+            }
+        """.trimIndent()
+        val parsed = NcmApi.parseAvailableQualitiesFromMusicDetailJson(musicDetailJson)
+        assertEquals(
+            listOf(
+                QualityLevel.STANDARD,
+                QualityLevel.EXHIGH,
+                QualityLevel.LOSSLESS,
+                QualityLevel.HIRES,
+                QualityLevel.JYMASTER
+            ),
+            parsed.map { it.quality }
+        )
+        assertEquals(96000, parsed.first { it.quality == QualityLevel.HIRES }.sampleRateHz)
+        assertEquals(61_000_000L, parsed.first { it.quality == QualityLevel.HIRES }.fileSizeBytes)
+
+        val songDetailJson = """
+            {
+              "code": 200,
+              "songs": [{
+                "id": 123456,
+                "l": {"br": 128000, "size": 3100000, "sr": 44100},
+                "h": {"br": 320000, "size": 7800000, "sr": 44100},
+                "sq": null,
+                "hr": null
+              }]
+            }
+        """.trimIndent()
+        val fallbackParsed = NcmApi.parseAvailableQualitiesFromSongDetailJson(songDetailJson)
+        assertEquals(listOf(QualityLevel.STANDARD, QualityLevel.EXHIGH), fallbackParsed.map { it.quality })
+
+        // VIP user prefers JYMASTER (SVIP only) -> falls back to highest unlocked available (HIRES)
+        assertEquals(
+            QualityLevel.HIRES,
+            pickInitialDownloadQuality(parsed, preferredDefault = QualityLevel.JYMASTER, userVipTier = VipTier.VIP)
+        )
+        // Free user (VipTier.NONE) prefers LOSSLESS (VIP) with STANDARD & EXHIGH available -> falls back to EXHIGH (highest unlocked)
+        assertEquals(
+            QualityLevel.EXHIGH,
+            pickInitialDownloadQuality(fallbackParsed, preferredDefault = QualityLevel.LOSSLESS, userVipTier = VipTier.NONE)
+        )
+    }
+
+    @Test
+    fun testStatusBarContrastDetectionAndOverrideStack() {
+        // Split bitmap: top half bright white, bottom half pitch black
+        val topLightBmp = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply {
+            for (y in 0 until 64) {
+                val color = if (y < 32) android.graphics.Color.WHITE else android.graphics.Color.BLACK
+                for (x in 0 until 64) setPixel(x, y, color)
+            }
+        }
+        val topAvg = extractTopStripAverageColor(topLightBmp)
+        val bottomAvg = extractBottomStripAverageColor(topLightBmp)
+        assertTrue(topAvg.red > 0.95f && topAvg.green > 0.95f && topAvg.blue > 0.95f)
+        assertTrue(bottomAvg.red < 0.05f && bottomAvg.green < 0.05f && bottomAvg.blue < 0.05f)
+
+        // Bright top cover with blur overlay must still be recognized as light status bar background (dark icons)
+        val lightTopPalette = buildPlayerExpressivePalette(
+            coverSeedColor = Color(0xFF4A90E2),
+            coverAverageColor = Color(0xFF808080),
+            coverTopAverageColor = topAvg,
+            coverBottomAverageColor = bottomAvg,
+            blurCoverBackground = true
+        )
+        assertTrue(
+            "Bright top strip (${lightTopPalette.statusBarBackgroundColor}) must use dark status bar icons",
+            lightTopPalette.isLightStatusBarBackground
+        )
+        assertFalse(
+            "Dark bottom strip (${lightTopPalette.navigationBarBackgroundColor}) must use light nav bar icons",
+            lightTopPalette.isLightNavigationBarBackground
+        )
+
+        // Reverse split: dark top + bright bottom -> status bar must stay dark background (light/white icons)
+        val darkTopPalette = buildPlayerExpressivePalette(
+            coverSeedColor = Color(0xFF4A90E2),
+            coverAverageColor = Color(0xFF808080),
+            coverTopAverageColor = Color.Black,
+            coverBottomAverageColor = Color.White,
+            blurCoverBackground = true
+        )
+        assertFalse(darkTopPalette.isLightStatusBarBackground)
+
+        // Non-blur light/dark theme backgrounds
+        val nonBlurLight = buildPlayerExpressivePalette(
+            coverSeedColor = Color(0xFF6750A4),
+            darkTheme = false,
+            blurCoverBackground = false,
+            useMaterialBackground = true
+        )
+        val nonBlurDark = buildPlayerExpressivePalette(
+            coverSeedColor = Color(0xFF6750A4),
+            darkTheme = true,
+            blurCoverBackground = false,
+            useMaterialBackground = true
+        )
+        assertTrue(nonBlurLight.isLightStatusBarBackground)
+        assertFalse(nonBlurDark.isLightStatusBarBackground)
+        assertTrue(shouldUseDarkSystemBarIcons(computeEffectiveStatusBarColor(Color.White, Color(0xFF202020), true)))
+        assertFalse(shouldUseDarkSystemBarIcons(computeEffectiveStatusBarColor(Color(0xFF202020), Color(0xFF202020), true)))
+
+        // SystemBarAppearanceController stack behavior
+        val barController = SystemBarAppearanceController()
+        assertNull(barController.activeOverrideOrNull())
+        barController.setOverride("player_screen", isLightStatusBars = true, isLightNavigationBars = false)
+        assertEquals(true, barController.activeOverrideOrNull()?.isLightStatusBars)
+        assertEquals(false, barController.activeOverrideOrNull()?.isLightNavigationBars)
+        // Updating existing key replaces in place without duplicating
+        barController.setOverride("player_screen", isLightStatusBars = false, isLightNavigationBars = false)
+        assertEquals(false, barController.activeOverrideOrNull()?.isLightStatusBars)
+        // Clearing restores base (null)
+        barController.clearOverride("player_screen")
+        assertNull(barController.activeOverrideOrNull())
     }
 
     @Test

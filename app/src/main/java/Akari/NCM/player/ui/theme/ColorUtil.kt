@@ -266,6 +266,109 @@ fun extractAverageColorFromBitmap(
 }
 
 /**
+ * 采样位图指定纵向比例区域（如顶部状态栏区域 [0.0, 0.18] 或底部导航栏区域 [0.82, 1.0]）的平均颜色，
+ * 用于精确判定状态栏与导航栏背景的真实明暗，避免整图均值导致上亮下暗/上暗下亮封面误判状态栏文字颜色。
+ */
+fun extractVerticalRegionAverageColor(
+    bitmap: Bitmap?,
+    startFraction: Float,
+    endFraction: Float,
+    fallback: Color = Color(0xFF18181C)
+): Color {
+    if (bitmap == null || bitmap.width <= 0 || bitmap.height <= 0 || bitmap.isRecycled) {
+        return fallback
+    }
+    val width = bitmap.width
+    val height = bitmap.height
+    val startY = (height * startFraction.coerceIn(0f, 1f)).toInt().coerceIn(0, height - 1)
+    val endY = (height * endFraction.coerceIn(0f, 1f)).toInt().coerceIn(startY + 1, height)
+    val regionHeight = (endY - startY).coerceAtLeast(1)
+    val stepX = (width / 16).coerceAtLeast(1)
+    val stepY = (regionHeight / 6).coerceAtLeast(1)
+
+    var sumR = 0f
+    var sumG = 0f
+    var sumB = 0f
+    var count = 0
+
+    var y = startY
+    while (y < endY) {
+        var x = 0
+        while (x < width) {
+            val pixel = bitmap.getPixel(x, y)
+            val alpha = (pixel ushr 24) and 0xFF
+            if (alpha >= 64) {
+                sumR += ((pixel ushr 16) and 0xFF) / 255f
+                sumG += ((pixel ushr 8) and 0xFF) / 255f
+                sumB += (pixel and 0xFF) / 255f
+                count++
+            }
+            x += stepX
+        }
+        y += stepY
+    }
+
+    if (count == 0) return fallback
+    return Color(
+        red = (sumR / count).coerceIn(0f, 1f),
+        green = (sumG / count).coerceIn(0f, 1f),
+        blue = (sumB / count).coerceIn(0f, 1f),
+        alpha = 1f
+    )
+}
+
+fun extractTopStripAverageColor(
+    bitmap: Bitmap?,
+    fallback: Color = Color(0xFF18181C)
+): Color = extractVerticalRegionAverageColor(bitmap, startFraction = 0f, endFraction = 0.18f, fallback = fallback)
+
+fun extractBottomStripAverageColor(
+    bitmap: Bitmap?,
+    fallback: Color = Color(0xFF18181C)
+): Color = extractVerticalRegionAverageColor(bitmap, startFraction = 0.82f, endFraction = 1f, fallback = fallback)
+
+/**
+ * 依据 PlayerBackgroundLayer 的真实顶部混合参数（封面 alpha=0.82f + 顶部梯度遮罩 Color(0x4D06060A)）
+ * 精确计算状态栏处的实际视觉背景色。
+ */
+fun computeEffectiveStatusBarColor(
+    topCoverColor: Color?,
+    fallbackBackgroundColor: Color,
+    blurCoverBackground: Boolean
+): Color {
+    if (!blurCoverBackground || topCoverColor == null) {
+        return fallbackBackgroundColor
+    }
+    val coverOverBase = blend(fallbackBackgroundColor, topCoverColor, 0.82f)
+    return blend(coverOverBase, Color(0xFF06060A), 0x4D / 255f)
+}
+
+/**
+ * 依据 PlayerBackgroundLayer 的真实底部混合参数（封面 alpha=0.82f + 底部梯度遮罩 Color(0x9E06060A)）
+ * 精确计算导航栏处的实际视觉背景色。
+ */
+fun computeEffectiveNavigationBarColor(
+    bottomCoverColor: Color?,
+    fallbackBackgroundColor: Color,
+    blurCoverBackground: Boolean
+): Color {
+    if (!blurCoverBackground || bottomCoverColor == null) {
+        return fallbackBackgroundColor
+    }
+    val coverOverBase = blend(fallbackBackgroundColor, bottomCoverColor, 0.82f)
+    return blend(coverOverBase, Color(0xFF06060A), 0x9E / 255f)
+}
+
+/**
+ * 根据系统栏背后真实背景色的 WCAG 相对亮度判定是否应使用深色系统栏文字/图标：
+ * - 返回 true：背景为浅色，状态栏/导航栏使用深色文字与图标；
+ * - 返回 false：背景为深色，状态栏/导航栏使用浅色（白色）文字与图标。
+ */
+fun shouldUseDarkSystemBarIcons(backgroundColor: Color): Boolean {
+    return contrastRatio(Color.Black, backgroundColor) >= contrastRatio(Color.White, backgroundColor)
+}
+
+/**
  * 构建 Material 3 Expressive 动态/自定义配色方案
  *
  * @param seedColor 从系统壁纸（非播放页）或自定义色盘提取的种子色
@@ -550,7 +653,11 @@ data class PlayerExpressivePalette(
     val sliderActiveColor: Color,
     val sliderInactiveColor: Color,
     val cardSurfaceColor: Color,
-    val cardOutlineColor: Color
+    val cardOutlineColor: Color,
+    val statusBarBackgroundColor: Color = effectiveBackgroundColor,
+    val navigationBarBackgroundColor: Color = effectiveBackgroundColor,
+    val isLightStatusBarBackground: Boolean = shouldUseDarkSystemBarIcons(statusBarBackgroundColor),
+    val isLightNavigationBarBackground: Boolean = shouldUseDarkSystemBarIcons(navigationBarBackgroundColor)
 )
 
 fun buildPlayerExpressivePalette(
@@ -560,7 +667,9 @@ fun buildPlayerExpressivePalette(
     variant: ColorVariant = ColorVariant.EXPRESSIVE,
     contrastLevel: ContrastLevel = ContrastLevel.STANDARD,
     blurCoverBackground: Boolean = true,
-    useMaterialBackground: Boolean = true
+    useMaterialBackground: Boolean = true,
+    coverTopAverageColor: Color? = null,
+    coverBottomAverageColor: Color? = null
 ): PlayerExpressivePalette {
     val scheme = buildExpressiveColorScheme(
         seedColor = coverSeedColor,
@@ -585,6 +694,18 @@ fun buildPlayerExpressivePalette(
     }
 
     val isLightBg = effectiveBg.luminance() > 0.38f
+    val statusBarBg = computeEffectiveStatusBarColor(
+        topCoverColor = coverTopAverageColor ?: coverAverageColor,
+        fallbackBackgroundColor = effectiveBg,
+        blurCoverBackground = blurCoverBackground
+    )
+    val navBarBg = computeEffectiveNavigationBarColor(
+        bottomCoverColor = coverBottomAverageColor ?: coverAverageColor,
+        fallbackBackgroundColor = effectiveBg,
+        blurCoverBackground = blurCoverBackground
+    )
+    val isLightStatusBarBg = shouldUseDarkSystemBarIcons(statusBarBg)
+    val isLightNavBarBg = shouldUseDarkSystemBarIcons(navBarBg)
     val minTextRatio = contrastLevel.minTextContrast
     val minControlRatio = contrastLevel.minControlContrast
 
@@ -718,7 +839,11 @@ fun buildPlayerExpressivePalette(
         sliderActiveColor = playedLyricColor,
         sliderInactiveColor = unplayedLyricColor.copy(alpha = if (isLightBg) 0.24f else 0.28f),
         cardSurfaceColor = cardSurfaceColor,
-        cardOutlineColor = cardOutlineColor
+        cardOutlineColor = cardOutlineColor,
+        statusBarBackgroundColor = statusBarBg,
+        navigationBarBackgroundColor = navBarBg,
+        isLightStatusBarBackground = isLightStatusBarBg,
+        isLightNavigationBarBackground = isLightNavBarBg
     )
 }
 
