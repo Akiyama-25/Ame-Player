@@ -86,24 +86,37 @@ object OpenTypeFontInspector {
      * - `100..400` 线性映射到 `minValue..defaultValue`
      * - `400..900` 线性映射到 `defaultValue..maxValue`
      * 最终结果钳制在 `[minValue, maxValue]` 范围内。
+     *
+     * 当 [lowWeightBoost] > 0 时，对中低字重做锚定高字重的非线性补偿：
+     * - `100..400` 从 `0` 线性增至 `lowWeightBoost`
+     * - `400..700` 从 `lowWeightBoost` 线性衰减至 `0`
+     * - `700..900` 保持原值不变（粗体不加粗）
      */
     fun adaptWeightToAxis(
         composeWeight: Int,
         minValue: Float,
         defaultValue: Float,
-        maxValue: Float
+        maxValue: Float,
+        lowWeightBoost: Float = 0f
     ): Float {
         val low = minOf(minValue, maxValue)
         val high = maxOf(minValue, maxValue)
         if (low == high) return low
 
         val clampedDefault = defaultValue.coerceIn(low, high)
-        val w = composeWeight.coerceIn(100, 900)
-        val mapped = if (w <= 400) {
-            val t = (w - 100) / 300f
+        val w = composeWeight.coerceIn(100, 900).toFloat()
+        val boost = lowWeightBoost.coerceIn(0f, 150f)
+        val effectiveWeight = when {
+            boost <= 0f || w >= 700f -> w
+            w < 400f -> w + boost * ((w - 100f) / 300f)
+            else -> w + boost * ((700f - w) / 300f)
+        }.coerceIn(100f, 900f)
+
+        val mapped = if (effectiveWeight <= 400f) {
+            val t = (effectiveWeight - 100f) / 300f
             low + t * (clampedDefault - low)
         } else {
-            val t = (w - 400) / 500f
+            val t = (effectiveWeight - 400f) / 500f
             clampedDefault + t * (high - clampedDefault)
         }
         return mapped.coerceIn(low, high)

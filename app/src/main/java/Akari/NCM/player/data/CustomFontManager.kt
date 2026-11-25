@@ -60,8 +60,10 @@ object CustomFontManager {
     private const val TAG = "CustomFontManager"
     private const val PREFS_NAME = "ame_font_prefs"
     private const val KEY_SELECTED_FONT_ID = "selected_font_id"
+    private const val KEY_WEIGHT_BOOST_PREFIX = "vf_weight_boost_"
     private const val CUSTOM_FONTS_DIR = "custom_fonts"
     const val SYSTEM_DEFAULT_ID = "system_default"
+    const val MAX_WEIGHT_BOOST = 100
 
     private val SUPPORTED_EXTENSIONS = setOf("ttf", "otf", "ttc", "otc")
     private val DEFAULT_PRESET_FONTS: List<PresetFontConfig> = emptyList()
@@ -97,6 +99,9 @@ object CustomFontManager {
     private val _importedFontsFlow = MutableStateFlow<List<FontItemInfo>>(emptyList())
     val importedFontsFlow: StateFlow<List<FontItemInfo>> = _importedFontsFlow.asStateFlow()
 
+    private val _weightBoostFlow = MutableStateFlow(0)
+    val weightBoostFlow: StateFlow<Int> = _weightBoostFlow.asStateFlow()
+
     @VisibleForTesting
     internal fun resetForTest() {
         synchronized(this) {
@@ -107,6 +112,7 @@ object CustomFontManager {
             _selectedFontIdFlow.value = null
             _selectedFontInfoFlow.value = null
             _importedFontsFlow.value = emptyList()
+            _weightBoostFlow.value = 0
         }
     }
 
@@ -202,6 +208,7 @@ object CustomFontManager {
         if (file.exists()) {
             file.delete()
         }
+        prefs?.edit()?.remove(weightBoostKey(id))?.apply()
         _importedFontsFlow.value = scanImportedFonts(appCtx)
         if (_selectedFontIdFlow.value == id) {
             selectFont(appCtx, null)
@@ -213,12 +220,34 @@ object CustomFontManager {
         applySelectionInternal(context.applicationContext, id, persist = true)
     }
 
+    fun setWeightBoost(context: Context, boost: Int) {
+        init(context)
+        val info = _selectedFontInfoFlow.value ?: return
+        if (info.source == FontSource.SYSTEM_DEFAULT) return
+
+        val clamped = boost.coerceIn(0, MAX_WEIGHT_BOOST)
+        prefs?.edit()?.putInt(weightBoostKey(info.id), clamped)?.apply()
+        _weightBoostFlow.value = clamped
+
+        val file = info.filePath?.let { File(it) }?.takeIf { it.exists() && it.isFile }
+        val family = buildComposeFontFamily(
+            file = file,
+            resId = info.resId,
+            inspection = info.inspection,
+            lowWeightBoost = clamped
+        )
+        if (family != null) {
+            _currentFontFamilyFlow.value = family
+        }
+    }
+
     private fun applySelectionInternal(context: Context, rawId: String?, persist: Boolean) {
         val normalizedId = rawId?.takeIf { it.isNotBlank() && it != SYSTEM_DEFAULT_ID }
         if (normalizedId == null) {
             _selectedFontIdFlow.value = null
             _selectedFontInfoFlow.value = systemDefaultInfo()
             _currentFontFamilyFlow.value = null
+            _weightBoostFlow.value = 0
             if (persist) {
                 prefs?.edit()?.remove(KEY_SELECTED_FONT_ID)?.apply()
             }
@@ -232,17 +261,25 @@ object CustomFontManager {
             _selectedFontIdFlow.value = null
             _selectedFontInfoFlow.value = systemDefaultInfo()
             _currentFontFamilyFlow.value = null
+            _weightBoostFlow.value = 0
             if (persist) {
                 prefs?.edit()?.remove(KEY_SELECTED_FONT_ID)?.apply()
             }
             return
         }
 
-        val family = buildComposeFontFamily(file = file, resId = resId, inspection = info.inspection)
+        val boost = readWeightBoost(info.id)
+        val family = buildComposeFontFamily(
+            file = file,
+            resId = resId,
+            inspection = info.inspection,
+            lowWeightBoost = boost
+        )
         if (family == null) {
             _selectedFontIdFlow.value = null
             _selectedFontInfoFlow.value = systemDefaultInfo()
             _currentFontFamilyFlow.value = null
+            _weightBoostFlow.value = 0
             if (persist) {
                 prefs?.edit()?.remove(KEY_SELECTED_FONT_ID)?.apply()
             }
@@ -251,10 +288,17 @@ object CustomFontManager {
 
         _selectedFontIdFlow.value = info.id
         _selectedFontInfoFlow.value = info
+        _weightBoostFlow.value = boost
         _currentFontFamilyFlow.value = family
         if (persist) {
             prefs?.edit()?.putString(KEY_SELECTED_FONT_ID, info.id)?.apply()
         }
+    }
+
+    private fun weightBoostKey(fontId: String): String = "$KEY_WEIGHT_BOOST_PREFIX$fontId"
+
+    private fun readWeightBoost(fontId: String): Int {
+        return (prefs?.getInt(weightBoostKey(fontId), 0) ?: 0).coerceIn(0, MAX_WEIGHT_BOOST)
     }
 
     private fun findFontById(context: Context, id: String): FontItemInfo? {
@@ -287,7 +331,8 @@ object CustomFontManager {
     private fun buildComposeFontFamily(
         file: File?,
         @FontRes resId: Int?,
-        inspection: FontInspectionResult?
+        inspection: FontInspectionResult?,
+        lowWeightBoost: Int = 0
     ): FontFamily? {
         if (resId != null) {
             return runCatching {
@@ -307,7 +352,8 @@ object CustomFontManager {
                         composeWeight = composeWeight.weight,
                         minValue = weightAxis.minValue,
                         defaultValue = weightAxis.defaultValue,
-                        maxValue = weightAxis.maxValue
+                        maxValue = weightAxis.maxValue,
+                        lowWeightBoost = lowWeightBoost.toFloat()
                     ).roundToInt().coerceIn(1, 1000)
                     Font(
                         file = file,

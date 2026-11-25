@@ -118,6 +118,36 @@ class CustomFontManagerTest {
         assertNull(CustomFontManager.selectedFontIdFlow.value)
         assertEquals(FontSource.SYSTEM_DEFAULT, CustomFontManager.selectedFontInfoFlow.value?.source)
         assertNull(CustomFontManager.currentFontFamilyFlow.value)
+        assertEquals(0, CustomFontManager.weightBoostFlow.value)
+    }
+
+    @Test
+    fun `setWeightBoost persists per font and resets on system default`() {
+        customFontsDir.mkdirs()
+        File(customFontsDir, "FontA.ttf").writeBytes(buildMinimalValidTtf())
+        File(customFontsDir, "FontB.ttf").writeBytes(buildMinimalValidTtf())
+
+        CustomFontManager.selectFont(context, "imported:FontA.ttf")
+        assertEquals(0, CustomFontManager.weightBoostFlow.value)
+
+        CustomFontManager.setWeightBoost(context, 50)
+        assertEquals(50, CustomFontManager.weightBoostFlow.value)
+
+        // Clamping above MAX_WEIGHT_BOOST
+        CustomFontManager.setWeightBoost(context, 999)
+        assertEquals(CustomFontManager.MAX_WEIGHT_BOOST, CustomFontManager.weightBoostFlow.value)
+
+        // Switching to FontB starts at 0
+        CustomFontManager.selectFont(context, "imported:FontB.ttf")
+        assertEquals(0, CustomFontManager.weightBoostFlow.value)
+
+        // Switching back to FontA restores persisted boost
+        CustomFontManager.selectFont(context, "imported:FontA.ttf")
+        assertEquals(CustomFontManager.MAX_WEIGHT_BOOST, CustomFontManager.weightBoostFlow.value)
+
+        // Switching to system default resets flow to 0
+        CustomFontManager.selectFont(context, null)
+        assertEquals(0, CustomFontManager.weightBoostFlow.value)
     }
 
     private fun buildMinimalValidTtf(): ByteArray {

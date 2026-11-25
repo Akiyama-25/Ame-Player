@@ -2358,6 +2358,12 @@ private fun FontSelectionDialog(
     val customFonts = remember(availableFonts) {
         availableFonts.filter { it.source == FontSource.IMPORTED }
     }
+    val selectedFontInfo by CustomFontManager.selectedFontInfoFlow.collectAsState()
+    val weightBoost by CustomFontManager.weightBoostFlow.collectAsState()
+    val canAdjustWeightBoost = remember(selectedFontInfo) {
+        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            selectedFontInfo?.inspection?.let { it.weightAxis != null && !it.isCollection } == true
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2477,6 +2483,15 @@ private fun FontSelectionDialog(
                         }
                     }
                 }
+
+                if (canAdjustWeightBoost) {
+                    VariableFontWeightBoostCard(
+                        weightBoost = weightBoost,
+                        onWeightBoostChange = { boost ->
+                            CustomFontManager.setWeightBoost(context, boost)
+                        }
+                    )
+                }
             }
         },
         confirmButton = {
@@ -2491,6 +2506,93 @@ private fun FontSelectionDialog(
             )
         }
     )
+}
+
+@Composable
+private fun VariableFontWeightBoostCard(
+    weightBoost: Int,
+    onWeightBoostChange: (Int) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "常规字重补偿",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    FontFeatureBadge(
+                        text = if (weightBoost == 0) "默认 (+0)" else "+$weightBoost",
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+                if (weightBoost > 0) {
+                    Text(
+                        text = "重置",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onWeightBoostChange(0) }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Slider(
+                value = weightBoost.toFloat(),
+                onValueChange = { raw ->
+                    val stepped = (((raw / 10f) + 0.5f).toInt() * 10)
+                        .coerceIn(0, CustomFontManager.MAX_WEIGHT_BOOST)
+                    if (stepped != weightBoost) {
+                        onWeightBoostChange(stepped)
+                    }
+                },
+                valueRange = 0f..CustomFontManager.MAX_WEIGHT_BOOST.toFloat(),
+                steps = (CustomFontManager.MAX_WEIGHT_BOOST / 10) - 1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("slider_vf_weight_boost")
+            )
+
+            Text(
+                text = "正文预览：那些难以言说的情感 (W400)",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Normal,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "粗体锚定：夢浮橋-ユメノウキハシ- (W700)",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "仅加粗常规与中等字重，粗体保持不变",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }
 
 @Composable

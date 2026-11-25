@@ -135,6 +135,33 @@ class OpenTypeFontInspectorTest {
     }
 
     @Test
+    fun `adaptWeightToAxis applies nonlinear lowWeightBoost while anchoring bold weights`() {
+        // Resource-Han-Rounded profile: wght 200..900, default 400, boost +50
+        val min = 200f
+        val def = 400f
+        val max = 900f
+        val boost = 50f
+
+        assertEquals(200f, OpenTypeFontInspector.adaptWeightToAxis(100, min, def, max, boost), 0.01f)
+        assertEquals(450f, OpenTypeFontInspector.adaptWeightToAxis(400, min, def, max, boost), 0.01f)
+        assertEquals(533.33f, OpenTypeFontInspector.adaptWeightToAxis(500, min, def, max, boost), 0.1f)
+        assertEquals(616.67f, OpenTypeFontInspector.adaptWeightToAxis(600, min, def, max, boost), 0.1f)
+
+        // Bold/ExtraBold/Heavy weights remain strictly anchored
+        assertEquals(700f, OpenTypeFontInspector.adaptWeightToAxis(700, min, def, max, boost), 0.01f)
+        assertEquals(800f, OpenTypeFontInspector.adaptWeightToAxis(800, min, def, max, boost), 0.01f)
+        assertEquals(900f, OpenTypeFontInspector.adaptWeightToAxis(900, min, def, max, boost), 0.01f)
+
+        // Monotonically increasing across W100..W900 even at max boost
+        val weights = (100..900 step 100).map { w ->
+            OpenTypeFontInspector.adaptWeightToAxis(w, min, def, max, lowWeightBoost = 150f)
+        }
+        for (i in 0 until weights.size - 1) {
+            assertTrue("Expected ${weights[i]} <= ${weights[i + 1]}", weights[i] <= weights[i + 1])
+        }
+    }
+
+    @Test
     fun `inspect invalid or truncated bytes returns invalid result`() {
         assertFalse(OpenTypeFontInspector.inspect(ByteArray(0)).isValidFont)
         assertFalse(OpenTypeFontInspector.inspect(ByteArray(11)).isValidFont)
