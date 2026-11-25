@@ -117,6 +117,26 @@ fun SettingsScreen(
         }
     }
 
+    val downloadFolderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            }
+            sessionManager.saveDownloadPath(uri.toString())
+            Toast.makeText(
+                context,
+                "已设置下载路径: ${UserSessionManager.formatDownloadPathForDisplay(uri.toString())}",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+
     var showWebLoginDialog by remember { mutableStateOf(false) }
     val openWebLogin: () -> Unit = {
         if (onOpenWebLogin != null) {
@@ -136,6 +156,7 @@ fun SettingsScreen(
     var showLoudnessDialog by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
     var showDownloadQualityDialog by remember { mutableStateOf(false) }
+    var showDownloadPathDialog by remember { mutableStateOf(false) }
     var showDownloadedTracksDialog by remember { mutableStateOf(false) }
     var showFontDialog by remember { mutableStateOf(false) }
 
@@ -143,6 +164,7 @@ fun SettingsScreen(
     val selectedDownloadQuality by sessionManager.downloadQualityState.collectAsState()
     val autoDownloadOnFavorite by sessionManager.autoDownloadOnFavoriteState.collectAsState()
     val autoDownloadWifiOnly by sessionManager.autoDownloadWifiOnlyState.collectAsState()
+    val downloadPath by sessionManager.downloadPathState.collectAsState()
     val userVipTier = if (isLoggedIn) (userProfile?.vipTier ?: VipTier.NONE) else VipTier.NONE
     val effectiveQuality = remember(selectedQuality, userProfile, isLoggedIn) {
         sessionManager.getEffectiveQualityLevel()
@@ -1014,6 +1036,15 @@ fun SettingsScreen(
 
                         SettingsInnerDivider()
 
+                        SettingItem(
+                            title = "音频下载路径",
+                            subtitle = UserSessionManager.formatDownloadPathForDisplay(downloadPath),
+                            onClick = { showDownloadPathDialog = true },
+                            modifier = Modifier.testTag("setting_download_path")
+                        )
+
+                        SettingsInnerDivider()
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1538,6 +1569,104 @@ fun SettingsScreen(
                 showDownloadQualityDialog = false
             },
             onDismiss = { showDownloadQualityDialog = false }
+        )
+    }
+
+    if (showDownloadPathDialog) {
+        var pathDraft by remember(downloadPath) {
+            mutableStateOf(
+                if (downloadPath.startsWith("content://", ignoreCase = true)) {
+                    UserSessionManager.formatDownloadPathForDisplay(downloadPath)
+                } else {
+                    downloadPath
+                }
+            )
+        }
+        AlertDialog(
+            onDismissRequest = { showDownloadPathDialog = false },
+            modifier = Modifier.testTag("dialog_download_path"),
+            title = {
+                Text(
+                    "自定义音频下载路径",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "默认路径与网易云音乐一致：${UserSessionManager.DEFAULT_DOWNLOAD_PATH}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = pathDraft,
+                        onValueChange = { pathDraft = it },
+                        label = { Text("下载目录路径") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("input_download_path")
+                    )
+                    AdaptiveButtonGroup(
+                        buttons = listOf(
+                            AdaptiveButtonSpec(
+                                text = "选择系统文件夹",
+                                onClick = {
+                                    showDownloadPathDialog = false
+                                    downloadFolderPickerLauncher.launch(null)
+                                },
+                                style = ExpressiveButtonStyle.TONAL,
+                                testTag = "btn_pick_download_folder"
+                            ),
+                            AdaptiveButtonSpec(
+                                text = "恢复默认",
+                                onClick = {
+                                    sessionManager.resetDownloadPath()
+                                    pathDraft = UserSessionManager.DEFAULT_DOWNLOAD_PATH
+                                    Toast.makeText(context, "已恢复默认下载路径", Toast.LENGTH_SHORT).show()
+                                },
+                                style = ExpressiveButtonStyle.OUTLINED,
+                                testTag = "btn_reset_download_path"
+                            )
+                        )
+                    )
+                    Text(
+                        text = "提示：Android 10 及以上版本默认支持直接写入 Download/ 与 Music/ 子目录；若选择其他目录，请通过「选择系统文件夹」授予写入权限。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "保存",
+                            onClick = {
+                                sessionManager.saveDownloadPath(pathDraft)
+                                showDownloadPathDialog = false
+                                Toast.makeText(
+                                    context,
+                                    "已保存下载路径: ${UserSessionManager.formatDownloadPathForDisplay(sessionManager.getDownloadPath())}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            style = ExpressiveButtonStyle.FILLED,
+                            testTag = "btn_save_download_path"
+                        ),
+                        AdaptiveButtonSpec(
+                            text = "取消",
+                            onClick = { showDownloadPathDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
+            }
         )
     }
 

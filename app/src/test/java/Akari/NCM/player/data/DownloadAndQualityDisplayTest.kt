@@ -244,11 +244,43 @@ class DownloadAndQualityDisplayTest {
         // Persisting toggles works across manager instances
         sessionManager.setAutoDownloadOnFavoriteEnabled(true)
         sessionManager.setAutoDownloadWifiOnlyEnabled(false)
+        assertEquals(
+            "/storage/emulated/0/Download/netease/cloudmusic/Music/",
+            sessionManager.getDownloadPath()
+        )
+        sessionManager.saveDownloadPath("/storage/emulated/0/Music/AmeCustom")
+        assertEquals("/storage/emulated/0/Music/AmeCustom/", sessionManager.getDownloadPath())
+
         val reloaded = UserSessionManager(context)
         assertTrue(reloaded.isAutoDownloadOnFavoriteEnabled())
         assertFalse(reloaded.isAutoDownloadWifiOnlyEnabled())
         assertEquals(QualityLevel.JYMASTER, reloaded.getDownloadQualityLevel())
         assertEquals(QualityLevel.STANDARD, reloaded.getQualityLevel())
+        assertEquals("/storage/emulated/0/Music/AmeCustom/", reloaded.getDownloadPath())
+
+        // Reset restores NetEase Cloud Music default path
+        reloaded.resetDownloadPath()
+        assertEquals(
+            "/storage/emulated/0/Download/netease/cloudmusic/Music/",
+            reloaded.getDownloadPath()
+        )
+
+        // SAF tree URI display formatting
+        assertEquals(
+            "/storage/emulated/0/Music/HiRes/",
+            UserSessionManager.formatDownloadPathForDisplay(
+                "content://com.android.externalstorage.documents/tree/primary%3AMusic%2FHiRes"
+            )
+        )
+
+        // Android 10+ MediaStore relative path mapping for default NetEase path & custom Music path
+        val defaultTarget = AudioDownloadManager.resolveMediaStoreTarget(UserSessionManager.DEFAULT_DOWNLOAD_PATH)
+        assertNotNull(defaultTarget)
+        assertEquals("Download/netease/cloudmusic/Music/", defaultTarget!!.second)
+
+        val musicTarget = AudioDownloadManager.resolveMediaStoreTarget("/storage/emulated/0/Music/AmeCustom/")
+        assertNotNull(musicTarget)
+        assertEquals("Music/AmeCustom/", musicTarget!!.second)
     }
 
     @Test
@@ -567,6 +599,15 @@ class DownloadAndQualityDisplayTest {
 
         assertEquals(QualityLevel.LOSSLESS, sessionManager.getDownloadQualityLevel())
         assertEquals(QualityLevel.STANDARD, sessionManager.getQualityLevel())
+
+        // Verify default download path is NetEase original path and custom path dialog opens cleanly
+        composeTestRule.onNodeWithText("/storage/emulated/0/Download/netease/cloudmusic/Music/").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("setting_download_path").performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("dialog_download_path").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_save_download_path").performClick()
+        composeTestRule.waitForIdle()
+        assertEquals(UserSessionManager.DEFAULT_DOWNLOAD_PATH, sessionManager.getDownloadPath())
     }
 
     // ── Synthetic binary audio header builders ──

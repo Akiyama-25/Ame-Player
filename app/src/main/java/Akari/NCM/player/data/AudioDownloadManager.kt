@@ -6,11 +6,15 @@ import Akari.NCM.player.core.AppLogger
 import Akari.NCM.player.core.AudioFormat
 import Akari.NCM.player.core.PlayableMedia
 import Akari.NCM.player.core.QualityLevel
+import android.content.ContentValues
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
+import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +32,7 @@ import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.OutputStream
 import java.util.concurrent.TimeUnit
 
 enum class DownloadStatus {
@@ -133,12 +138,15 @@ class AudioDownloadManager(
         loadRecords()
     }
 
+    fun getConfiguredDownloadPath(): String {
+        return downloadsDirOverride?.absolutePath?.let { UserSessionManager.normalizeDownloadPath(it) }
+            ?: sessionManager.getDownloadPath()
+    }
+
     fun getDownloadsDirectory(): File {
-        val dir = downloadsDirOverride
-            ?: context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)?.let { File(it, DOWNLOADS_SUBDIR) }
-            ?: File(context.filesDir, DOWNLOADS_SUBDIR)
+        val dir = downloadsDirOverride ?: File(sessionManager.getDownloadPath())
         if (!dir.exists()) {
-            dir.mkdirs()
+            runCatching { dir.mkdirs() }
         }
         return dir
     }
@@ -156,12 +164,12 @@ class AudioDownloadManager(
 
     fun isDownloaded(songId: String): Boolean {
         val record = _downloadedTracks.value.firstOrNull { it.songId == songId } ?: return false
-        return File(record.filePath).let { it.exists() && it.length() > 0L }
+        return recordExists(record)
     }
 
     fun getDownloadedRecord(songId: String): DownloadedTrackRecord? {
         val record = _downloadedTracks.value.firstOrNull { it.songId == songId } ?: return null
-        return record.takeIf { File(it.filePath).let { f -> f.exists() && f.length() > 0L } }
+        return record.takeIf { recordExists(it) }
     }
 
     fun isDownloading(songId: String): Boolean {
@@ -259,10 +267,12 @@ class AudioDownloadManager(
             }
 
             val ext = resolveFileExtension(resolved, targetQuality)
-            val dir = getDownloadsDirectory()
+            val mimeType = mimeForExtension(ext)
             val fileName = buildSafeFileName(song, ext)
-            val targetFile = File(dir, fileName)
-            tempFile = File(dir, "$fileName.part")
+
+            // 1. 先流式下载到应用私有临时文件，确保断点/失败不污染目标目录，同时便于完整读取文件头
+            val tmpDir = File(context.cacheDir, "download_tmp").apply { if (!exists()) mkdirs() }
+            tempFile = File(tmpDir, "${song.id}_${System.currentTimeMillis()}.$ext.part")
             if (tempFile.exists()) {
                 tempFile.delete()
             }
@@ -289,26 +299,26 @@ class AudioDownloadManager(
                 throw IOException("下载的音频文件为空")
             }
 
-            // 删除旧版同名或不同扩展名的历史下载文件（同一 songId 重新下载其他音质时）
-            val existingRecord = _downloadedTracks.value.firstOrNull { it.songId == song.id }
-            if (existingRecord != null && existingRecord.filePath != targetFile.absolutePath) {
-                runCatching { File(existingRecord.filePath).delete() }
-            }
-            if (targetFile.exists()) {
-                targetFile.delete()
-            }
-            if (!tempFile.renameTo(targetFile)) {
-                tempFile.copyTo(targetFile, overwrite = true)
-                tempFile.delete()
-            }
-            tempFile = null
-
+            val finalSizeBytes = tempFile.length()
             val formatEnum = if (ext.equals("flac", ignoreCase = true)) AudioFormat.FLAC else AudioFormat.MP3
             val inspected = LocalAudioFileInspector.inspectFile(
-                file = targetFile,
+                file = tempFile,
                 isNcm = false,
                 fallbackFormat = formatEnum,
                 knownDurationMs = song.durationMs
+            )
+
+            // 2. 删除同一 songId 的历史下载文件（若用户重新下载了不同音质）
+            val existingRecord = _downloadedTracks.value.firstOrNull { it.songId == song.id }
+            if (existingRecord != null) {
+                deleteRecordFile(existingRecord)
+            }
+
+            // 3. 写入目标路径（支持默认网易云路径 /storage/emulated/0/Download/netease/cloudmusic/Music/、自定义路径与 SAF 目录）
+            val savedTarget = persistTempFileToConfiguredPath(
+                tempFile = tempFile,
+                fileName = fileName,
+                mimeType = mimeType
             )
 
             val record = DownloadedTrackRecord(
@@ -318,8 +328,8 @@ class AudioDownloadManager(
                 album = song.album,
                 coverUrl = song.coverUrl,
                 durationMs = song.durationMs,
-                filePath = targetFile.absolutePath,
-                uri = Uri.fromFile(targetFile).toString(),
+                filePath = savedTarget.filePath,
+                uri = savedTarget.uriString,
                 format = formatEnum.name,
                 requestedQuality = targetQuality.value,
                 actualQualityLevel = resolved.level ?: targetQuality.value,
@@ -327,8 +337,8 @@ class AudioDownloadManager(
                 sampleRateHz = inspected?.sampleRateHz?.takeIf { it > 0 } ?: (resolved.sampleRate ?: 0),
                 bitDepthBits = inspected?.bitDepthBits?.takeIf { it > 0 } ?: 16,
                 channels = inspected?.channels?.takeIf { it > 0 } ?: 2,
-                mimeType = inspected?.mimeType ?: mimeForExtension(ext),
-                fileSizeBytes = targetFile.length(),
+                mimeType = inspected?.mimeType ?: mimeType,
+                fileSizeBytes = finalSizeBytes,
                 downloadedAt = System.currentTimeMillis()
             )
 
@@ -340,18 +350,16 @@ class AudioDownloadManager(
                     artist = song.artist,
                     targetQuality = targetQuality,
                     status = DownloadStatus.COMPLETED,
-                    bytesDownloaded = targetFile.length(),
-                    totalBytes = targetFile.length()
+                    bytesDownloaded = finalSizeBytes,
+                    totalBytes = finalSizeBytes
                 )
             )
-            AppLogger.i(TAG, "Downloaded '${song.title}' -> ${targetFile.absolutePath} (${targetFile.length()} bytes, requested=${targetQuality.value}, actual=${record.actualQualityLevel})")
+            AppLogger.i(TAG, "Downloaded '${song.title}' -> ${savedTarget.filePath} ($finalSizeBytes bytes, requested=${targetQuality.value}, actual=${record.actualQualityLevel})")
             Result.success(record)
         } catch (e: CancellationException) {
-            tempFile?.delete()
             removeTask(song.id)
             throw e
         } catch (e: Exception) {
-            tempFile?.delete()
             val message = e.message ?: "音频下载失败"
             AppLogger.e(TAG, "Download failed for '${song.title}' (id=${song.id}): $message", e)
             updateTask(
@@ -365,13 +373,15 @@ class AudioDownloadManager(
                 )
             )
             Result.failure(e)
+        } finally {
+            runCatching { tempFile?.delete() }
         }
     }
 
     fun deleteDownloadedTrack(songId: String): Boolean {
         synchronized(recordsLock) {
             val target = _downloadedTracks.value.firstOrNull { it.songId == songId } ?: return false
-            runCatching { File(target.filePath).delete() }
+            deleteRecordFile(target)
             val updated = _downloadedTracks.value.filterNot { it.songId == songId }
             _downloadedTracks.value = updated
             saveRecordsLocked(updated)
@@ -382,9 +392,197 @@ class AudioDownloadManager(
     }
 
     fun totalDownloadedSizeBytes(): Long {
-        return _downloadedTracks.value.sumOf { rec ->
-            val f = File(rec.filePath)
-            if (f.exists()) f.length() else 0L
+        return _downloadedTracks.value.sumOf { rec -> recordSizeBytes(rec) }
+    }
+
+    private data class SavedFileLocation(
+        val filePath: String,
+        val uriString: String
+    )
+
+    private fun persistTempFileToConfiguredPath(
+        tempFile: File,
+        fileName: String,
+        mimeType: String
+    ): SavedFileLocation {
+        // 1. 显式目录覆盖（如单元测试）
+        if (downloadsDirOverride != null) {
+            return saveToFileSystemDir(tempFile, downloadsDirOverride, fileName)
+        }
+
+        val configuredPath = sessionManager.getDownloadPath()
+
+        // 2. Android SAF 目录树 URI（用户通过系统文件夹选择器自定义路径）
+        if (configuredPath.startsWith("content://", ignoreCase = true)) {
+            return saveToSafTreeUri(tempFile, Uri.parse(configuredPath), fileName, mimeType)
+        }
+
+        // 3. Android 10+ 公共 Download/ 或 Music/ 目录（含默认路径 /storage/emulated/0/Download/netease/cloudmusic/Music/）
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val mediaStoreTarget = resolveMediaStoreTarget(configuredPath)
+            if (mediaStoreTarget != null) {
+                val msSaved = runCatching {
+                    saveToMediaStore(
+                        tempFile = tempFile,
+                        collectionUri = mediaStoreTarget.first,
+                        relativePath = mediaStoreTarget.second,
+                        configuredDirPath = configuredPath,
+                        fileName = fileName,
+                        mimeType = mimeType
+                    )
+                }.getOrNull()
+                if (msSaved != null) {
+                    return msSaved
+                }
+            }
+        }
+
+        // 4. 直接文件系统写入（Android 8-9、可写自定义路径或 MediaStore 不可用时的兜底）
+        val targetDir = File(configuredPath)
+        return try {
+            saveToFileSystemDir(tempFile, targetDir, fileName)
+        } catch (e: IOException) {
+            throw IOException("无法写入下载目录「$configuredPath」(${e.message})，请在设置中通过「选择系统文件夹」授权自定义下载路径", e)
+        }
+    }
+
+    private fun saveToFileSystemDir(
+        tempFile: File,
+        targetDir: File,
+        fileName: String
+    ): SavedFileLocation {
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            throw IOException("无法创建目录: ${targetDir.absolutePath}")
+        }
+        val targetFile = File(targetDir, fileName)
+        if (targetFile.exists()) {
+            targetFile.delete()
+        }
+        if (!tempFile.renameTo(targetFile)) {
+            tempFile.inputStream().use { input ->
+                FileOutputStream(targetFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+        }
+        return SavedFileLocation(
+            filePath = targetFile.absolutePath,
+            uriString = Uri.fromFile(targetFile).toString()
+        )
+    }
+
+    private fun saveToSafTreeUri(
+        tempFile: File,
+        treeUri: Uri,
+        fileName: String,
+        mimeType: String
+    ): SavedFileLocation {
+        val root = DocumentFile.fromTreeUri(context, treeUri)
+            ?: throw IOException("无法访问已选择的自定义下载文件夹，请重新授权")
+        root.findFile(fileName)?.delete()
+        val doc = root.createFile(mimeType, fileName)
+            ?: throw IOException("无法在自定义文件夹中创建音频文件: $fileName")
+        val out = context.contentResolver.openOutputStream(doc.uri, "w")
+            ?: throw IOException("无法打开目标文件输出流")
+        out.use { output ->
+            tempFile.inputStream().use { input ->
+                input.copyTo(output)
+            }
+            output.flush()
+        }
+        val displayDir = UserSessionManager.formatDownloadPathForDisplay(treeUri.toString())
+        return SavedFileLocation(
+            filePath = "$displayDir$fileName",
+            uriString = doc.uri.toString()
+        )
+    }
+
+    private fun saveToMediaStore(
+        tempFile: File,
+        collectionUri: Uri,
+        relativePath: String,
+        configuredDirPath: String,
+        fileName: String,
+        mimeType: String
+    ): SavedFileLocation? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val cr = context.contentResolver
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val insertedUri = cr.insert(collectionUri, values) ?: return null
+        try {
+            val out = cr.openOutputStream(insertedUri, "w")
+                ?: throw IOException("MediaStore 输出流为空")
+            out.use { output ->
+                tempFile.inputStream().use { input ->
+                    input.copyTo(output)
+                }
+                output.flush()
+            }
+            val publishValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.IS_PENDING, 0)
+            }
+            cr.update(insertedUri, publishValues, null, null)
+            val normalizedDir = UserSessionManager.normalizeDownloadPath(configuredDirPath)
+            return SavedFileLocation(
+                filePath = "$normalizedDir$fileName",
+                uriString = insertedUri.toString()
+            )
+        } catch (e: Exception) {
+            runCatching { cr.delete(insertedUri, null, null) }
+            throw e
+        }
+    }
+
+    private fun recordExists(record: DownloadedTrackRecord): Boolean {
+        if (record.uri.startsWith("content://", ignoreCase = true)) {
+            val contentUri = Uri.parse(record.uri)
+            val fdExists = runCatching {
+                context.contentResolver.openFileDescriptor(contentUri, "r")?.use { it.statSize > 0L }
+            }.getOrNull()
+            if (fdExists == true) return true
+            val docExists = runCatching {
+                DocumentFile.fromSingleUri(context, contentUri)?.exists() == true
+            }.getOrDefault(false)
+            if (docExists) return true
+        }
+        if (record.filePath.isNotBlank() && !record.filePath.startsWith("content://", ignoreCase = true)) {
+            val f = File(record.filePath)
+            if (f.exists() && f.length() > 0L) return true
+        }
+        return false
+    }
+
+    private fun recordSizeBytes(record: DownloadedTrackRecord): Long {
+        if (record.filePath.isNotBlank() && !record.filePath.startsWith("content://", ignoreCase = true)) {
+            val f = File(record.filePath)
+            if (f.exists()) return f.length()
+        }
+        if (record.uri.startsWith("content://", ignoreCase = true)) {
+            val statSize = runCatching {
+                context.contentResolver.openFileDescriptor(Uri.parse(record.uri), "r")?.use { it.statSize }
+            }.getOrNull()
+            if (statSize != null && statSize > 0L) return statSize
+        }
+        return record.fileSizeBytes.coerceAtLeast(0L)
+    }
+
+    private fun deleteRecordFile(record: DownloadedTrackRecord) {
+        if (record.uri.startsWith("content://", ignoreCase = true)) {
+            val uri = Uri.parse(record.uri)
+            runCatching {
+                val docDeleted = DocumentFile.fromSingleUri(context, uri)?.delete() == true
+                if (!docDeleted) {
+                    context.contentResolver.delete(uri, null, null)
+                }
+            }
+        }
+        if (record.filePath.isNotBlank() && !record.filePath.startsWith("content://", ignoreCase = true)) {
+            runCatching { File(record.filePath).delete() }
         }
     }
 
@@ -425,7 +623,7 @@ class AudioDownloadManager(
 
     private fun copyWithProgress(
         input: java.io.InputStream,
-        output: FileOutputStream,
+        output: OutputStream,
         totalBytes: Long,
         onProgress: (Long, Long) -> Unit
     ): Long {
@@ -465,7 +663,7 @@ class AudioDownloadManager(
             val loaded = runCatching {
                 json.decodeFromString<List<DownloadedTrackRecord>>(recordsFile.readText())
             }.getOrDefault(emptyList())
-            val existing = loaded.filter { File(it.filePath).let { f -> f.exists() && f.length() > 0L } }
+            val existing = loaded.filter { recordExists(it) }
             _downloadedTracks.value = existing
             if (existing.size != loaded.size) {
                 saveRecordsLocked(existing)
@@ -512,8 +710,43 @@ class AudioDownloadManager(
     companion object {
         private const val TAG = "AME_DOWNLOAD"
         private const val RECORDS_FILE_NAME = "downloaded_tracks.json"
-        private const val DOWNLOADS_SUBDIR = "AmeDownloads"
         const val DOWNLOADED_PLAYLIST_NAME = "已下载音乐"
+
+        internal fun resolveMediaStoreTarget(rawPath: String): Pair<Uri, String>? {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+            val normalized = UserSessionManager.normalizeDownloadPath(rawPath)
+            if (normalized.startsWith("content://", ignoreCase = true)) return null
+
+            val prefixes = listOf("/storage/emulated/0/", "/sdcard/")
+            val relFromRoot = prefixes.firstOrNull { normalized.startsWith(it, ignoreCase = true) }
+                ?.let { normalized.substring(it.length) }
+                ?: return null
+
+            val cleanRel = relFromRoot.trimStart('/')
+            return when {
+                cleanRel.equals("Download/", ignoreCase = true) ||
+                    cleanRel.startsWith("Download/", ignoreCase = true) -> {
+                    val sub = cleanRel.substringAfter('/', "").trim('/')
+                    val relativePath = if (sub.isEmpty()) {
+                        "${Environment.DIRECTORY_DOWNLOADS}/"
+                    } else {
+                        "${Environment.DIRECTORY_DOWNLOADS}/$sub/"
+                    }
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI to relativePath
+                }
+                cleanRel.equals("Music/", ignoreCase = true) ||
+                    cleanRel.startsWith("Music/", ignoreCase = true) -> {
+                    val sub = cleanRel.substringAfter('/', "").trim('/')
+                    val relativePath = if (sub.isEmpty()) {
+                        "${Environment.DIRECTORY_MUSIC}/"
+                    } else {
+                        "${Environment.DIRECTORY_MUSIC}/$sub/"
+                    }
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to relativePath
+                }
+                else -> null
+            }
+        }
 
         private fun defaultHttpClient(): OkHttpClient {
             return OkHttpClient.Builder()

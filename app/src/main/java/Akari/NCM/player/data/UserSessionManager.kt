@@ -37,6 +37,9 @@ class UserSessionManager @Inject constructor(
     private val _autoDownloadWifiOnlyState = MutableStateFlow(isAutoDownloadWifiOnlyEnabled())
     val autoDownloadWifiOnlyState: StateFlow<Boolean> = _autoDownloadWifiOnlyState.asStateFlow()
 
+    private val _downloadPathState = MutableStateFlow(getDownloadPath())
+    val downloadPathState: StateFlow<String> = _downloadPathState.asStateFlow()
+
     private val _userProfileState = MutableStateFlow(getUserProfile())
     val userProfileState: StateFlow<UserProfile?> = _userProfileState.asStateFlow()
 
@@ -128,6 +131,21 @@ class UserSessionManager @Inject constructor(
         _autoDownloadWifiOnlyState.value = wifiOnly
     }
 
+    fun getDownloadPath(): String {
+        val raw = prefs.getString(KEY_DOWNLOAD_PATH, null)
+        return normalizeDownloadPath(raw)
+    }
+
+    fun saveDownloadPath(path: String) {
+        val normalized = normalizeDownloadPath(path)
+        prefs.edit().putString(KEY_DOWNLOAD_PATH, normalized).apply()
+        _downloadPathState.value = normalized
+    }
+
+    fun resetDownloadPath() {
+        saveDownloadPath(DEFAULT_DOWNLOAD_PATH)
+    }
+
     private fun clampQualityByVipTier(saved: QualityLevel): QualityLevel {
         val vipTier = if (isLoggedIn()) (getUserProfile()?.vipTier ?: VipTier.NONE) else VipTier.NONE
         if (saved.requiredVipTier.level > vipTier.level) {
@@ -192,10 +210,41 @@ class UserSessionManager @Inject constructor(
         private const val KEY_DOWNLOAD_QUALITY = "preferred_download_quality"
         private const val KEY_AUTO_DOWNLOAD_ON_FAVORITE = "auto_download_on_favorite"
         private const val KEY_AUTO_DOWNLOAD_WIFI_ONLY = "auto_download_wifi_only"
+        private const val KEY_DOWNLOAD_PATH = "download_directory_path"
         private const val KEY_USER_PROFILE = "user_profile"
         private const val KEY_API_BASE_URL = "api_base_url"
         private const val KEY_HOMEPAGE_MODE = "homepage_mode"
         const val DEFAULT_API_BASE_URL = "https://interface.music.163.com"
+        const val DEFAULT_DOWNLOAD_PATH = "/storage/emulated/0/Download/netease/cloudmusic/Music/"
+
+        fun normalizeDownloadPath(raw: String?): String {
+            val trimmed = raw?.trim().orEmpty()
+            if (trimmed.isEmpty()) return DEFAULT_DOWNLOAD_PATH
+            if (trimmed.startsWith("content://", ignoreCase = true)) {
+                return trimmed
+            }
+            val normalizedSlashes = trimmed.replace('\\', '/')
+            return if (normalizedSlashes.endsWith('/')) normalizedSlashes else "$normalizedSlashes/"
+        }
+
+        fun formatDownloadPathForDisplay(rawPath: String): String {
+            val normalized = normalizeDownloadPath(rawPath)
+            if (!normalized.startsWith("content://", ignoreCase = true)) {
+                return normalized
+            }
+            val decoded = runCatching { android.net.Uri.decode(normalized) }.getOrDefault(normalized)
+            val treePart = decoded.substringAfter("/tree/", "")
+            if (treePart.startsWith("primary:")) {
+                val rel = treePart.removePrefix("primary:").trim('/')
+                return if (rel.isEmpty()) "/storage/emulated/0/" else "/storage/emulated/0/$rel/"
+            }
+            if (treePart.contains(':')) {
+                val vol = treePart.substringBefore(':')
+                val rel = treePart.substringAfter(':').trim('/')
+                return if (rel.isEmpty()) "/storage/$vol/" else "/storage/$vol/$rel/"
+            }
+            return normalized
+        }
 
         /**
          * 净化 Cookie 字符串：只保留合法的名值对 (key=value)，彻底过滤 Path, Max-Age, Expires 等服务端指令
