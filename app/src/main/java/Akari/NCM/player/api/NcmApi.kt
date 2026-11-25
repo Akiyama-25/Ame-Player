@@ -942,6 +942,10 @@ class NcmApi @Inject constructor(
                 ?: vipRights?.get("redVipLevel")?.jsonPrimitive?.intOrNull
                 ?: associator?.get("vipLevel")?.jsonPrimitive?.intOrNull
                 ?: 0
+            AppLogger.i(
+                "AME_LOGIN_DEBUG",
+                "parseVipEntitlement: isSvip=$redplusActive, redplusExpire=$redplusExpireTime, now=$nowMs, redVipLevel=$redVipLevel, redplus=$redplus"
+            )
             return redplusActive to redVipLevel
         }
 

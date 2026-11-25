@@ -232,6 +232,9 @@ fun MainScreen(
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             localFolderManager.scanAllFolders()
+            if (sessionManager.isLoggedIn()) {
+                runCatching { ncmApi.getUserProfile() }
+            }
             playlistManager.syncAllCloudPlaylistsSilently(ncmApi, sessionManager)
         }
     }

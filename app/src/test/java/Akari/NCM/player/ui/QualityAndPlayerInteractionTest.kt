@@ -245,6 +245,26 @@ class QualityAndPlayerInteractionTest {
     }
 
     @Test
+    fun testUserSessionManager_legacyCachedProfile_clearsStaleSvipFlag() {
+        // Simulate legacy SharedPreferences JSON saved before entitlementVersion = 2
+        val prefs = context.getSharedPreferences("ncm_user_session", Context.MODE_PRIVATE)
+        prefs.edit().putString(
+            "user_profile",
+            """{"userId":123,"nickname":"LegacyVip","vipType":11,"isSvip":true,"redVipLevel":7}"""
+        ).commit()
+
+        val loaded = sessionManager.getUserProfile()
+        assertEquals(VipTier.VIP, loaded?.vipTier)
+        assertFalse(loaded?.isSvip ?: true)
+
+        // Newly saved SVIP profile includes entitlementVersion = 2 and keeps SVIP
+        sessionManager.saveUserProfile(UserProfile(userId = 123L, nickname = "RealSvip", vipType = 11, isSvip = true, redVipLevel = 7))
+        val reloaded = sessionManager.getUserProfile()
+        assertEquals(VipTier.SVIP, reloaded?.vipTier)
+        assertTrue(reloaded?.isSvip ?: false)
+    }
+
+    @Test
     fun testSearchScreen_livePreviewTypingAndSubmitCoordination() {
         searchHistoryManager.addSearchQuery("历史歌曲")
         val usbAudioManager = UsbAudioManager(context)

@@ -20,7 +20,7 @@ class UserSessionManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val prefs: SharedPreferences = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
     private val _cookieState = MutableStateFlow(getCookie())
     val cookieState: StateFlow<String> = _cookieState.asStateFlow()
@@ -99,7 +99,13 @@ class UserSessionManager @Inject constructor(
     fun getUserProfile(): UserProfile? {
         val jsonStr = prefs.getString(KEY_USER_PROFILE, null) ?: return null
         return try {
-            json.decodeFromString<UserProfile>(jsonStr)
+            val decoded = json.decodeFromString<UserProfile>(jsonStr)
+            val hasVersion = jsonStr.contains("\"entitlementVersion\"")
+            if (!hasVersion || decoded.entitlementVersion < UserProfile.CURRENT_ENTITLEMENT_VERSION) {
+                decoded.copy(isSvip = false, entitlementVersion = 1)
+            } else {
+                decoded
+            }
         } catch (_: Exception) {
             null
         }

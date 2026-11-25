@@ -38,10 +38,15 @@ data class UserProfile(
     val vipType: Int = 0,
     val signature: String = "",
     val isSvip: Boolean = false,
-    val redVipLevel: Int = 0
+    val redVipLevel: Int = 0,
+    val entitlementVersion: Int = CURRENT_ENTITLEMENT_VERSION
 ) {
     val vipTier: VipTier
         get() = if (isSvip || vipType >= 100) VipTier.SVIP else if (vipType > 0) VipTier.VIP else VipTier.NONE
+
+    companion object {
+        const val CURRENT_ENTITLEMENT_VERSION = 2
+    }
 }
 
 @Serializable

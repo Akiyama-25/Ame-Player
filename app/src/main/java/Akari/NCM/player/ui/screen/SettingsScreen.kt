@@ -145,6 +145,11 @@ fun SettingsScreen(
     LaunchedEffect(Unit) {
         CustomFontManager.init(context)
     }
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn) {
+            runCatching { ncmApi.getUserProfile() }
+        }
+    }
     val selectedFontInfo by CustomFontManager.selectedFontInfoFlow.collectAsState()
     val selectedFontId by CustomFontManager.selectedFontIdFlow.collectAsState()
     val importedFonts by CustomFontManager.importedFontsFlow.collectAsState()
@@ -291,11 +296,11 @@ fun SettingsScreen(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
-                                        if ((userProfile?.vipType ?: 0) > 0) {
+                                        if (userVipTier != VipTier.NONE) {
                                             Spacer(modifier = Modifier.width(8.dp))
                                             SuggestionChip(
                                                 onClick = { showProfileDetailDialog = true },
-                                                label = { Text("VIP", fontSize = 10.sp, fontWeight = FontWeight.Bold) },
+                                                label = { Text(userVipTier.badgeText, fontSize = 10.sp, fontWeight = FontWeight.Bold) },
                                                 modifier = Modifier.height(24.dp)
                                             )
                                         }
