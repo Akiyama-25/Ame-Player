@@ -1291,7 +1291,7 @@ class NcmApi @Inject constructor(
                         isSvip = isSvip,
                         redVipLevel = redVipLevel
                     )
-                    AppLogger.i("AME_LOGIN_DEBUG", "Direct getUserProfile success: userId=$userId, nickname=${profile.nickname}, isSvip=$isSvip, redVipLevel=$redVipLevel")
+                    AppLogger.i("AME_LOGIN_DEBUG", "Direct getUserProfile success: userId=$userId, nickname=${profile.nickname}, vipType=$vipType, isSvip=$isSvip, vipTier=${profile.vipTier}, redVipLevel=$redVipLevel")
                     sessionManager?.saveUserProfile(profile)
                     return profile
                 }
@@ -1375,7 +1375,7 @@ class NcmApi @Inject constructor(
                     isSvip = isSvip,
                     redVipLevel = redVipLevel
                 )
-                AppLogger.i("AME_LOGIN_DEBUG", "getUserProfile success: userId=$userId, nickname=${profile.nickname}, avatar=$avatarUrl, isSvip=$isSvip, redVipLevel=$redVipLevel")
+                AppLogger.i("AME_LOGIN_DEBUG", "getUserProfile success: userId=$userId, nickname=${profile.nickname}, avatar=$avatarUrl, vipType=$vipType, isSvip=$isSvip, vipTier=${profile.vipTier}, redVipLevel=$redVipLevel")
                 sessionManager?.saveUserProfile(profile)
                 return profile
             }

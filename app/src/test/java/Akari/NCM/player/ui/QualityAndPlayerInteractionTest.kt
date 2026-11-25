@@ -153,6 +153,10 @@ class QualityAndPlayerInteractionTest {
 
         sessionManager.saveUserProfile(UserProfile(userId = 2L, nickname = "VipUser", vipType = 11, redVipLevel = 3))
         assertEquals(VipTier.VIP, sessionManager.getUserProfile()?.vipTier)
+
+        // NetEase profile.vipType can be 110 even when SVIP (redplus) has expired; isSvip = false must remain VIP
+        sessionManager.saveUserProfile(UserProfile(userId = 2L, nickname = "VipUser110", vipType = 110, isSvip = false, redVipLevel = 7))
+        assertEquals(VipTier.VIP, sessionManager.getUserProfile()?.vipTier)
         assertEquals(QualityLevel.HIRES, sessionManager.getEffectiveQualityLevel())
 
         // VIP account must NOT unlock any SVIP qualities (JYEFFECT, DOLBY, SKY, JYMASTER)
