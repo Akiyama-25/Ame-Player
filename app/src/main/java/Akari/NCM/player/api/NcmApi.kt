@@ -924,27 +924,63 @@ class NcmApi @Inject constructor(
             }
         }
 
+        private const val REDPLUS_SVIP_VIP_CODE = 300
+
         /**
-         * 解析网易云 `/vip/info/v2` 权益结果，仅当 `redplus.expireTime > nowMs` 时才判定为有效 SVIP，
-         * 避免普通 VIP 账户因返回静态 `redplus.vipCode` 字段而被误判为 SVIP。
+         * 解析网易云 `/api/music-vip-membership/client/vip/info`（及 `/vip/info/v2`）权益结果。
+         *
+         * 依据网易云官方 `UserPrivilege.isRedPlus()` 判定口径：
+         * - 仅当 `redplus.vipCode == 300`（100=黑胶VIP, 220/230=音乐包, 300=黑胶SVIP）
+         * - 且 `redplus.expireTime > effectiveNowMs`（优先采用服务端 `data.now`，避免本地时钟偏移）
+         * - 且若存在 `redplus.vipLevel` 则必须 `> 0`
+         * - 且若存在 `redplus.rights` 则必须不为 `false`
+         * 时才判定为有效 SVIP，避免普通黑胶 VIP（如学生套餐、体验权益或历史残留字段）被误判为 SVIP。
          */
         internal fun parseVipEntitlement(
             json: JsonObject,
-            nowMs: Long = System.currentTimeMillis()
+            nowMs: Long = System.currentTimeMillis(),
+            expectedUserId: Long = 0L
         ): Pair<Boolean, Int> {
+            val code = json["code"]?.jsonPrimitive?.intOrNull
+            if (code != null && code != 200) {
+                AppLogger.w("AME_LOGIN_DEBUG", "parseVipEntitlement: non-200 code=$code")
+                return false to 0
+            }
             val data = json["data"]?.asJsonObjectOrNull ?: json
+            val responseUserId = data["userId"]?.jsonPrimitive?.longOrNull
+            if (expectedUserId > 0L && responseUserId != null && responseUserId > 0L && responseUserId != expectedUserId) {
+                AppLogger.w(
+                    "AME_LOGIN_DEBUG",
+                    "parseVipEntitlement: userId mismatch expected=$expectedUserId actual=$responseUserId"
+                )
+                return false to 0
+            }
+            val serverNowMs = data["now"]?.jsonPrimitive?.longOrNull?.takeIf { it > 0L }
+            val effectiveNowMs = serverNowMs ?: nowMs
             val vipRights = data["vipRights"]?.asJsonObjectOrNull
             val redplus = data["redplus"]?.asJsonObjectOrNull ?: vipRights?.get("redplus")?.asJsonObjectOrNull
             val associator = data["associator"]?.asJsonObjectOrNull ?: vipRights?.get("associator")?.asJsonObjectOrNull
+
+            val redplusVipCode = redplus?.get("vipCode")?.jsonPrimitive?.intOrNull ?: 0
             val redplusExpireTime = redplus?.get("expireTime")?.jsonPrimitive?.longOrNull ?: 0L
-            val redplusActive = redplusExpireTime > nowMs
+            val redplusVipLevel = redplus?.get("vipLevel")?.jsonPrimitive?.intOrNull
+            val redplusRights = redplus?.get("rights")?.jsonPrimitive?.booleanOrNull
+
+            val hasValidVipLevel = redplusVipLevel == null || redplusVipLevel > 0
+            val hasValidRights = redplusRights != false
+            val redplusActive = redplus != null &&
+                redplusVipCode == REDPLUS_SVIP_VIP_CODE &&
+                redplusExpireTime > effectiveNowMs &&
+                hasValidVipLevel &&
+                hasValidRights
+
             val redVipLevel = data["redVipLevel"]?.jsonPrimitive?.intOrNull
                 ?: vipRights?.get("redVipLevel")?.jsonPrimitive?.intOrNull
                 ?: associator?.get("vipLevel")?.jsonPrimitive?.intOrNull
                 ?: 0
             AppLogger.i(
                 "AME_LOGIN_DEBUG",
-                "parseVipEntitlement: isSvip=$redplusActive, redplusExpire=$redplusExpireTime, now=$nowMs, redVipLevel=$redVipLevel, redplus=$redplus"
+                "parseVipEntitlement: isSvip=$redplusActive, vipCode=$redplusVipCode, vipLevel=$redplusVipLevel, rights=$redplusRights, redplusExpire=$redplusExpireTime, now=$effectiveNowMs, redVipLevel=$redVipLevel, redplus=$redplus"
             )
             return redplusActive to redVipLevel
         }
@@ -1245,7 +1281,7 @@ class NcmApi @Inject constructor(
                 }
 
                 if (nickname.isNotBlank() || userId > 0L) {
-                    val (isSvip, redVipLevel) = fetchVipEntitlement()
+                    val (isSvip, redVipLevel) = fetchVipEntitlement(userId)
                     val profile = UserProfile(
                         userId = userId,
                         nickname = nickname.ifBlank { "网易云用户$userId" },
@@ -1329,7 +1365,7 @@ class NcmApi @Inject constructor(
             }
 
             if (nickname.isNotBlank() || userId > 0L) {
-                val (isSvip, redVipLevel) = fetchVipEntitlement()
+                val (isSvip, redVipLevel) = fetchVipEntitlement(userId)
                 val profile = UserProfile(
                     userId = userId,
                     nickname = nickname.ifBlank { "网易云用户$userId" },
@@ -1351,25 +1387,27 @@ class NcmApi @Inject constructor(
         }
     }
 
-    private suspend fun fetchVipEntitlement(): Pair<Boolean, Int> {
+    private suspend fun fetchVipEntitlement(userId: Long = 0L): Pair<Boolean, Int> {
         var json: JsonObject? = null
         if (isDirectMode) {
             try {
+                val payload = if (userId > 0L) """{"userId":$userId}""" else "{}"
                 val body = directClient.postEapi(
                     client,
                     NeteaseEndpoints.URL_EAPI_VIP_INFO,
                     NeteaseEndpoints.PATH_EAPI_VIP_INFO,
-                    "{}"
+                    payload
                 )
                 json = Json.parseToJsonElement(body).asJsonObjectOrNull
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
             }
         }
-        if (json == null) {
+        if (json == null && !isDirectMode) {
             for (path in listOf("$baseUrl/vip/info/v2", "$baseUrl/vip/info")) {
                 try {
                     val resp = client.get(path) {
+                        if (userId > 0L) parameter("uid", userId)
                         parameter("timestamp", System.currentTimeMillis())
                     }
                     val parsed = Json.parseToJsonElement(resp.bodyAsText()).asJsonObjectOrNull
@@ -1383,7 +1421,7 @@ class NcmApi @Inject constructor(
             }
         }
         if (json == null) return false to 0
-        return parseVipEntitlement(json)
+        return parseVipEntitlement(json, expectedUserId = userId)
     }
 
     suspend fun getHomepageDragonBalls(): List<HomepageDragonBall> {

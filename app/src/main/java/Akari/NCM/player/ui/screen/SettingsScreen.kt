@@ -2018,11 +2018,11 @@ private fun UserProfileDetailDialog(
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
-                    if (userProfile.vipType > 0) {
+                    if (userProfile.vipTier != VipTier.NONE) {
                         Spacer(modifier = Modifier.width(8.dp))
                         SuggestionChip(
                             onClick = {},
-                            label = { Text("VIP", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            label = { Text(userProfile.vipTier.badgeText, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                             modifier = Modifier.height(24.dp)
                         )
                     }

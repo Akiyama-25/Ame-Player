@@ -45,7 +45,7 @@ data class UserProfile(
         get() = if (isSvip || vipType >= 100) VipTier.SVIP else if (vipType > 0) VipTier.VIP else VipTier.NONE
 
     companion object {
-        const val CURRENT_ENTITLEMENT_VERSION = 2
+        const val CURRENT_ENTITLEMENT_VERSION = 3
     }
 }
 

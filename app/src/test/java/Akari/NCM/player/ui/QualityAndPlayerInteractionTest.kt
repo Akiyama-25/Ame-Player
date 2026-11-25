@@ -194,9 +194,9 @@ class QualityAndPlayerInteractionTest {
     }
 
     @Test
-    fun testNcmApi_parseVipEntitlement_requiresActiveRedplusExpireTimeForSvip() {
+    fun testNcmApi_parseVipEntitlement_requiresActiveRedplusSvipCodeAndExpiry() {
         val now = 1_700_000_000_000L
-        // Regular VIP account: redplus object present with vipCode > 0 but expireTime == 0 (or expired)
+        // Regular VIP account: redplus object present with vipCode == 0 and expireTime == 0
         val regularVipJson = Json.parseToJsonElement(
             """
             {
@@ -204,7 +204,7 @@ class QualityAndPlayerInteractionTest {
               "data": {
                 "redVipLevel": 5,
                 "associator": { "vipCode": 100, "expireTime": ${now + 86_400_000L}, "vipLevel": 5 },
-                "redplus": { "vipCode": 220, "expireTime": 0 }
+                "redplus": { "vipCode": 0, "expireTime": 0, "vipLevel": 0 }
               }
             }
             """.trimIndent()
@@ -213,6 +213,68 @@ class QualityAndPlayerInteractionTest {
         assertFalse(vipIsSvip)
         assertEquals(5, vipLevel)
 
+        // Regular VIP (e.g. student package) with future redplus.expireTime but non-SVIP vipCode (220/0)
+        val nonSvipCodeWithFutureExpireJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "redVipLevel": 7,
+                "associator": { "vipCode": 100, "expireTime": ${now + 86_400_000L}, "vipLevel": 7 },
+                "redplus": { "vipCode": 220, "expireTime": ${now + 86_400_000L}, "vipLevel": 7 }
+              }
+            }
+            """.trimIndent()
+        ).jsonObject
+        val (nonSvipCodeResult, nonSvipCodeLevel) = NcmApi.parseVipEntitlement(nonSvipCodeWithFutureExpireJson, nowMs = now)
+        assertFalse(nonSvipCodeResult)
+        assertEquals(7, nonSvipCodeLevel)
+
+        // redplus with vipCode == 300 and future expireTime but vipLevel == 0 (inactive)
+        val zeroLevelRedplusJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "redVipLevel": 7,
+                "redplus": { "vipCode": 300, "expireTime": ${now + 86_400_000L}, "vipLevel": 0 }
+              }
+            }
+            """.trimIndent()
+        ).jsonObject
+        assertFalse(NcmApi.parseVipEntitlement(zeroLevelRedplusJson, nowMs = now).first)
+
+        // vipRights.redplus with rights == false must not be treated as SVIP
+        val rightsFalseJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "vipRights": {
+                  "redVipLevel": 7,
+                  "redplus": { "vipCode": 300, "rights": false, "expireTime": ${now + 86_400_000L} }
+                }
+              }
+            }
+            """.trimIndent()
+        ).jsonObject
+        assertFalse(NcmApi.parseVipEntitlement(rightsFalseJson, nowMs = now).first)
+
+        // Server data.now ahead of device clock: expireTime <= data.now must be treated as expired
+        val serverNowExpiredJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "now": ${now + 10_000L},
+                "redVipLevel": 7,
+                "redplus": { "vipCode": 300, "expireTime": ${now + 5_000L}, "vipLevel": 7 }
+              }
+            }
+            """.trimIndent()
+        ).jsonObject
+        assertFalse(NcmApi.parseVipEntitlement(serverNowExpiredJson, nowMs = now).first)
+
         // Expired SVIP account
         val expiredSvipJson = Json.parseToJsonElement(
             """
@@ -220,34 +282,39 @@ class QualityAndPlayerInteractionTest {
               "code": 200,
               "data": {
                 "redVipLevel": 6,
-                "redplus": { "vipCode": 220, "expireTime": ${now - 1000L} }
+                "redplus": { "vipCode": 300, "expireTime": ${now - 1000L}, "vipLevel": 6 }
               }
             }
             """.trimIndent()
         ).jsonObject
         assertFalse(NcmApi.parseVipEntitlement(expiredSvipJson, nowMs = now).first)
 
-        // Active SVIP account
+        // Active SVIP account: vipCode == 300, future expireTime, positive vipLevel
         val activeSvipJson = Json.parseToJsonElement(
             """
             {
               "code": 200,
               "data": {
+                "userId": 42,
+                "now": $now,
                 "redVipLevel": 7,
-                "redplus": { "vipCode": 220, "expireTime": ${now + 86_400_000L} }
+                "redplus": { "vipCode": 300, "expireTime": ${now + 86_400_000L}, "vipLevel": 7 }
               }
             }
             """.trimIndent()
         ).jsonObject
-        val (svipIsSvip, svipLevel) = NcmApi.parseVipEntitlement(activeSvipJson, nowMs = now)
+        val (svipIsSvip, svipLevel) = NcmApi.parseVipEntitlement(activeSvipJson, nowMs = now, expectedUserId = 42L)
         assertTrue(svipIsSvip)
         assertEquals(7, svipLevel)
+
+        // Mismatched userId must be rejected
+        assertFalse(NcmApi.parseVipEntitlement(activeSvipJson, nowMs = now, expectedUserId = 99L).first)
     }
 
     @Test
     fun testUserSessionManager_legacyCachedProfile_clearsStaleSvipFlag() {
-        // Simulate legacy SharedPreferences JSON saved before entitlementVersion = 2
         val prefs = context.getSharedPreferences("ncm_user_session", Context.MODE_PRIVATE)
+        // Simulate legacy SharedPreferences JSON saved before entitlementVersion
         prefs.edit().putString(
             "user_profile",
             """{"userId":123,"nickname":"LegacyVip","vipType":11,"isSvip":true,"redVipLevel":7}"""
@@ -257,7 +324,16 @@ class QualityAndPlayerInteractionTest {
         assertEquals(VipTier.VIP, loaded?.vipTier)
         assertFalse(loaded?.isSvip ?: true)
 
-        // Newly saved SVIP profile includes entitlementVersion = 2 and keeps SVIP
+        // Simulate v2 cached profile saved before vipCode == 300 check (CURRENT_ENTITLEMENT_VERSION == 3)
+        prefs.edit().putString(
+            "user_profile",
+            """{"userId":123,"nickname":"LegacyV2Vip","vipType":11,"isSvip":true,"redVipLevel":7,"entitlementVersion":2}"""
+        ).commit()
+        val loadedV2 = sessionManager.getUserProfile()
+        assertEquals(VipTier.VIP, loadedV2?.vipTier)
+        assertFalse(loadedV2?.isSvip ?: true)
+
+        // Newly saved SVIP profile includes CURRENT_ENTITLEMENT_VERSION (3) and keeps SVIP
         sessionManager.saveUserProfile(UserProfile(userId = 123L, nickname = "RealSvip", vipType = 11, isSvip = true, redVipLevel = 7))
         val reloaded = sessionManager.getUserProfile()
         assertEquals(VipTier.SVIP, reloaded?.vipTier)
