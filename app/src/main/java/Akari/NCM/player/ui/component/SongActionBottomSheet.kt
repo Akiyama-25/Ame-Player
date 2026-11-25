@@ -10,6 +10,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material3.*
@@ -20,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -32,10 +35,14 @@ fun SongActionBottomSheet(
     currentPlaylist: CustomPlaylist? = null,
     isFavorite: Boolean,
     showFavoriteAction: Boolean = true,
+    showDownloadAction: Boolean = false,
+    isDownloaded: Boolean = false,
+    isDownloading: Boolean = false,
     onDismiss: () -> Unit,
     onPlayNext: () -> Unit,
     onToggleFavorite: () -> Unit,
     onAddToPlaylist: () -> Unit,
+    onDownloadClick: (() -> Unit)? = null,
     onRemoveFromCurrentPlaylist: (() -> Unit)? = null
 ) {
     ModalBottomSheet(
@@ -134,6 +141,24 @@ fun SongActionBottomSheet(
                 }
             )
 
+            if (showDownloadAction && onDownloadClick != null) {
+                SongActionItem(
+                    icon = if (isDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
+                    iconTint = if (isDownloaded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    title = when {
+                        isDownloading -> "正在下载音频..."
+                        isDownloaded -> "重新下载音频 (已下载)"
+                        else -> "下载音频"
+                    },
+                    enabled = !isDownloading,
+                    modifier = Modifier.testTag("song_action_download"),
+                    onClick = {
+                        onDismiss()
+                        onDownloadClick()
+                    }
+                )
+            }
+
             val isFavoritePlaylist = currentPlaylist?.let {
                 it.name.contains("喜欢的音乐") || it.name.contains("My Favorite") || it.name.contains("红心歌单")
             } ?: false
@@ -160,13 +185,14 @@ private fun SongActionItem(
     title: String,
     iconTint: Color = MaterialTheme.colorScheme.onSurface,
     enabled: Boolean = true,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     ListItem(
         colors = ListItemDefaults.colors(
             containerColor = Color.Transparent
         ),
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(enabled = enabled, onClick = onClick),
         leadingContent = {

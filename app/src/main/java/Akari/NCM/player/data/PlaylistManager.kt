@@ -160,8 +160,9 @@ class PlaylistManager(private val context: Context) {
     private var allLayer4Cache: Map<String, PlayableMedia.LocalNcm> = emptyMap()
 
     private fun updateLocalMatchCache(list: List<CustomPlaylist>) {
-        val localPlaylist = list.find { it.ncmPlaylistId == -9999L }
-        if (localPlaylist == null) {
+        val localPlaylist = list.find { it.ncmPlaylistId == LOCAL_FOLDER_PLAYLIST_ID }
+        val downloadedPlaylist = list.find { it.ncmPlaylistId == DOWNLOADED_PLAYLIST_ID }
+        if (localPlaylist == null && downloadedPlaylist == null) {
             ncmIdMatchCache = emptyMap()
             nonNcmLayer1Cache = emptyMap()
             nonNcmLayer2Cache = emptyMap()
@@ -184,12 +185,20 @@ class PlaylistManager(private val context: Context) {
         val allL3 = mutableMapOf<String, PlayableMedia.LocalNcm>()
         val allL4 = mutableMapOf<String, PlayableMedia.LocalNcm>()
 
-        for (dto in localPlaylist.songs) {
+        // 优先索引已下载歌曲（具备精确网易云歌曲 ID）
+        for (dto in downloadedPlaylist?.songs.orEmpty()) {
+            val media = dto.toPlayableMedia() as? PlayableMedia.LocalNcm ?: continue
+            if (media.id.isNotBlank()) {
+                idMap[media.id] = media
+            }
+        }
+
+        for (dto in localPlaylist?.songs.orEmpty()) {
             val media = dto.toPlayableMedia() as? PlayableMedia.LocalNcm ?: continue
 
             // 优先记录具有 NCM ID 的项
             if (media.isNcm) {
-                idMap[media.id] = media
+                idMap.putIfAbsent(media.id, media)
                 val k1 = layer1Key(media.title, media.artist)
                 val k2 = layer2Key(media.title, media.artist)
                 val k3 = layer3Key(media.title, media.artist)
@@ -307,6 +316,9 @@ class PlaylistManager(private val context: Context) {
     }
 
     companion object {
+        const val LOCAL_FOLDER_PLAYLIST_ID = -9999L
+        const val DOWNLOADED_PLAYLIST_ID = -9998L
+
         private fun unifyFullWidth(input: String): String {
             return java.text.Normalizer.normalize(input, java.text.Normalizer.Form.NFKC)
                 .replace('\u301C', '~') // 兼容日文波浪号 〜 与全角/半角 ~

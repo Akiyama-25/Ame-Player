@@ -28,6 +28,15 @@ class UserSessionManager @Inject constructor(
     private val _qualityState = MutableStateFlow(getQualityLevel())
     val qualityState: StateFlow<QualityLevel> = _qualityState.asStateFlow()
 
+    private val _downloadQualityState = MutableStateFlow(getDownloadQualityLevel())
+    val downloadQualityState: StateFlow<QualityLevel> = _downloadQualityState.asStateFlow()
+
+    private val _autoDownloadOnFavoriteState = MutableStateFlow(isAutoDownloadOnFavoriteEnabled())
+    val autoDownloadOnFavoriteState: StateFlow<Boolean> = _autoDownloadOnFavoriteState.asStateFlow()
+
+    private val _autoDownloadWifiOnlyState = MutableStateFlow(isAutoDownloadWifiOnlyEnabled())
+    val autoDownloadWifiOnlyState: StateFlow<Boolean> = _autoDownloadWifiOnlyState.asStateFlow()
+
     private val _userProfileState = MutableStateFlow(getUserProfile())
     val userProfileState: StateFlow<UserProfile?> = _userProfileState.asStateFlow()
 
@@ -79,8 +88,48 @@ class UserSessionManager @Inject constructor(
     }
 
     fun getEffectiveQualityLevel(): QualityLevel {
+        return clampQualityByVipTier(getQualityLevel())
+    }
+
+    fun saveQualityLevel(level: QualityLevel) {
+        prefs.edit().putString(KEY_QUALITY, level.value).apply()
+        _qualityState.value = level
+    }
+
+    fun getDownloadQualityLevel(): QualityLevel {
+        val value = prefs.getString(KEY_DOWNLOAD_QUALITY, QualityLevel.EXHIGH.value) ?: QualityLevel.EXHIGH.value
+        return QualityLevel.fromValue(value)
+    }
+
+    fun getEffectiveDownloadQualityLevel(): QualityLevel {
+        return clampQualityByVipTier(getDownloadQualityLevel())
+    }
+
+    fun saveDownloadQualityLevel(level: QualityLevel) {
+        prefs.edit().putString(KEY_DOWNLOAD_QUALITY, level.value).apply()
+        _downloadQualityState.value = level
+    }
+
+    fun isAutoDownloadOnFavoriteEnabled(): Boolean {
+        return prefs.getBoolean(KEY_AUTO_DOWNLOAD_ON_FAVORITE, false)
+    }
+
+    fun setAutoDownloadOnFavoriteEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_DOWNLOAD_ON_FAVORITE, enabled).apply()
+        _autoDownloadOnFavoriteState.value = enabled
+    }
+
+    fun isAutoDownloadWifiOnlyEnabled(): Boolean {
+        return prefs.getBoolean(KEY_AUTO_DOWNLOAD_WIFI_ONLY, true)
+    }
+
+    fun setAutoDownloadWifiOnlyEnabled(wifiOnly: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_DOWNLOAD_WIFI_ONLY, wifiOnly).apply()
+        _autoDownloadWifiOnlyState.value = wifiOnly
+    }
+
+    private fun clampQualityByVipTier(saved: QualityLevel): QualityLevel {
         val vipTier = if (isLoggedIn()) (getUserProfile()?.vipTier ?: VipTier.NONE) else VipTier.NONE
-        val saved = getQualityLevel()
         if (saved.requiredVipTier.level > vipTier.level) {
             return when (vipTier) {
                 VipTier.SVIP -> QualityLevel.JYMASTER
@@ -89,11 +138,6 @@ class UserSessionManager @Inject constructor(
             }
         }
         return saved
-    }
-
-    fun saveQualityLevel(level: QualityLevel) {
-        prefs.edit().putString(KEY_QUALITY, level.value).apply()
-        _qualityState.value = level
     }
 
     fun getUserProfile(): UserProfile? {
@@ -145,6 +189,9 @@ class UserSessionManager @Inject constructor(
         private const val PREF_NAME = "ncm_user_session"
         private const val KEY_COOKIE = "user_cookie"
         private const val KEY_QUALITY = "preferred_quality"
+        private const val KEY_DOWNLOAD_QUALITY = "preferred_download_quality"
+        private const val KEY_AUTO_DOWNLOAD_ON_FAVORITE = "auto_download_on_favorite"
+        private const val KEY_AUTO_DOWNLOAD_WIFI_ONLY = "auto_download_wifi_only"
         private const val KEY_USER_PROFILE = "user_profile"
         private const val KEY_API_BASE_URL = "api_base_url"
         private const val KEY_HOMEPAGE_MODE = "homepage_mode"

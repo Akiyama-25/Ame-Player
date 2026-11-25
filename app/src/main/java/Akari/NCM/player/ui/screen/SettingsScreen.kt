@@ -86,6 +86,7 @@ fun SettingsScreen(
     sessionManager: UserSessionManager,
     ncmApi: NcmApi,
     localFolderManager: Akari.NCM.player.data.LocalFolderManager,
+    audioDownloadManager: Akari.NCM.player.data.AudioDownloadManager? = null,
     onOpenLog: () -> Unit = {},
     onOpenWebLogin: (() -> Unit)? = null,
     onBack: () -> Unit
@@ -134,12 +135,20 @@ fun SettingsScreen(
     var showLogSizeDialog by remember { mutableStateOf(false) }
     var showLoudnessDialog by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
+    var showDownloadQualityDialog by remember { mutableStateOf(false) }
+    var showDownloadedTracksDialog by remember { mutableStateOf(false) }
     var showFontDialog by remember { mutableStateOf(false) }
 
     val selectedQuality by sessionManager.qualityState.collectAsState()
-    val userVipTier = userProfile?.vipTier ?: VipTier.NONE
-    val effectiveQuality = remember(selectedQuality, userProfile) {
+    val selectedDownloadQuality by sessionManager.downloadQualityState.collectAsState()
+    val autoDownloadOnFavorite by sessionManager.autoDownloadOnFavoriteState.collectAsState()
+    val autoDownloadWifiOnly by sessionManager.autoDownloadWifiOnlyState.collectAsState()
+    val userVipTier = if (isLoggedIn) (userProfile?.vipTier ?: VipTier.NONE) else VipTier.NONE
+    val effectiveQuality = remember(selectedQuality, userProfile, isLoggedIn) {
         sessionManager.getEffectiveQualityLevel()
+    }
+    val effectiveDownloadQuality = remember(selectedDownloadQuality, userProfile, isLoggedIn) {
+        sessionManager.getEffectiveDownloadQualityLevel()
     }
 
     LaunchedEffect(Unit) {
@@ -991,6 +1000,119 @@ fun SettingsScreen(
                 }
             }
 
+            // ── 下载与离线设置 ──
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    SectionHeader("下载与离线")
+                    SettingsGroupCard {
+                        SettingItem(
+                            title = "默认下载音质",
+                            subtitle = "${effectiveDownloadQuality.label} · ${userVipTier.label}（应用于收藏自动下载及手动下载默认预选）",
+                            onClick = { showDownloadQualityDialog = true },
+                            modifier = Modifier.testTag("setting_download_quality")
+                        )
+
+                        SettingsInnerDivider()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    sessionManager.setAutoDownloadOnFavoriteEnabled(!autoDownloadOnFavorite)
+                                }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_auto_download_favorite"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "收藏自动下载",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (autoDownloadOnFavorite) {
+                                        "已开启 · 收藏（喜欢或添加至歌单）时自动按「${effectiveDownloadQuality.label}」下载"
+                                    } else {
+                                        "已关闭 · 收藏歌曲时不会自动下载，需手动触发下载"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = autoDownloadOnFavorite,
+                                onCheckedChange = { sessionManager.setAutoDownloadOnFavoriteEnabled(it) },
+                                modifier = Modifier.testTag("switch_auto_download_favorite")
+                            )
+                        }
+
+                        SettingsInnerDivider()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    sessionManager.setAutoDownloadWifiOnlyEnabled(!autoDownloadWifiOnly)
+                                }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_auto_download_wifi_only"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "仅在 Wi-Fi 连接时自动下载",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (autoDownloadWifiOnly) {
+                                        "已开启 · 仅在 Wi-Fi 网络下执行收藏自动下载，避免消耗移动流量"
+                                    } else {
+                                        "已关闭 · 移动数据与 Wi-Fi 网络下均允许收藏自动下载"
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = autoDownloadWifiOnly,
+                                onCheckedChange = { sessionManager.setAutoDownloadWifiOnlyEnabled(it) },
+                                modifier = Modifier.testTag("switch_auto_download_wifi_only")
+                            )
+                        }
+
+                        if (audioDownloadManager != null) {
+                            val downloadedTracks by audioDownloadManager.downloadedTracks.collectAsState()
+                            val totalBytes = remember(downloadedTracks) {
+                                audioDownloadManager.totalDownloadedSizeBytes()
+                            }
+                            val sizeSummary = remember(downloadedTracks, totalBytes) {
+                                if (downloadedTracks.isEmpty()) {
+                                    "暂无已下载歌曲"
+                                } else {
+                                    val mb = totalBytes / (1024f * 1024f)
+                                    String.format("已下载 %d 首 · 共 %.2f MB", downloadedTracks.size, mb)
+                                }
+                            }
+                            SettingsInnerDivider()
+                            SettingItem(
+                                title = "管理已下载音频",
+                                subtitle = sizeSummary,
+                                onClick = { showDownloadedTracksDialog = true },
+                                modifier = Modifier.testTag("setting_manage_downloads")
+                            )
+                        }
+                    }
+                }
+            }
+
             item(span = { GridItemSpan(maxLineSpan) }) {
                 val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
                 Column(
@@ -1395,6 +1517,7 @@ fun SettingsScreen(
 
     if (showQualityDialog) {
         QualitySelectionDialog(
+            title = "选择在线播放音质",
             currentQuality = effectiveQuality,
             userVipTier = userVipTier,
             onSelectQuality = { quality ->
@@ -1402,6 +1525,99 @@ fun SettingsScreen(
                 showQualityDialog = false
             },
             onDismiss = { showQualityDialog = false }
+        )
+    }
+
+    if (showDownloadQualityDialog) {
+        QualitySelectionDialog(
+            title = "选择默认下载音质",
+            currentQuality = effectiveDownloadQuality,
+            userVipTier = userVipTier,
+            onSelectQuality = { quality ->
+                sessionManager.saveDownloadQualityLevel(quality)
+                showDownloadQualityDialog = false
+            },
+            onDismiss = { showDownloadQualityDialog = false }
+        )
+    }
+
+    if (showDownloadedTracksDialog && audioDownloadManager != null) {
+        val downloadedTracks by audioDownloadManager.downloadedTracks.collectAsState()
+        AlertDialog(
+            onDismissRequest = { showDownloadedTracksDialog = false },
+            title = {
+                Text(
+                    "已下载音频 (${downloadedTracks.size})",
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                if (downloadedTracks.isEmpty()) {
+                    Text(
+                        "暂无已下载音频文件。可在歌曲菜单或播放页快捷功能中下载音频，或开启「收藏自动下载」。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 360.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        downloadedTracks.forEach { rec ->
+                            val sizeMb = rec.fileSizeBytes / (1024f * 1024f)
+                            val qualityLabel = QualityLevel.displayLabelFor(rec.actualQualityLevel ?: rec.requestedQuality)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = rec.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = String.format("%s · %s · %.2f MB", rec.artist.ifBlank { "未知歌手" }, qualityLabel, sizeMb),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        audioDownloadManager.deleteDownloadedTrack(rec.songId)
+                                        Toast.makeText(context, "已删除下载: ${rec.title}", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.DeleteOutline,
+                                        contentDescription = "删除已下载文件",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                AdaptiveButtonGroup(
+                    buttons = listOf(
+                        AdaptiveButtonSpec(
+                            text = "关闭",
+                            onClick = { showDownloadedTracksDialog = false },
+                            style = ExpressiveButtonStyle.TONAL
+                        )
+                    )
+                )
+            }
         )
     }
 
@@ -2142,6 +2358,7 @@ private fun ColorPickerRow(
 
 @Composable
 private fun QualitySelectionDialog(
+    title: String = "选择在线播放音质",
     currentQuality: QualityLevel,
     userVipTier: VipTier,
     onSelectQuality: (QualityLevel) -> Unit,
@@ -2152,7 +2369,7 @@ private fun QualitySelectionDialog(
         title = {
             Column {
                 Text(
-                    "选择在线播放音质",
+                    title,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )

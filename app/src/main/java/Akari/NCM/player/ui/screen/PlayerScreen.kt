@@ -1,6 +1,7 @@
 package Akari.NCM.player.ui.screen
 
 import Akari.NCM.player.api.NcmApi
+import Akari.NCM.player.core.AudioQualityClassifier
 import Akari.NCM.player.core.LyricLine
 import Akari.NCM.player.core.LyricSource
 import Akari.NCM.player.core.NcmArtistBrief
@@ -9,14 +10,21 @@ import Akari.NCM.player.core.PlayerController
 import Akari.NCM.player.core.PlayerState
 import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.core.RepeatMode
+import Akari.NCM.player.core.VipTier
 import Akari.NCM.player.core.extractArtistCandidates
+import Akari.NCM.player.data.AudioDownloadManager
+import Akari.NCM.player.data.AutoDownloadTriggerResult
+import Akari.NCM.player.data.DownloadStatus
+import Akari.NCM.player.data.DownloadTaskState
 import Akari.NCM.player.data.LyricResult
 import Akari.NCM.player.data.LyricsManager
 import Akari.NCM.player.data.PlaylistManager
 import Akari.NCM.player.data.ThemePrefs
+import Akari.NCM.player.data.UserSessionManager
 import android.widget.Toast
 import Akari.NCM.player.ui.component.AdaptiveButtonGroup
 import Akari.NCM.player.ui.component.AdaptiveButtonSpec
+import Akari.NCM.player.ui.component.DownloadQualitySelectionDialog
 import Akari.NCM.player.ui.component.ExpressiveButtonStyle
 import Akari.NCM.player.ui.component.DrawerPullHandle
 import Akari.NCM.player.ui.component.PlayerBackgroundLayer
@@ -127,6 +135,9 @@ fun PlayerScreen(
     playerController: PlayerController,
     ncmApi: NcmApi,
     playlistManager: PlaylistManager? = null,
+    sessionManager: UserSessionManager? = null,
+    audioDownloadManager: AudioDownloadManager? = null,
+    onRequestDownload: ((PlayableMedia.Online) -> Unit)? = null,
     onBackClick: () -> Unit,
     onAddToPlaylistClick: () -> Unit,
     onToggleQueueClick: () -> Unit,
@@ -136,6 +147,18 @@ fun PlayerScreen(
     val context = LocalContext.current
     val density = LocalDensity.current
     val effectivePlaylistManager = playlistManager ?: remember(context) { PlaylistManager(context) }
+    val effectiveSessionManager = sessionManager ?: remember(context) { UserSessionManager(context) }
+    val effectiveDownloadManager = audioDownloadManager ?: remember(context, ncmApi, effectiveSessionManager, effectivePlaylistManager) {
+        AudioDownloadManager(context, ncmApi, effectiveSessionManager, effectivePlaylistManager)
+    }
+    var localPendingDownloadSong by remember { mutableStateOf<PlayableMedia.Online?>(null) }
+    val requestDownload: (PlayableMedia.Online) -> Unit = { song ->
+        if (onRequestDownload != null) {
+            onRequestDownload(song)
+        } else {
+            localPendingDownloadSong = song
+        }
+    }
     val rawTrack by playerState.currentMedia.collectAsState()
     val (activeTrack, palette, blurCoverBg) = rememberPlayerCoverPalette(rawTrack)
 
@@ -169,6 +192,7 @@ fun PlayerScreen(
     val usbDeviceDetails by playerState.usbDeviceDetails.collectAsState()
     val loudnessState by playerState.loudnessState.collectAsState()
     val audioFormatInfo by playerState.audioFormatInfo.collectAsState()
+    val playlistSourceType by playerState.playlistSourceType.collectAsState()
 
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
@@ -232,6 +256,7 @@ fun PlayerScreen(
                 displayedTrack = activeTrack,
                 ncmApi = ncmApi,
                 playlistManager = effectivePlaylistManager,
+                audioDownloadManager = effectiveDownloadManager,
                 palette = palette,
                 blurCoverBg = blurCoverBg,
                 isQueueOpen = showPlayQueuePage || showQuickFunctionsPage,
@@ -301,6 +326,7 @@ fun PlayerScreen(
                         QuickFunctionsCards(
                             displayedTrack = activeTrack,
                             audioFormatInfo = audioFormatInfo,
+                            playlistSourceType = playlistSourceType,
                             isUsbExclusive = isUsbExclusiveMode,
                             usbDeviceName = connectedUsbDeviceName,
                             uacVersion = usbUacVersion,
@@ -309,7 +335,9 @@ fun PlayerScreen(
                             blurCoverBg = blurCoverBg,
                             playlistManager = effectivePlaylistManager,
                             ncmApi = ncmApi,
+                            audioDownloadManager = effectiveDownloadManager,
                             palette = palette,
+                            onRequestDownload = requestDownload,
                             onToggleUsbExclusive = { enabled ->
                                 playerController.setUsbExclusiveMode(enabled)
                             },
@@ -336,6 +364,7 @@ fun PlayerScreen(
             SaltQuickFunctionsView(
                 displayedTrack = activeTrack,
                 audioFormatInfo = audioFormatInfo,
+                playlistSourceType = playlistSourceType,
                 isUsbExclusive = isUsbExclusiveMode,
                 usbDeviceName = connectedUsbDeviceName,
                 uacVersion = usbUacVersion,
@@ -344,11 +373,13 @@ fun PlayerScreen(
                 blurCoverBg = blurCoverBg,
                 playlistManager = effectivePlaylistManager,
                 ncmApi = ncmApi,
+                audioDownloadManager = effectiveDownloadManager,
                 palette = palette,
                 currentPullOffsetPx = { quickFunctionsDrawerState.pullOffsetPx.value },
                 onPullDelta = quickFunctionsDrawerState.onPullDelta,
                 onPullSettle = quickFunctionsDrawerState.onPullSettle,
                 onDismiss = { showQuickFunctionsPage = false },
+                onRequestDownload = requestDownload,
                 onToggleUsbExclusive = { enabled ->
                     playerController.setUsbExclusiveMode(enabled)
                 },
@@ -363,6 +394,41 @@ fun PlayerScreen(
                 }
             )
         }
+
+        localPendingDownloadSong?.let { songToDownload ->
+            val userProfile by effectiveSessionManager.userProfileState.collectAsState()
+            val defaultDownloadQuality by effectiveSessionManager.downloadQualityState.collectAsState()
+            val userVipTier = if (effectiveSessionManager.isLoggedIn()) {
+                userProfile?.vipTier ?: VipTier.NONE
+            } else {
+                VipTier.NONE
+            }
+            val effectiveDefaultDownloadQuality = remember(defaultDownloadQuality, userProfile) {
+                effectiveSessionManager.getEffectiveDownloadQualityLevel()
+            }
+            DownloadQualitySelectionDialog(
+                song = songToDownload,
+                defaultQuality = effectiveDefaultDownloadQuality,
+                userVipTier = userVipTier,
+                isAlreadyDownloaded = effectiveDownloadManager.isDownloaded(songToDownload.id),
+                onConfirmDownload = { chosenQuality ->
+                    localPendingDownloadSong = null
+                    Toast.makeText(
+                        context,
+                        "开始下载: ${songToDownload.title} (${chosenQuality.label})",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    effectiveDownloadManager.enqueueDownload(songToDownload, chosenQuality) { result ->
+                        val toastText = result.fold(
+                            onSuccess = { "下载完成: ${songToDownload.title}" },
+                            onFailure = { "下载失败: ${it.message ?: "未知错误"}" }
+                        )
+                        Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onDismiss = { localPendingDownloadSong = null }
+            )
+        }
     }
 }
 
@@ -375,6 +441,7 @@ private fun PlayerMainContentView(
     displayedTrack: PlayableMedia?,
     ncmApi: NcmApi,
     playlistManager: PlaylistManager,
+    audioDownloadManager: AudioDownloadManager,
     palette: PlayerExpressivePalette,
     blurCoverBg: Boolean,
     isQueueOpen: Boolean = false,
@@ -663,6 +730,7 @@ private fun PlayerMainContentView(
             PlayerProgressBarSection(
                 playerState = playerState,
                 playerController = playerController,
+                currentTrack = currentTrack,
                 durationMs = durationMs,
                 palette = palette
             )
@@ -844,7 +912,17 @@ private fun PlayerMainContentView(
                         onClick = {
                             val track = currentTrack ?: return@Surface
                             val isNowFav = playlistManager.toggleFavorite(track)
-                            val msg = if (isNowFav) "已添加到云端喜欢" else "已取消云端喜欢"
+                            val autoResult = if (isNowFav) {
+                                audioDownloadManager.maybeAutoDownloadOnFavorite(track)
+                            } else {
+                                AutoDownloadTriggerResult.SKIPPED_DISABLED
+                            }
+                            val msg = when {
+                                !isNowFav -> "已取消云端喜欢"
+                                autoResult == AutoDownloadTriggerResult.STARTED -> "已添加到云端喜欢，正在自动下载"
+                                autoResult == AutoDownloadTriggerResult.SKIPPED_NOT_WIFI -> "已添加到云端喜欢（当前非 Wi-Fi，已跳过自动下载）"
+                                else -> "已添加到云端喜欢"
+                            }
                             Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                             scope.launch(Dispatchers.IO) {
                                 ncmApi.likeSong(track.id, isNowFav)
@@ -1364,10 +1442,12 @@ private fun PlayerMainContentView(
 private fun PlayerProgressBarSection(
     playerState: PlayerState,
     playerController: PlayerController,
+    currentTrack: PlayableMedia?,
     durationMs: Long,
     palette: PlayerExpressivePalette
 ) {
     val positionMs by playerState.currentPositionMs.collectAsState()
+    val audioFormatInfo by playerState.audioFormatInfo.collectAsState()
     var isDragging by remember { mutableStateOf(false) }
     var dragPositionMs by remember { mutableStateOf(0L) }
 
@@ -1375,6 +1455,9 @@ private fun PlayerProgressBarSection(
     val sliderProgress =
         if (durationMs > 0) (effectivePosition.toFloat() / durationMs).coerceIn(0f, 1f)
         else 0f
+    val qualityBadge = remember(currentTrack, audioFormatInfo) {
+        AudioQualityClassifier.classify(currentTrack, audioFormatInfo)
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Slider(
@@ -1413,7 +1496,7 @@ private fun PlayerProgressBarSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 formatTime(effectivePosition),
@@ -1421,6 +1504,31 @@ private fun PlayerProgressBarSection(
                 fontWeight = FontWeight.SemiBold,
                 color = palette.playedLyricColor
             )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                if (qualityBadge != null) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = palette.secondaryButtonContainer.copy(alpha = 0.65f),
+                        border = BorderStroke(0.5.dp, palette.cardOutlineColor.copy(alpha = 0.35f)),
+                        modifier = Modifier.testTag("player_progress_quality_badge")
+                    ) {
+                        Text(
+                            text = qualityBadge.shortLabel,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = palette.secondaryTextColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
             Text(
                 formatTime(durationMs),
                 fontSize = 12.sp,
@@ -1926,6 +2034,7 @@ private enum class QuickSubMenu {
 private fun SaltQuickFunctionsView(
     displayedTrack: PlayableMedia?,
     audioFormatInfo: Akari.NCM.player.core.AudioFormatInfo,
+    playlistSourceType: PlaylistSourceType,
     isUsbExclusive: Boolean,
     usbDeviceName: String?,
     uacVersion: String? = null,
@@ -1934,11 +2043,13 @@ private fun SaltQuickFunctionsView(
     blurCoverBg: Boolean,
     playlistManager: PlaylistManager,
     ncmApi: NcmApi,
+    audioDownloadManager: AudioDownloadManager,
     palette: PlayerExpressivePalette,
     currentPullOffsetPx: () -> Float = { 0f },
     onPullDelta: (Float) -> Unit = {},
     onPullSettle: (Float) -> Unit = {},
     onDismiss: () -> Unit,
+    onRequestDownload: (PlayableMedia.Online) -> Unit,
     onToggleUsbExclusive: (Boolean) -> Unit,
     onRequestUsbPermission: () -> Unit,
     onToggleLoudness: () -> Unit,
@@ -2090,6 +2201,7 @@ private fun SaltQuickFunctionsView(
                 QuickFunctionsCards(
                     displayedTrack = displayedTrack,
                     audioFormatInfo = audioFormatInfo,
+                    playlistSourceType = playlistSourceType,
                     isUsbExclusive = isUsbExclusive,
                     usbDeviceName = usbDeviceName,
                     uacVersion = uacVersion,
@@ -2098,7 +2210,9 @@ private fun SaltQuickFunctionsView(
                     blurCoverBg = blurCoverBg,
                     playlistManager = playlistManager,
                     ncmApi = ncmApi,
+                    audioDownloadManager = audioDownloadManager,
                     palette = palette,
+                    onRequestDownload = onRequestDownload,
                     onToggleUsbExclusive = onToggleUsbExclusive,
                     onRequestUsbPermission = onRequestUsbPermission,
                     onToggleLoudness = onToggleLoudness,
@@ -2149,6 +2263,7 @@ private fun SaltQuickFunctionsView(
 private fun QuickFunctionsCards(
     displayedTrack: PlayableMedia?,
     audioFormatInfo: Akari.NCM.player.core.AudioFormatInfo,
+    playlistSourceType: PlaylistSourceType,
     isUsbExclusive: Boolean,
     usbDeviceName: String?,
     uacVersion: String? = null,
@@ -2157,7 +2272,9 @@ private fun QuickFunctionsCards(
     blurCoverBg: Boolean,
     playlistManager: PlaylistManager,
     ncmApi: NcmApi,
+    audioDownloadManager: AudioDownloadManager,
     palette: PlayerExpressivePalette,
+    onRequestDownload: (PlayableMedia.Online) -> Unit,
     onToggleUsbExclusive: (Boolean) -> Unit,
     onRequestUsbPermission: () -> Unit,
     onToggleLoudness: () -> Unit,
@@ -2509,10 +2626,106 @@ private fun QuickFunctionsCards(
                     song = displayedTrack,
                     playlistManager = playlistManager,
                     ncmApi = ncmApi,
+                    audioDownloadManager = audioDownloadManager,
                     palette = palette,
                     cardText = cardText,
                     cardSubText = cardSubText
                 )
+            }
+        }
+    }
+
+    // ── 6. 下载音频（下载前弹出目标音质选择框）──
+    val downloadableTrack = remember(displayedTrack, playlistSourceType) {
+        when (val track = displayedTrack) {
+            is PlayableMedia.Online -> track
+            is PlayableMedia.LocalNcm -> {
+                if (playlistSourceType != PlaylistSourceType.LOCAL && track.id.toLongOrNull() != null) {
+                    PlayableMedia.Online(
+                        id = track.id,
+                        title = track.title,
+                        artist = track.artist,
+                        album = track.album,
+                        coverUrl = track.coverUrl,
+                        durationMs = track.durationMs
+                    )
+                } else null
+            }
+            null -> null
+        }
+    }
+    if (downloadableTrack != null) {
+        val activeTasks by audioDownloadManager.activeTasks.collectAsState()
+        val downloadedTracks by audioDownloadManager.downloadedTracks.collectAsState()
+        val taskState = activeTasks[downloadableTrack.id]
+        val isDownloading = taskState?.status == DownloadStatus.QUEUED || taskState?.status == DownloadStatus.DOWNLOADING
+        val isDownloaded = remember(downloadableTrack.id, downloadedTracks) {
+            downloadedTracks.any { it.songId == downloadableTrack.id }
+        }
+        Surface(
+            onClick = { if (!isDownloading) onRequestDownload(downloadableTrack) },
+            shape = RoundedCornerShape(20.dp),
+            color = surfaceColor,
+            border = cardBorder,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("quick_card_download_audio")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp)
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = if (isDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
+                    contentDescription = null,
+                    tint = palette.playedLyricColor,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (isDownloaded) "重新下载音频" else "下载音频",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = cardText
+                        )
+                        if (isDownloaded && !isDownloading) {
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = palette.primaryButtonContainer
+                            ) {
+                                Text(
+                                    text = "已下载",
+                                    fontSize = 10.sp,
+                                    color = palette.onPrimaryButton,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                    val subtitleText = when {
+                        isDownloading && taskState != null && taskState.totalBytes > 0L -> {
+                            val pct = (taskState.progress * 100f).roundToInt()
+                            "正在下载 (${taskState.targetQuality.label}) · $pct%"
+                        }
+                        isDownloading -> "正在解析并下载音频..."
+                        isDownloaded -> "已保存到本地，点击可选择其他音质重新下载"
+                        else -> "选择目标音质并保存音频到本地"
+                    }
+                    Text(
+                        text = subtitleText,
+                        fontSize = 12.sp,
+                        color = cardSubText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
     }
@@ -2737,8 +2950,12 @@ private fun PlaybackStatusSubMenuContent(
         }
 
         val isLocal = media.isLocal
+        val localDetectedBadge = remember(media, audioFormatInfo) {
+            if (isLocal) AudioQualityClassifier.classify(media, audioFormatInfo) else null
+        }
         val sourceText = if (isLocal) {
-            "本地存储 (Local)"
+            if (localDetectedBadge != null) "本地存储 (Local) · ${localDetectedBadge.fullLabel}"
+            else "本地存储 (Local)"
         } else {
             "云端在线 (Cloud) · ${Akari.NCM.player.core.QualityLevel.displayLabelFor(audioFormatInfo.qualityLevel)}"
         }
@@ -2846,6 +3063,7 @@ private fun AddToPlaylistSubMenuContent(
     song: PlayableMedia?,
     playlistManager: PlaylistManager,
     ncmApi: NcmApi,
+    audioDownloadManager: AudioDownloadManager,
     palette: PlayerExpressivePalette,
     cardText: Color,
     cardSubText: Color
@@ -2955,6 +3173,7 @@ private fun AddToPlaylistSubMenuContent(
                         if (trimmed.isNotEmpty()) {
                             val created = playlistManager.createPlaylist(trimmed)
                             playlistManager.addSongToPlaylist(created.id, song)
+                            audioDownloadManager.maybeAutoDownloadOnFavorite(song)
                             lastAddedPlaylistName = created.name
                             newPlaylistName = ""
                             showInlineCreate = false
@@ -2989,6 +3208,7 @@ private fun AddToPlaylistSubMenuContent(
                                     ncmApi.updatePlaylistTracks("add", playlist.ncmPlaylistId, song.id)
                                 }
                             }
+                            audioDownloadManager.maybeAutoDownloadOnFavorite(song)
                             lastAddedPlaylistName = playlist.name
                             Toast.makeText(context, "已添加到「${playlist.name}」", Toast.LENGTH_SHORT).show()
                         },

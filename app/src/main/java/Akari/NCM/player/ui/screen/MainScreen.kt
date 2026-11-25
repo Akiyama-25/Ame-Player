@@ -5,7 +5,11 @@ import Akari.NCM.player.core.NcmUserPlaylist
 import Akari.NCM.player.core.OnlinePlaylistTarget
 import Akari.NCM.player.core.PlayableMedia
 import Akari.NCM.player.core.PlaylistSourceType
+import Akari.NCM.player.core.VipTier
+import Akari.NCM.player.data.AudioDownloadManager
+import Akari.NCM.player.data.AutoDownloadTriggerResult
 import Akari.NCM.player.data.CustomPlaylist
+import Akari.NCM.player.data.DownloadStatus
 import Akari.NCM.player.data.LyricsManager
 import Akari.NCM.player.data.LocalFolderManager
 import Akari.NCM.player.data.NcmFileScanner
@@ -17,6 +21,7 @@ import Akari.NCM.player.player.AmePlayerEngine
 import Akari.NCM.player.ui.component.AdaptiveButtonGroup
 import Akari.NCM.player.ui.component.AdaptiveButtonSpec
 import Akari.NCM.player.ui.component.AddToPlaylistDialog
+import Akari.NCM.player.ui.component.DownloadQualitySelectionDialog
 import Akari.NCM.player.ui.component.ExpressiveButtonStyle
 import Akari.NCM.player.ui.component.PortraitPullDownDrawerOverlay
 import Akari.NCM.player.ui.component.PredictiveBackEasing
@@ -222,6 +227,8 @@ fun MainScreen(
     val ncmApi = remember { NcmApi(sessionManager) }
     val searchHistoryManager = remember { SearchHistoryManager(context) }
     val localFolderManager = remember { LocalFolderManager(context, sessionManager, playlistManager, ncmApi) }
+    val audioDownloadManager = remember { AudioDownloadManager(context, ncmApi, sessionManager, playlistManager) }
+    var pendingDownloadSong by remember { mutableStateOf<PlayableMedia.Online?>(null) }
 
     LaunchedEffect(playlistManager) {
         playerEngine.localTrackMatcher = { online ->
@@ -262,7 +269,7 @@ fun MainScreen(
         val ncmId = target.ncmPlaylistId
         if (ncmId != null) {
             scope.launch(Dispatchers.IO) {
-                if (ncmId == -9999L) {
+                if (ncmId == PlaylistManager.LOCAL_FOLDER_PLAYLIST_ID) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(context, "正在重新扫描《${target.name}》...", Toast.LENGTH_SHORT).show()
                     }
@@ -274,6 +281,11 @@ fun MainScreen(
                         }
                         val tracksSize = updated?.songs?.size ?: 0
                         Toast.makeText(context, "本地文件夹扫描完成 (${tracksSize} 首)", Toast.LENGTH_SHORT).show()
+                    }
+                } else if (ncmId == PlaylistManager.DOWNLOADED_PLAYLIST_ID) {
+                    withContext(Dispatchers.Main) {
+                        val count = audioDownloadManager.downloadedTracks.value.size
+                        Toast.makeText(context, "已下载音乐共 $count 首", Toast.LENGTH_SHORT).show()
                     }
                 } else {
                     withContext(Dispatchers.Main) {
@@ -693,7 +705,9 @@ fun MainScreen(
                                                         LazyListState()
                                                     }
                                                     val currentPlaylistSourceType by playerEngine.playlistSourceType.collectAsState()
-                                                    val isCloudSyncedPlaylist = currentPlaylist.ncmPlaylistId != null && currentPlaylist.ncmPlaylistId != -9999L
+                                                    val isCloudSyncedPlaylist = currentPlaylist.ncmPlaylistId != null &&
+                                                        currentPlaylist.ncmPlaylistId != PlaylistManager.LOCAL_FOLDER_PLAYLIST_ID &&
+                                                        currentPlaylist.ncmPlaylistId != PlaylistManager.DOWNLOADED_PLAYLIST_ID
                                                     val detailPlaylistSourceType = if (isCloudSyncedPlaylist) PlaylistSourceType.ONLINE else PlaylistSourceType.LOCAL
                                                     val isCurrentFromLocal = currentPlaylistSourceType == detailPlaylistSourceType
                                                     var inPlaylistSearchQuery by remember(currentPlaylist.id) { mutableStateOf("") }
@@ -781,7 +795,23 @@ fun MainScreen(
                                                                             style = MaterialTheme.typography.bodyMedium,
                                                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                                                         )
-                                                                        if (currentPlaylist.ncmPlaylistId != null && currentPlaylist.ncmPlaylistId != -9999L) {
+                                                                        if (currentPlaylist.ncmPlaylistId == PlaylistManager.DOWNLOADED_PLAYLIST_ID) {
+                                                                            Spacer(modifier = Modifier.width(8.dp))
+                                                                            Surface(
+                                                                                shape = RoundedCornerShape(4.dp),
+                                                                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                                                                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                                                            ) {
+                                                                                Text(
+                                                                                    text = "离线",
+                                                                                    fontSize = 10.sp,
+                                                                                    fontWeight = FontWeight.Medium,
+                                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                                )
+                                                                            }
+                                                                        } else if (currentPlaylist.ncmPlaylistId != null &&
+                                                                            currentPlaylist.ncmPlaylistId != PlaylistManager.LOCAL_FOLDER_PLAYLIST_ID
+                                                                        ) {
                                                                             Spacer(modifier = Modifier.width(8.dp))
                                                                             Surface(
                                                                                 shape = RoundedCornerShape(4.dp),
@@ -1172,6 +1202,11 @@ fun MainScreen(
                     playerController = playerEngine,
                     ncmApi = ncmApi,
                     playlistManager = playlistManager,
+                    sessionManager = sessionManager,
+                    audioDownloadManager = audioDownloadManager,
+                    onRequestDownload = { songToDownload ->
+                        pendingDownloadSong = songToDownload
+                    },
                     onBackClick = { showPlayerScreen = false },
                     onAddToPlaylistClick = { songToAddToPlaylist = currentMedia },
                     onToggleQueueClick = {
@@ -1238,6 +1273,7 @@ fun MainScreen(
                     sessionManager = sessionManager,
                     ncmApi = ncmApi,
                     localFolderManager = localFolderManager,
+                    audioDownloadManager = audioDownloadManager,
                     onOpenLog = { showLogScreen = true },
                     onOpenWebLogin = { showWebLoginScreen = true },
                     onBack = { showSettingsScreen = false }
@@ -1330,51 +1366,138 @@ fun MainScreen(
 
     // Add To Playlist Dialog
     if (songToAddToPlaylist != null) {
+        val targetSongForPlaylist = songToAddToPlaylist!!
         AddToPlaylistDialog(
-            song = songToAddToPlaylist!!,
+            song = targetSongForPlaylist,
             playlistManager = playlistManager,
             ncmApi = ncmApi,
             onDismiss = { songToAddToPlaylist = null },
             onAdded = { playlistName ->
-                Toast.makeText(context, "已添加至歌单: $playlistName", Toast.LENGTH_SHORT).show()
+                val autoResult = audioDownloadManager.maybeAutoDownloadOnFavorite(targetSongForPlaylist)
+                val toastMsg = when (autoResult) {
+                    AutoDownloadTriggerResult.STARTED -> "已添加至歌单: $playlistName，正在自动下载"
+                    AutoDownloadTriggerResult.SKIPPED_NOT_WIFI -> "已添加至歌单: $playlistName（当前非 Wi-Fi，已跳过自动下载）"
+                    else -> "已添加至歌单: $playlistName"
+                }
+                Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
             }
         )
     }
 
     // 歌曲操作弹窗 (Song Action BottomSheet)
     if (actionMedia != null) {
-        val isFav = remember(actionMedia?.id, favoriteSongIds) {
-            actionMedia?.let { playlistManager.isFavorite(it.id) } ?: false
+        val targetActionMedia = actionMedia!!
+        val isFav = remember(targetActionMedia.id, favoriteSongIds) {
+            playlistManager.isFavorite(targetActionMedia.id)
         }
         val isLocalPlaylistAction = actionPlaylistContext != null &&
-            (actionPlaylistContext!!.ncmPlaylistId == null || actionPlaylistContext!!.ncmPlaylistId == -9999L)
+            (actionPlaylistContext!!.ncmPlaylistId == null ||
+                actionPlaylistContext!!.ncmPlaylistId == PlaylistManager.LOCAL_FOLDER_PLAYLIST_ID ||
+                actionPlaylistContext!!.ncmPlaylistId == PlaylistManager.DOWNLOADED_PLAYLIST_ID)
+        val downloadableMedia = remember(targetActionMedia, isLocalPlaylistAction) {
+            when (targetActionMedia) {
+                is PlayableMedia.Online -> targetActionMedia
+                is PlayableMedia.LocalNcm -> {
+                    if (!isLocalPlaylistAction && targetActionMedia.id.toLongOrNull() != null) {
+                        PlayableMedia.Online(
+                            id = targetActionMedia.id,
+                            title = targetActionMedia.title,
+                            artist = targetActionMedia.artist,
+                            album = targetActionMedia.album,
+                            coverUrl = targetActionMedia.coverUrl,
+                            durationMs = targetActionMedia.durationMs
+                        )
+                    } else null
+                }
+            }
+        }
+        val activeDownloadTasks by audioDownloadManager.activeTasks.collectAsState()
+        val downloadedTracks by audioDownloadManager.downloadedTracks.collectAsState()
+        val isAlreadyDownloaded = remember(downloadableMedia?.id, downloadedTracks) {
+            downloadableMedia != null && downloadedTracks.any { it.songId == downloadableMedia.id }
+        }
+        val isCurrentlyDownloading = remember(downloadableMedia?.id, activeDownloadTasks) {
+            val status = downloadableMedia?.let { activeDownloadTasks[it.id]?.status }
+            status == DownloadStatus.QUEUED || status == DownloadStatus.DOWNLOADING
+        }
         SongActionBottomSheet(
-            media = actionMedia!!,
+            media = targetActionMedia,
             currentPlaylist = actionPlaylistContext,
             isFavorite = isFav,
             showFavoriteAction = hasApi && isLoggedIn && !isLocalPlaylistAction,
+            showDownloadAction = hasApi && downloadableMedia != null,
+            isDownloaded = isAlreadyDownloaded,
+            isDownloading = isCurrentlyDownloading,
             onDismiss = {
                 actionMedia = null
                 actionPlaylistContext = null
                 actionRemoveCallback = null
             },
             onPlayNext = {
-                playerEngine.insertAsNext(actionMedia!!)
-                Toast.makeText(context, "已设为下一首播放: ${actionMedia!!.title}", Toast.LENGTH_SHORT).show()
+                playerEngine.insertAsNext(targetActionMedia)
+                Toast.makeText(context, "已设为下一首播放: ${targetActionMedia.title}", Toast.LENGTH_SHORT).show()
             },
             onToggleFavorite = {
-                val mediaToFav = actionMedia!!
-                val isNowFav = playlistManager.toggleFavorite(mediaToFav)
-                val msg = if (isNowFav) "已添加到云端喜欢" else "已取消云端喜欢"
+                val isNowFav = playlistManager.toggleFavorite(targetActionMedia)
+                val autoResult = if (isNowFav) {
+                    audioDownloadManager.maybeAutoDownloadOnFavorite(targetActionMedia)
+                } else {
+                    AutoDownloadTriggerResult.SKIPPED_DISABLED
+                }
+                val msg = when {
+                    !isNowFav -> "已取消云端喜欢"
+                    autoResult == AutoDownloadTriggerResult.STARTED -> "已添加到云端喜欢，正在自动下载"
+                    autoResult == AutoDownloadTriggerResult.SKIPPED_NOT_WIFI -> "已添加到云端喜欢（当前非 Wi-Fi，已跳过自动下载）"
+                    else -> "已添加到云端喜欢"
+                }
                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 scope.launch(Dispatchers.IO) {
-                    ncmApi.likeSong(mediaToFav.id, isNowFav)
+                    ncmApi.likeSong(targetActionMedia.id, isNowFav)
                 }
             },
             onAddToPlaylist = {
-                songToAddToPlaylist = actionMedia
+                songToAddToPlaylist = targetActionMedia
+            },
+            onDownloadClick = {
+                downloadableMedia?.let { pendingDownloadSong = it }
             },
             onRemoveFromCurrentPlaylist = actionRemoveCallback
+        )
+    }
+
+    // 音频下载目标音质询问弹窗
+    pendingDownloadSong?.let { songToDownload ->
+        val userProfile by sessionManager.userProfileState.collectAsState()
+        val defaultDownloadQuality by sessionManager.downloadQualityState.collectAsState()
+        val userVipTier = if (sessionManager.isLoggedIn()) {
+            userProfile?.vipTier ?: VipTier.NONE
+        } else {
+            VipTier.NONE
+        }
+        val effectiveDefaultDownloadQuality = remember(defaultDownloadQuality, userProfile, isLoggedIn) {
+            sessionManager.getEffectiveDownloadQualityLevel()
+        }
+        DownloadQualitySelectionDialog(
+            song = songToDownload,
+            defaultQuality = effectiveDefaultDownloadQuality,
+            userVipTier = userVipTier,
+            isAlreadyDownloaded = audioDownloadManager.isDownloaded(songToDownload.id),
+            onConfirmDownload = { chosenQuality ->
+                pendingDownloadSong = null
+                Toast.makeText(
+                    context,
+                    "开始下载: ${songToDownload.title} (${chosenQuality.label})",
+                    Toast.LENGTH_SHORT
+                ).show()
+                audioDownloadManager.enqueueDownload(songToDownload, chosenQuality) { result ->
+                    val toastText = result.fold(
+                        onSuccess = { "下载完成: ${songToDownload.title}" },
+                        onFailure = { "下载失败: ${it.message ?: "未知错误"}" }
+                    )
+                    Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = { pendingDownloadSong = null }
         )
     }
 
@@ -1516,7 +1639,23 @@ private fun PlaylistsView(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    if (playlist.ncmPlaylistId != null && playlist.ncmPlaylistId != -9999L) {
+                                    if (playlist.ncmPlaylistId == PlaylistManager.DOWNLOADED_PLAYLIST_ID) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                        ) {
+                                            Text(
+                                                text = "离线",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    } else if (playlist.ncmPlaylistId != null &&
+                                        playlist.ncmPlaylistId != PlaylistManager.LOCAL_FOLDER_PLAYLIST_ID
+                                    ) {
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Surface(
                                             shape = RoundedCornerShape(4.dp),
@@ -1534,7 +1673,11 @@ private fun PlaylistsView(
                                 }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (playlist.ncmPlaylistId != null && hasApi && isLoggedIn) {
+                                if (playlist.ncmPlaylistId != null &&
+                                    playlist.ncmPlaylistId != PlaylistManager.DOWNLOADED_PLAYLIST_ID &&
+                                    hasApi &&
+                                    isLoggedIn
+                                ) {
                                     IconButton(onClick = { onReSyncPlaylist(playlist) }) {
                                         Icon(
                                             Icons.Rounded.Sync,

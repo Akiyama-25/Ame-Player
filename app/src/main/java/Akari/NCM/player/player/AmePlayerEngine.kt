@@ -8,6 +8,7 @@ import Akari.NCM.player.core.PlayerController
 import Akari.NCM.player.core.PlayerState
 import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.core.RepeatMode
+import Akari.NCM.player.data.LocalAudioFileInspector
 import Akari.NCM.player.data.NcmDataSource
 import Akari.NCM.player.data.PlayableMediaDTO
 import android.content.Context
@@ -338,7 +339,9 @@ class AmePlayerEngine @Inject constructor(
     private val mediaMap = ConcurrentHashMap<String, PlayableMedia>()
     private val resolvedUrlCache = ConcurrentHashMap<String, String>()
     private val resolvedDetailsCache = ConcurrentHashMap<String, Akari.NCM.player.api.ResolvedSongUrl>()
+    private val localFormatInfoCache = ConcurrentHashMap<String, Akari.NCM.player.core.AudioFormatInfo>()
     private val inflightUrlFetches = ConcurrentHashMap<String, Deferred<Akari.NCM.player.api.ResolvedSongUrl?>>()
+    private var localFormatInspectJob: Job? = null
 
     @Volatile
     private var isAudioCacheInitialized = false
@@ -1883,6 +1886,7 @@ class AmePlayerEngine @Inject constructor(
             activeTrackTaskKey = null
             lyricLoadJob?.cancel()
             artworkLoadJob?.cancel()
+            localFormatInspectJob?.cancel()
             _currentLyricState.value = null
             _currentLyricsResult.value = LyricResult(emptyList(), LyricSource.NONE)
             currentArtworkBitmap = null
@@ -1899,9 +1903,35 @@ class AmePlayerEngine @Inject constructor(
         activeTrackTaskKey = taskKey
         lyricLoadJob?.cancel()
         artworkLoadJob?.cancel()
+        localFormatInspectJob?.cancel()
         _currentLyricState.value = null
         _currentLyricsResult.value = LyricResult(emptyList(), LyricSource.NONE)
         currentArtworkBitmap = null
+
+        if (currentMedia is PlayableMedia.LocalNcm) {
+            val cached = localFormatInfoCache[currentMedia.uri]
+            if (cached != null) {
+                _audioFormatInfo.value = cached
+            } else {
+                // 切到本地歌曲时清除上一首在线歌曲残留的 qualityLevel，并异步解析保存文件头信息
+                _audioFormatInfo.value = Akari.NCM.player.core.AudioFormatInfo(
+                    mimeType = currentMedia.format.mimeType,
+                    qualityLevel = null
+                )
+                localFormatInspectJob = scope.launch(Dispatchers.IO) {
+                    val inspected = LocalAudioFileInspector.inspect(context, currentMedia)
+                    if (inspected != null) {
+                        localFormatInfoCache[currentMedia.uri] = inspected
+                        withContext(Dispatchers.Main) {
+                            val active = _currentMedia.value
+                            if (active is PlayableMedia.LocalNcm && active.uri == currentMedia.uri) {
+                                _audioFormatInfo.value = mergeLocalWithExoFormat(inspected, exoPlayer.audioFormat)
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // 1. 异步加载当前曲目的歌词（严格遵循云端歌单 / 本地歌单信息获取优先级）
         lyricLoadJob = scope.launch {
@@ -2204,8 +2234,38 @@ class AmePlayerEngine @Inject constructor(
         )
     }
 
+    private fun mergeLocalWithExoFormat(
+        inspected: Akari.NCM.player.core.AudioFormatInfo,
+        exoFormat: androidx.media3.common.Format?
+    ): Akari.NCM.player.core.AudioFormatInfo {
+        val sampleRate = inspected.sampleRateHz.takeIf { it > 0 }
+            ?: exoFormat?.sampleRate?.takeIf { it > 0 }
+            ?: 44100
+        val channels = inspected.channels.takeIf { it > 0 }
+            ?: exoFormat?.channelCount?.takeIf { it > 0 }
+            ?: 2
+        val mime = inspected.mimeType?.takeIf { it.isNotBlank() }
+            ?: exoFormat?.sampleMimeType
+            ?: exoFormat?.containerMimeType
+        var bitrate = inspected.bitrateKbps.takeIf { it > 0 }
+            ?: (exoFormat?.bitrate?.takeIf { it > 0 }?.div(1000) ?: 0)
+        val fileSize = inspected.fileSizeBytes
+        if (bitrate <= 0 && fileSize > 0L && _durationMs.value > 0L) {
+            val durationSec = (_durationMs.value / 1000f).coerceAtLeast(1f)
+            bitrate = ((fileSize * 8) / durationSec / 1000).toInt()
+        }
+        return Akari.NCM.player.core.AudioFormatInfo(
+            bitrateKbps = bitrate,
+            sampleRateHz = sampleRate,
+            bitDepthBits = inspected.bitDepthBits.takeIf { it > 0 } ?: 16,
+            mimeType = mime,
+            channels = channels,
+            fileSizeBytes = fileSize,
+            qualityLevel = null
+        )
+    }
+
     private fun updateAudioFormatFromExo(format: androidx.media3.common.Format?) {
-        if (format == null) return
         val currentMedia = _currentMedia.value
         // 如果当前是在线曲目且已经有解析好的真实元数据，不再使用 ExoPlayer AudioTrack/AudioSink 渲染参数覆盖
         if (currentMedia is PlayableMedia.Online) {
@@ -2215,17 +2275,30 @@ class AmePlayerEngine @Inject constructor(
                 return
             }
         }
+        // 如果当前是本地曲目且已解析保存文件的真实头信息，优先保留文件真实位深/采样率/编码，避免播放器近似值误判
+        if (currentMedia is PlayableMedia.LocalNcm) {
+            val inspected = localFormatInfoCache[currentMedia.uri]
+            if (inspected != null) {
+                _audioFormatInfo.value = mergeLocalWithExoFormat(inspected, format)
+                return
+            }
+        }
+        if (format == null) return
 
         val sampleRate = format.sampleRate.takeIf { it > 0 } ?: 44100
         val channels = format.channelCount.takeIf { it > 0 } ?: 2
         val mime = format.sampleMimeType ?: format.containerMimeType
-        val isLossy = mime?.contains("mpeg", ignoreCase = true) == true || mime?.contains("mp4a", ignoreCase = true) == true || mime?.contains("aac", ignoreCase = true) == true
+        val isLossy = mime?.contains("mpeg", ignoreCase = true) == true ||
+            mime?.contains("mp4a", ignoreCase = true) == true ||
+            mime?.contains("aac", ignoreCase = true) == true ||
+            mime?.contains("ogg", ignoreCase = true) == true ||
+            mime?.contains("opus", ignoreCase = true) == true
         val pcmEnc = format.pcmEncoding
         val bitDepth = when {
             isLossy -> 16
             pcmEnc == C.ENCODING_PCM_24BIT || pcmEnc == C.ENCODING_PCM_32BIT -> 24
             pcmEnc == C.ENCODING_PCM_16BIT -> 16
-            else -> if ((format.bitrate > 500_000) || sampleRate > 48000) 24 else 16
+            else -> 16
         }
         var bitrate = if (format.bitrate > 0) format.bitrate / 1000 else 0
         var fileSize = 0L
