@@ -38,6 +38,8 @@ import androidx.compose.ui.test.performTextInput
 import androidx.media3.common.util.UnstableApi
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -132,8 +134,8 @@ class QualityAndPlayerInteractionTest {
         assertEquals(QualityLevel.HIRES.label, QualityLevel.displayLabelFor("HIRES"))
         assertEquals(QualityLevel.JYEFFECT.label, QualityLevel.displayLabelFor("jyeffect"))
         assertEquals(QualityLevel.JYMASTER.label, QualityLevel.displayLabelFor("jymaster"))
-        assertEquals("沉浸环绕声", QualityLevel.displayLabelFor("sky"))
-        assertEquals("杜比全景声", QualityLevel.displayLabelFor("dolby"))
+        assertEquals(QualityLevel.SKY.label, QualityLevel.displayLabelFor("sky"))
+        assertEquals(QualityLevel.DOLBY.label, QualityLevel.displayLabelFor("dolby"))
         assertEquals("custom_raw", QualityLevel.displayLabelFor("custom_raw"))
         assertEquals(QualityLevel.EXHIGH.label, QualityLevel.displayLabelFor(null))
         assertEquals(QualityLevel.EXHIGH.label, QualityLevel.displayLabelFor("   "))
@@ -153,13 +155,93 @@ class QualityAndPlayerInteractionTest {
         assertEquals(VipTier.VIP, sessionManager.getUserProfile()?.vipTier)
         assertEquals(QualityLevel.HIRES, sessionManager.getEffectiveQualityLevel())
 
+        // VIP account must NOT unlock any SVIP qualities (JYEFFECT, DOLBY, SKY, JYMASTER)
+        for (svipQuality in listOf(QualityLevel.JYEFFECT, QualityLevel.DOLBY, QualityLevel.SKY, QualityLevel.JYMASTER)) {
+            assertEquals(VipTier.SVIP, svipQuality.requiredVipTier)
+            sessionManager.saveQualityLevel(svipQuality)
+            assertEquals(QualityLevel.HIRES, sessionManager.getEffectiveQualityLevel())
+        }
+
         sessionManager.saveQualityLevel(QualityLevel.LOSSLESS)
         assertEquals(QualityLevel.LOSSLESS, sessionManager.getEffectiveQualityLevel())
 
-        sessionManager.saveQualityLevel(QualityLevel.JYMASTER)
         sessionManager.saveUserProfile(UserProfile(userId = 3L, nickname = "SvipUser", vipType = 11, isSvip = true, redVipLevel = 7))
         assertEquals(VipTier.SVIP, sessionManager.getUserProfile()?.vipTier)
-        assertEquals(QualityLevel.JYMASTER, sessionManager.getEffectiveQualityLevel())
+        for (svipQuality in listOf(QualityLevel.JYEFFECT, QualityLevel.DOLBY, QualityLevel.SKY, QualityLevel.JYMASTER)) {
+            sessionManager.saveQualityLevel(svipQuality)
+            assertEquals(svipQuality, sessionManager.getEffectiveQualityLevel())
+        }
+    }
+
+    @Test
+    fun testNcmApi_qualityFallbackOrder_startsFromLosslessForSpatialSvipQualities() {
+        assertEquals(
+            listOf(QualityLevel.JYEFFECT, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD),
+            NcmApi.qualityFallbackOrder(QualityLevel.JYEFFECT)
+        )
+        assertEquals(
+            listOf(QualityLevel.DOLBY, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD),
+            NcmApi.qualityFallbackOrder(QualityLevel.DOLBY)
+        )
+        assertEquals(
+            listOf(QualityLevel.SKY, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD),
+            NcmApi.qualityFallbackOrder(QualityLevel.SKY)
+        )
+        assertEquals(
+            listOf(QualityLevel.JYMASTER, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD),
+            NcmApi.qualityFallbackOrder(QualityLevel.JYMASTER)
+        )
+    }
+
+    @Test
+    fun testNcmApi_parseVipEntitlement_requiresActiveRedplusExpireTimeForSvip() {
+        val now = 1_700_000_000_000L
+        // Regular VIP account: redplus object present with vipCode > 0 but expireTime == 0 (or expired)
+        val regularVipJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "redVipLevel": 5,
+                "associator": { "vipCode": 100, "expireTime": ${now + 86_400_000L}, "vipLevel": 5 },
+                "redplus": { "vipCode": 220, "expireTime": 0 }
+              }
+            }
+            """.trimIndent()
+        ).jsonObject
+        val (vipIsSvip, vipLevel) = NcmApi.parseVipEntitlement(regularVipJson, nowMs = now)
+        assertFalse(vipIsSvip)
+        assertEquals(5, vipLevel)
+
+        // Expired SVIP account
+        val expiredSvipJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "redVipLevel": 6,
+                "redplus": { "vipCode": 220, "expireTime": ${now - 1000L} }
+              }
+            }
+            """.trimIndent()
+        ).jsonObject
+        assertFalse(NcmApi.parseVipEntitlement(expiredSvipJson, nowMs = now).first)
+
+        // Active SVIP account
+        val activeSvipJson = Json.parseToJsonElement(
+            """
+            {
+              "code": 200,
+              "data": {
+                "redVipLevel": 7,
+                "redplus": { "vipCode": 220, "expireTime": ${now + 86_400_000L} }
+              }
+            }
+            """.trimIndent()
+        ).jsonObject
+        val (svipIsSvip, svipLevel) = NcmApi.parseVipEntitlement(activeSvipJson, nowMs = now)
+        assertTrue(svipIsSvip)
+        assertEquals(7, svipLevel)
     }
 
     @Test

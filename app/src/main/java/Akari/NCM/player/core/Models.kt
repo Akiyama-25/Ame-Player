@@ -108,7 +108,9 @@ enum class QualityLevel(
     EXHIGH("exhigh", "极高音质 (320k)", "320 kbps MP3 · 高保真立体声，均衡推荐", VipTier.NONE),
     LOSSLESS("lossless", "无损音质 (FLAC)", "FLAC 16-bit / 44.1 kHz · CD 级无损音质", VipTier.VIP),
     HIRES("hires", "Hi-Res 高解析", "FLAC 24-bit / up to 192 kHz · 高解析度无损音频", VipTier.VIP),
-    JYEFFECT("jyeffect", "高清臻音", "空间环绕臻音 · 沉浸式声场增强", VipTier.VIP),
+    JYEFFECT("jyeffect", "臻音全景音", "空间环绕臻音 · 沉浸式声场增强", VipTier.SVIP),
+    DOLBY("dolby", "杜比全景音", "Dolby Atmos · 三维空间全景音效", VipTier.SVIP),
+    SKY("sky", "沉浸环绕音", "多声道沉浸环绕声场体验", VipTier.SVIP),
     JYMASTER("jymaster", "超清母带", "24-bit / 192 kHz · 录音室母带级重制", VipTier.SVIP);
 
     companion object {
@@ -124,9 +126,9 @@ enum class QualityLevel(
                 "lossless" -> LOSSLESS.label
                 "hires" -> HIRES.label
                 "jyeffect" -> JYEFFECT.label
+                "dolby" -> DOLBY.label
+                "sky" -> SKY.label
                 "jymaster" -> JYMASTER.label
-                "sky" -> "沉浸环绕声"
-                "dolby" -> "杜比全景声"
                 else -> rawLevel?.takeIf { it.isNotBlank() } ?: EXHIGH.label
             }
         }

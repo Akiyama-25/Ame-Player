@@ -949,14 +949,7 @@ class AmePlayerEngine @Inject constructor(
             }
         }
 
-        // Observe JYEffect and Quality preference changes to clear URL cache dynamically
-        scope.launch {
-            ThemePrefs.enableJyEffectFlow.collect { enabled ->
-                AppLogger.i("[AME_ONLINE_PLAY]", ">>> JYEffect preference changed to $enabled, clearing resolved URL cache.")
-                resolvedUrlCache.clear()
-                resolvedDetailsCache.clear()
-            }
-        }
+        // Observe Quality preference changes to clear URL cache dynamically
         scope.launch {
             sessionManager.qualityState.collect { quality ->
                 AppLogger.i("[AME_ONLINE_PLAY]", ">>> Quality preference changed to ${quality.value}, clearing resolved URL cache.")

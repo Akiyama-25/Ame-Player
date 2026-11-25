@@ -594,7 +594,6 @@ fun SettingsScreen(
 
             // ── 音频与声音设置 ──
             item(span = { GridItemSpan(maxLineSpan) }) {
-                val enableJyEffect by ThemePrefs.enableJyEffectFlow.collectAsState()
                 Column(modifier = Modifier.fillMaxWidth()) {
                     SectionHeader("音频与声音")
                     SettingsGroupCard {
@@ -604,60 +603,6 @@ fun SettingsScreen(
                             onClick = { showQualityDialog = true },
                             modifier = Modifier.testTag("setting_playback_quality")
                         )
-
-                        SettingsInnerDivider()
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    val next = !enableJyEffect
-                                    ThemePrefs.enableJyEffect = next
-                                    if (!next && (selectedQuality == QualityLevel.JYEFFECT || selectedQuality == QualityLevel.JYMASTER)) {
-                                        val fallback = if (userVipTier.level >= QualityLevel.HIRES.requiredVipTier.level) {
-                                            QualityLevel.HIRES
-                                        } else {
-                                            QualityLevel.EXHIGH
-                                        }
-                                        sessionManager.saveQualityLevel(fallback)
-                                    }
-                                }
-                                .padding(horizontal = 18.dp, vertical = 12.dp)
-                                .testTag("setting_enable_jy_effect"),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "高清臻音 / 超清母带",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = if (enableJyEffect) "已启用 · 优先尝试匹配高清臻音 (JYEffect) 与超清母带音质"
-                                    else "已关闭 · 最高匹配至 Hi-Res 高解析与无损 FLAC 音质",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Switch(
-                                checked = enableJyEffect,
-                                onCheckedChange = { next ->
-                                    ThemePrefs.enableJyEffect = next
-                                    if (!next && (selectedQuality == QualityLevel.JYEFFECT || selectedQuality == QualityLevel.JYMASTER)) {
-                                        val fallback = if (userVipTier.level >= QualityLevel.HIRES.requiredVipTier.level) {
-                                            QualityLevel.HIRES
-                                        } else {
-                                            QualityLevel.EXHIGH
-                                        }
-                                        sessionManager.saveQualityLevel(fallback)
-                                    }
-                                },
-                                modifier = Modifier.testTag("switch_enable_jy_effect")
-                            )
-                        }
 
                         SettingsInnerDivider()
 
@@ -1449,9 +1394,6 @@ fun SettingsScreen(
             userVipTier = userVipTier,
             onSelectQuality = { quality ->
                 sessionManager.saveQualityLevel(quality)
-                if (quality == QualityLevel.JYEFFECT || quality == QualityLevel.JYMASTER) {
-                    ThemePrefs.enableJyEffect = true
-                }
                 showQualityDialog = false
             },
             onDismiss = { showQualityDialog = false }

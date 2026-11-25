@@ -515,24 +515,12 @@ class NcmApi @Inject constructor(
      */
     suspend fun getSongUrlDetails(
         song: PlayableMedia.Online,
-        quality: QualityLevel? = null,
-        enableJyEffect: Boolean = ThemePrefs.enableJyEffect
+        quality: QualityLevel? = null
     ): ResolvedSongUrl? {
         val targetQuality = quality ?: sessionManager?.getEffectiveQualityLevel() ?: QualityLevel.EXHIGH
-        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (targetQuality=${targetQuality.value}, enableJyEffect=$enableJyEffect, isDirectMode=$isDirectMode)")
+        AppLogger.i("[AME_ONLINE_PLAY]", ">>> Requesting song URL for songId='${song.id}', title='${song.title}' (targetQuality=${targetQuality.value}, isDirectMode=$isDirectMode)")
 
-        val qualitiesToTry = when (targetQuality) {
-            QualityLevel.JYMASTER -> if (enableJyEffect) {
-                listOf(QualityLevel.JYMASTER, QualityLevel.JYEFFECT, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
-            } else {
-                listOf(QualityLevel.JYMASTER, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
-            }
-            QualityLevel.JYEFFECT -> listOf(QualityLevel.JYEFFECT, QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
-            QualityLevel.HIRES -> listOf(QualityLevel.HIRES, QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
-            QualityLevel.LOSSLESS -> listOf(QualityLevel.LOSSLESS, QualityLevel.EXHIGH, QualityLevel.STANDARD)
-            QualityLevel.EXHIGH -> listOf(QualityLevel.EXHIGH, QualityLevel.STANDARD)
-            QualityLevel.STANDARD -> listOf(QualityLevel.STANDARD)
-        }
+        val qualitiesToTry = qualityFallbackOrder(targetQuality)
 
         var trialFallbackUrl: ResolvedSongUrl? = null
 
@@ -540,8 +528,8 @@ class NcmApi @Inject constructor(
             for (q in qualitiesToTry) {
                 try {
                     val startTime = System.currentTimeMillis()
-                    // 仅无损或母带规格传递 flac，有损规格声明 mp3
-                    val encodeType = if (q == QualityLevel.LOSSLESS || q == QualityLevel.HIRES || q == QualityLevel.JYMASTER || q == QualityLevel.JYEFFECT) "flac" else "mp3"
+                    // 仅无损及高规格音质传递 flac，有损规格声明 mp3
+                    val encodeType = if (q != QualityLevel.STANDARD && q != QualityLevel.EXHIGH) "flac" else "mp3"
                     val payload = buildJsonObject {
                         put("ids", "[${song.id}]")
                         put("level", q.value)
@@ -667,27 +655,14 @@ class NcmApi @Inject constructor(
         return null
     }
 
-    suspend fun getSongUrlDetails(
-        song: PlayableMedia.Online,
-        enableJyEffect: Boolean
-    ): ResolvedSongUrl? = getSongUrlDetails(song, quality = null, enableJyEffect = enableJyEffect)
-
     /**
      * 获取歌曲播放链接
      */
     suspend fun getSongUrl(
         song: PlayableMedia.Online,
-        quality: QualityLevel? = null,
-        enableJyEffect: Boolean = ThemePrefs.enableJyEffect
+        quality: QualityLevel? = null
     ): String? {
-        return getSongUrlDetails(song, quality, enableJyEffect)?.url
-    }
-
-    suspend fun getSongUrl(
-        song: PlayableMedia.Online,
-        enableJyEffect: Boolean
-    ): String? {
-        return getSongUrlDetails(song, quality = null, enableJyEffect = enableJyEffect)?.url
+        return getSongUrlDetails(song, quality)?.url
     }
 
     private suspend fun getForcedMp3Details(songId: String, bitrate: Int): ResolvedSongUrl? {
@@ -905,6 +880,69 @@ class NcmApi @Inject constructor(
             }
             val all = listOf("jm", "je", "sk", "db", "hr", "sq", "h", "m", "l")
             return (primary + all).distinct()
+        }
+
+        /**
+         * 计算指定音质的向下回退顺序：
+         * - 臻音全景音 (JYEFFECT)、杜比全景音 (DOLBY)、沉浸环绕音 (SKY) 均作为独立 SVIP 音质，
+         *   回退时直接从无损音质 (LOSSLESS) 开始向下回退；
+         * - 超清母带 (JYMASTER) 按 Hi-Res -> 无损 -> 极高 -> 标准 顺序回退。
+         */
+        internal fun qualityFallbackOrder(targetQuality: QualityLevel): List<QualityLevel> {
+            return when (targetQuality) {
+                QualityLevel.JYMASTER -> listOf(
+                    QualityLevel.JYMASTER,
+                    QualityLevel.HIRES,
+                    QualityLevel.LOSSLESS,
+                    QualityLevel.EXHIGH,
+                    QualityLevel.STANDARD
+                )
+                QualityLevel.JYEFFECT,
+                QualityLevel.DOLBY,
+                QualityLevel.SKY -> listOf(
+                    targetQuality,
+                    QualityLevel.LOSSLESS,
+                    QualityLevel.EXHIGH,
+                    QualityLevel.STANDARD
+                )
+                QualityLevel.HIRES -> listOf(
+                    QualityLevel.HIRES,
+                    QualityLevel.LOSSLESS,
+                    QualityLevel.EXHIGH,
+                    QualityLevel.STANDARD
+                )
+                QualityLevel.LOSSLESS -> listOf(
+                    QualityLevel.LOSSLESS,
+                    QualityLevel.EXHIGH,
+                    QualityLevel.STANDARD
+                )
+                QualityLevel.EXHIGH -> listOf(
+                    QualityLevel.EXHIGH,
+                    QualityLevel.STANDARD
+                )
+                QualityLevel.STANDARD -> listOf(QualityLevel.STANDARD)
+            }
+        }
+
+        /**
+         * 解析网易云 `/vip/info/v2` 权益结果，仅当 `redplus.expireTime > nowMs` 时才判定为有效 SVIP，
+         * 避免普通 VIP 账户因返回静态 `redplus.vipCode` 字段而被误判为 SVIP。
+         */
+        internal fun parseVipEntitlement(
+            json: JsonObject,
+            nowMs: Long = System.currentTimeMillis()
+        ): Pair<Boolean, Int> {
+            val data = json["data"]?.asJsonObjectOrNull ?: json
+            val vipRights = data["vipRights"]?.asJsonObjectOrNull
+            val redplus = data["redplus"]?.asJsonObjectOrNull ?: vipRights?.get("redplus")?.asJsonObjectOrNull
+            val associator = data["associator"]?.asJsonObjectOrNull ?: vipRights?.get("associator")?.asJsonObjectOrNull
+            val redplusExpireTime = redplus?.get("expireTime")?.jsonPrimitive?.longOrNull ?: 0L
+            val redplusActive = redplusExpireTime > nowMs
+            val redVipLevel = data["redVipLevel"]?.jsonPrimitive?.intOrNull
+                ?: vipRights?.get("redVipLevel")?.jsonPrimitive?.intOrNull
+                ?: associator?.get("vipLevel")?.jsonPrimitive?.intOrNull
+                ?: 0
+            return redplusActive to redVipLevel
         }
 
         internal fun extractQualityVdFromMusicDetailJson(body: String, qualityLevel: String?): Float? {
@@ -1341,20 +1379,7 @@ class NcmApi @Inject constructor(
             }
         }
         if (json == null) return false to 0
-        val data = json["data"]?.asJsonObjectOrNull ?: json
-        val vipRights = data["vipRights"]?.asJsonObjectOrNull
-        val redplus = data["redplus"]?.asJsonObjectOrNull ?: vipRights?.get("redplus")?.asJsonObjectOrNull
-        val associator = data["associator"]?.asJsonObjectOrNull ?: vipRights?.get("associator")?.asJsonObjectOrNull
-        val now = System.currentTimeMillis()
-        val redplusActive = redplus != null && (
-            (redplus["expireTime"]?.jsonPrimitive?.longOrNull ?: 0L) > now ||
-                (redplus["vipCode"]?.jsonPrimitive?.intOrNull ?: 0) > 0
-            )
-        val redVipLevel = data["redVipLevel"]?.jsonPrimitive?.intOrNull
-            ?: vipRights?.get("redVipLevel")?.jsonPrimitive?.intOrNull
-            ?: associator?.get("vipLevel")?.jsonPrimitive?.intOrNull
-            ?: 0
-        return redplusActive to redVipLevel
+        return parseVipEntitlement(json)
     }
 
     suspend fun getHomepageDragonBalls(): List<HomepageDragonBall> {
