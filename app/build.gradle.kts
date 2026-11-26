@@ -33,48 +33,100 @@ android {
         fun escapeBuildConfigString(value: String): String =
             value.replace("\\", "\\\\").replace("\"", "\\\"")
 
-        val gitCommitSha = runCatching {
-            val proc = ProcessBuilder("git", "rev-parse", "--short", "HEAD").start()
-            proc.inputStream.bufferedReader().readText().trim()
-        }.getOrDefault("").ifBlank {
+        fun runGit(vararg args: String): String = runCatching {
+            val proc = ProcessBuilder("git", *args).start()
+            val out = proc.inputStream.bufferedReader().readText().trim()
+            if (proc.waitFor() == 0) out else ""
+        }.getOrDefault("")
+
+        fun isGitAncestor(ancestorRef: String, descendantRef: String): Boolean = runCatching {
+            val proc = ProcessBuilder("git", "merge-base", "--is-ancestor", ancestorRef, descendantRef).start()
+            proc.waitFor() == 0
+        }.getOrDefault(false)
+
+        val gitCommitSha = runGit("rev-parse", "--short", "HEAD").ifBlank {
             System.getenv("GITHUB_SHA")?.trim()?.take(7) ?: ""
         }
-        val gitCommitFullSha = runCatching {
-            val proc = ProcessBuilder("git", "rev-parse", "HEAD").start()
-            proc.inputStream.bufferedReader().readText().trim()
-        }.getOrDefault("").ifBlank {
+        val gitCommitFullSha = runGit("rev-parse", "HEAD").ifBlank {
             System.getenv("GITHUB_SHA")?.trim() ?: ""
         }
-        val exactGitTag = runCatching {
-            val proc = ProcessBuilder("git", "describe", "--tags", "--exact-match").start()
-            val out = proc.inputStream.bufferedReader().readText().trim()
-            if (proc.waitFor() == 0 && out.isNotBlank()) out else ""
-        }.getOrDefault("")
-        val gitBranch = listOfNotNull(
+        val exactGitTag = runGit("describe", "--tags", "--exact-match")
+        val envRefType = System.getenv("GITHUB_REF_TYPE")?.trim().orEmpty()
+        val envRefName = System.getenv("GITHUB_REF_NAME")?.trim().orEmpty()
+        val envBuildChannel = System.getenv("AME_BUILD_CHANNEL")?.trim()?.lowercase().orEmpty()
+        val envGitBranch = System.getenv("AME_GIT_BRANCH")?.trim().orEmpty()
+        val envReleaseTag = System.getenv("AME_RELEASE_TAG")?.trim().orEmpty()
+
+        val resolvedCommitBranchFromGit = run {
+            val abbrev = runGit("rev-parse", "--abbrev-ref", "HEAD")
+                .takeIf { it.isNotBlank() && it != "HEAD" }
+            if (abbrev != null) {
+                abbrev
+            } else {
+                val defaultRemoteBranch = runGit("symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+                    .removePrefix("origin/")
+                    .trim()
+                if (defaultRemoteBranch.isNotBlank() && isGitAncestor("HEAD", "refs/remotes/origin/$defaultRemoteBranch")) {
+                    defaultRemoteBranch
+                } else {
+                    val remoteContaining = runGit("for-each-ref", "--contains=HEAD", "--format=%(refname:short)", "refs/remotes/origin")
+                        .lineSequence()
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() && it != "origin/HEAD" }
+                        .map { it.removePrefix("origin/") }
+                        .firstOrNull()
+                    remoteContaining ?: runGit("for-each-ref", "--contains=HEAD", "--format=%(refname:short)", "refs/heads")
+                        .lineSequence()
+                        .map { it.trim() }
+                        .firstOrNull { it.isNotBlank() }
+                        .orEmpty()
+                }
+            }
+        }
+
+        val resolvedBranchCandidate = listOfNotNull(
+            envGitBranch.ifBlank { null },
             System.getenv("GITHUB_HEAD_REF")?.trim()?.ifBlank { null },
-            System.getenv("GITHUB_REF_NAME")?.trim()?.ifBlank { null },
-            runCatching {
-                val proc = ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD").start()
-                proc.inputStream.bufferedReader().readText().trim()
-            }.getOrNull()?.takeIf { it.isNotBlank() && it != "HEAD" },
-            exactGitTag.ifBlank { null }
+            envRefName.takeIf { it.isNotBlank() && !envRefType.equals("tag", ignoreCase = true) },
+            resolvedCommitBranchFromGit.ifBlank { null }
         ).firstOrNull()
             ?.removePrefix("refs/heads/")
             ?.removePrefix("refs/tags/")
             ?.trim()
+            ?.ifBlank { null }
+
+        val gitBranch = resolvedBranchCandidate
+            ?: exactGitTag.removePrefix("refs/tags/").trim().ifBlank { null }
             ?: "unknown"
-        val gitRefType = System.getenv("GITHUB_REF_TYPE")?.trim()?.ifBlank { null }
-            ?: if (exactGitTag.isNotBlank()) "tag" else "branch"
-        val gitCommitTimestamp = runCatching {
-            val proc = ProcessBuilder("git", "show", "-s", "--format=%ct", "HEAD").start()
-            proc.inputStream.bufferedReader().readText().trim().toLongOrNull() ?: 0L
-        }.getOrDefault(0L)
+        val gitRefType = when {
+            !resolvedBranchCandidate.isNullOrBlank() -> "branch"
+            exactGitTag.isNotBlank() -> "tag"
+            envRefType.isNotBlank() -> envRefType
+            else -> "branch"
+        }
+        val buildReleaseTag = listOfNotNull(
+            envReleaseTag.ifBlank { null },
+            envRefName.takeIf { it.isNotBlank() && envRefType.equals("tag", ignoreCase = true) },
+            exactGitTag.takeIf { it.isNotBlank() && envBuildChannel == "release" }
+        ).firstOrNull()
+            ?.removePrefix("refs/tags/")
+            ?.trim()
+            ?: ""
+        val buildChannel = when {
+            envBuildChannel.isNotBlank() -> envBuildChannel
+            buildReleaseTag.isNotBlank() || envRefType.equals("tag", ignoreCase = true) -> "release"
+            !System.getenv("GITHUB_ACTIONS").isNullOrBlank() -> "action"
+            else -> "local"
+        }
+        val gitCommitTimestamp = runGit("show", "-s", "--format=%ct", "HEAD").toLongOrNull() ?: 0L
         val buildRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.trim() ?: ""
 
         buildConfigField("String", "GIT_COMMIT_SHA", "\"${escapeBuildConfigString(gitCommitSha)}\"")
         buildConfigField("String", "GIT_COMMIT_FULL_SHA", "\"${escapeBuildConfigString(gitCommitFullSha)}\"")
         buildConfigField("String", "GIT_BRANCH", "\"${escapeBuildConfigString(gitBranch)}\"")
         buildConfigField("String", "GIT_REF_TYPE", "\"${escapeBuildConfigString(gitRefType)}\"")
+        buildConfigField("String", "BUILD_CHANNEL", "\"${escapeBuildConfigString(buildChannel)}\"")
+        buildConfigField("String", "BUILD_RELEASE_TAG", "\"${escapeBuildConfigString(buildReleaseTag)}\"")
         buildConfigField("long", "GIT_COMMIT_TIMESTAMP", "${gitCommitTimestamp}L")
         buildConfigField("String", "GITHUB_RUN_NUMBER", "\"${escapeBuildConfigString(buildRunNumber)}\"")
 

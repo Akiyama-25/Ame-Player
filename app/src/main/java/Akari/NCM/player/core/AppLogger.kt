@@ -244,6 +244,8 @@ object AppLogger {
         }.getOrNull().orEmpty().ifBlank { BuildConfig.VERSION_NAME }
         val branch = BuildConfig.GIT_BRANCH.trim().ifBlank { "unknown" }
         val refType = BuildConfig.GIT_REF_TYPE.trim().ifBlank { "branch" }
+        val buildChannel = BuildConfig.BUILD_CHANNEL.trim().ifBlank { "local" }
+        val releaseTag = BuildConfig.BUILD_RELEASE_TAG.trim()
         val commitSha = BuildConfig.GIT_COMMIT_SHA.trim().ifBlank { "unknown" }
         val runNumber = BuildConfig.GITHUB_RUN_NUMBER.trim()
         val exportTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
@@ -252,6 +254,10 @@ object AppLogger {
             appendLine("=== Ame Player Build Info ===")
             appendLine("Package: ${context.packageName}")
             appendLine("Version: $versionName (${BuildConfig.VERSION_CODE})")
+            appendLine(
+                if (releaseTag.isNotBlank()) "Build Channel: $buildChannel ($releaseTag)"
+                else "Build Channel: $buildChannel"
+            )
             appendLine("Build Branch: $branch ($refType)")
             appendLine("Commit SHA: $commitSha")
             if (runNumber.isNotBlank()) {
@@ -276,6 +282,8 @@ object AppLogger {
         }.getOrNull().orEmpty().ifBlank { BuildConfig.VERSION_NAME }
         val branch = BuildConfig.GIT_BRANCH.trim().ifBlank { "unknown" }
         val refType = BuildConfig.GIT_REF_TYPE.trim().ifBlank { "branch" }
+        val buildChannel = BuildConfig.BUILD_CHANNEL.trim().ifBlank { "local" }
+        val releaseTag = BuildConfig.BUILD_RELEASE_TAG.trim()
         val commitSha = BuildConfig.GIT_COMMIT_SHA.trim().ifBlank { "unknown" }
         val runNumber = BuildConfig.GITHUB_RUN_NUMBER.trim()
 
@@ -291,6 +299,10 @@ object AppLogger {
                     appendLine("# Ame Player 运行日志")
                     appendLine()
                     appendLine("- 安装包版本: $versionName (${BuildConfig.VERSION_CODE})")
+                    appendLine(
+                        if (releaseTag.isNotBlank()) "- 构建通道: $buildChannel ($releaseTag)"
+                        else "- 构建通道: $buildChannel"
+                    )
                     appendLine("- 提交分支: $branch ($refType)")
                     appendLine("- 提交 SHA: $commitSha")
                     if (runNumber.isNotBlank()) {

@@ -160,13 +160,16 @@ object AppUpdateManager {
         }.getOrNull() ?: BuildConfig.VERSION_NAME
         val currentBranch = normalizeBranchName(BuildConfig.GIT_BRANCH)
         val currentRefType = BuildConfig.GIT_REF_TYPE.trim().ifBlank { "branch" }
+        val currentBuildChannel = BuildConfig.BUILD_CHANNEL.trim().ifBlank { "local" }
+        val currentReleaseTag = normalizeBranchName(BuildConfig.BUILD_RELEASE_TAG)
         val currentCommit = BuildConfig.GIT_COMMIT_SHA.trim()
         val currentRunNum = BuildConfig.GITHUB_RUN_NUMBER.trim()
 
         AppLogger.i(
             TAG,
             "Starting update check: channel=${channel.name}, package=${variant.packageName} (${variant.displayName}), " +
-                "currentVersion=$currentVersion, buildBranch=$currentBranch ($currentRefType), commit=$currentCommit, runNumber=$currentRunNum"
+                "currentVersion=$currentVersion, buildChannel=$currentBuildChannel, releaseTag=${currentReleaseTag.ifBlank { "-" }}, " +
+                "buildBranch=$currentBranch ($currentRefType), commit=$currentCommit, runNumber=$currentRunNum"
         )
 
         try {
@@ -201,7 +204,18 @@ object AppUpdateManager {
 
         val releaseResult = releaseDeferred.await()
         val actionResult = actionDeferred.await()
-        selectActionChannelUpdate(releaseResult, actionResult, variant, currentVersion)
+        val queryBranch = resolveActionQueryBranch(
+            currentBranch = BuildConfig.GIT_BRANCH,
+            currentRefType = BuildConfig.GIT_REF_TYPE,
+            currentReleaseTag = BuildConfig.BUILD_RELEASE_TAG
+        )
+        selectActionChannelUpdate(
+            releaseResult = releaseResult,
+            actionResult = actionResult,
+            variant = variant,
+            currentVersion = currentVersion,
+            currentBranch = queryBranch
+        )
     }
 
     internal fun normalizeBranchName(branch: String): String =
@@ -209,10 +223,14 @@ object AppUpdateManager {
 
     internal fun resolveActionQueryBranch(
         currentBranch: String = BuildConfig.GIT_BRANCH,
-        currentRefType: String = BuildConfig.GIT_REF_TYPE
+        currentRefType: String = BuildConfig.GIT_REF_TYPE,
+        currentReleaseTag: String = BuildConfig.BUILD_RELEASE_TAG
     ): String {
         val normalized = normalizeBranchName(currentBranch)
-        return if (currentRefType.equals("branch", ignoreCase = true) &&
+        val normalizedTag = normalizeBranchName(currentReleaseTag)
+        val isTagNameOnly = currentRefType.equals("tag", ignoreCase = true) ||
+            (normalizedTag.isNotBlank() && normalized.equals(normalizedTag, ignoreCase = true))
+        return if (!isTagNameOnly &&
             normalized.isNotBlank() &&
             !normalized.equals("unknown", ignoreCase = true) &&
             !normalized.equals("HEAD", ignoreCase = true)
@@ -256,8 +274,21 @@ object AppUpdateManager {
         releaseResult: UpdateCheckResult,
         actionResult: UpdateCheckResult,
         variant: AppPackageVariant,
-        currentVersion: String
+        currentVersion: String,
+        currentBranch: String = resolveActionQueryBranch()
     ): UpdateCheckResult {
+        val normalizedCurrentBranch = normalizeBranchName(currentBranch)
+        val releaseMatchesCurrentBranch = releaseResult is UpdateCheckResult.UpdateAvailable && (
+            normalizedCurrentBranch.isBlank() ||
+                normalizedCurrentBranch.equals("unknown", ignoreCase = true) ||
+                releaseResult.buildBranch.isBlank() ||
+                isSameBuildBranch(
+                    releaseBranch = releaseResult.buildBranch,
+                    actionBranch = normalizedCurrentBranch,
+                    releaseCommitSha = releaseResult.commitSha
+                )
+            )
+
         return when {
             releaseResult is UpdateCheckResult.UpdateAvailable &&
                 actionResult is UpdateCheckResult.UpdateAvailable -> {
@@ -282,8 +313,19 @@ object AppUpdateManager {
                     actionResult
                 }
             }
-            releaseResult is UpdateCheckResult.UpdateAvailable -> releaseResult
+            releaseResult is UpdateCheckResult.UpdateAvailable && releaseMatchesCurrentBranch -> releaseResult
             actionResult is UpdateCheckResult.UpdateAvailable -> actionResult
+            releaseResult is UpdateCheckResult.UpdateAvailable -> {
+                AppLogger.i(
+                    TAG,
+                    "Action channel: ignoring Release (${releaseResult.newVersion}, branch=${releaseResult.buildBranch}) because current commit branch is $normalizedCurrentBranch"
+                )
+                if (actionResult is UpdateCheckResult.Error) {
+                    actionResult
+                } else {
+                    UpdateCheckResult.UpToDate(UpdateChannel.ACTION, variant, currentVersion)
+                }
+            }
             actionResult is UpdateCheckResult.UpToDate ->
                 UpdateCheckResult.UpToDate(UpdateChannel.ACTION, variant, currentVersion)
             actionResult is UpdateCheckResult.Error -> actionResult
@@ -301,12 +343,25 @@ object AppUpdateManager {
         currentCommitSha: String,
         currentCommitTimestamp: Long,
         currentBranch: String,
-        currentRefType: String
+        currentRefType: String,
+        remoteBranch: String = "",
+        currentBuildChannel: String = if (currentRefType.equals("tag", ignoreCase = true)) "release" else "action",
+        currentReleaseTag: String = if (currentRefType.equals("tag", ignoreCase = true)) currentBranch else ""
     ): Boolean {
         val normalizedBranch = normalizeBranchName(currentBranch)
         val normalizedTag = normalizeBranchName(remoteTag)
-        val isInstalledTag = currentRefType.equals("tag", ignoreCase = true) &&
-            normalizedBranch.equals(normalizedTag, ignoreCase = true)
+        val normalizedCurrentReleaseTag = normalizeBranchName(currentReleaseTag)
+        val isReleaseBuild = currentBuildChannel.equals("release", ignoreCase = true) ||
+            currentRefType.equals("tag", ignoreCase = true)
+        val isInstalledTag = isReleaseBuild && (
+            normalizedCurrentReleaseTag.equals(normalizedTag, ignoreCase = true) ||
+                (normalizedCurrentReleaseTag.isBlank() && compareVersions(remoteTag, currentVersion) == 0) ||
+                (currentRefType.equals("tag", ignoreCase = true) && normalizedBranch.equals(normalizedTag, ignoreCase = true))
+            )
+
+        if (isInstalledTag) {
+            return false
+        }
 
         if (commitsMatch(remoteCommitSha, currentCommitSha)) {
             return false
@@ -317,13 +372,25 @@ object AppUpdateManager {
         if (versionCmp < 0) return false
 
         // Same versionName (e.g. Action branch already bumped versionName to release-0.6 before tag was published)
-        if (isInstalledTag) return false
+        if (remoteBranch.isNotBlank() &&
+            normalizedBranch.isNotBlank() &&
+            !normalizedBranch.equals("unknown", ignoreCase = true) &&
+            !normalizedBranch.equals("HEAD", ignoreCase = true) &&
+            !isSameBuildBranch(
+                releaseBranch = remoteBranch,
+                actionBranch = normalizedBranch,
+                actionCommitSha = currentCommitSha,
+                releaseCommitSha = remoteCommitSha
+            )
+        ) {
+            return false
+        }
 
         if (remoteCommitSha.isNotBlank() && currentCommitSha.isNotBlank()) {
             if (remoteCommitTimestamp > 0L && currentCommitTimestamp > 0L) {
                 return remoteCommitTimestamp > currentCommitTimestamp
             }
-            return !currentRefType.equals("tag", ignoreCase = true)
+            return !isReleaseBuild
         }
         return false
     }
@@ -335,18 +402,33 @@ object AppUpdateManager {
         currentCommitSha: String,
         remoteCommitTimestamp: Long = 0L,
         currentCommitTimestamp: Long = 0L,
-        currentRefType: String = "branch"
+        currentRefType: String = "branch",
+        currentBuildChannel: String = if (currentRefType.equals("branch", ignoreCase = true)) "action" else "release",
+        remoteBranch: String = "",
+        currentBranch: String = ""
     ): Boolean {
+        val normalizedRemoteBranch = normalizeBranchName(remoteBranch)
+        val normalizedCurrentBranch = normalizeBranchName(currentBranch)
+        if (normalizedRemoteBranch.isNotBlank() &&
+            normalizedCurrentBranch.isNotBlank() &&
+            !normalizedCurrentBranch.equals("unknown", ignoreCase = true) &&
+            !normalizedCurrentBranch.equals("HEAD", ignoreCase = true) &&
+            !isSameBuildBranch(normalizedRemoteBranch, normalizedCurrentBranch)
+        ) {
+            return false
+        }
         if (commitsMatch(remoteHeadSha, currentCommitSha)) {
             return false
         }
+        val isActionWorkflowBuild = currentBuildChannel.equals("action", ignoreCase = true)
         if (remoteCommitTimestamp > 0L && currentCommitTimestamp > 0L) {
             if (remoteCommitTimestamp > currentCommitTimestamp) return true
             if (remoteCommitTimestamp < currentCommitTimestamp) return false
+            return isActionWorkflowBuild && currentRunNumber != null && currentRunNumber > 0 && remoteRunNumber > currentRunNumber
         }
-        val isActionWorkflowBuild = currentRefType.equals("branch", ignoreCase = true)
         return when {
             isActionWorkflowBuild && currentRunNumber != null && currentRunNumber > 0 -> remoteRunNumber > currentRunNumber
+            currentBuildChannel.equals("release", ignoreCase = true) -> false
             currentCommitSha.isNotBlank() && remoteHeadSha.isNotBlank() -> true
             else -> true
         }
@@ -451,7 +533,15 @@ object AppUpdateManager {
             currentCommitSha = currentCommitSha,
             currentCommitTimestamp = BuildConfig.GIT_COMMIT_TIMESTAMP,
             currentBranch = BuildConfig.GIT_BRANCH,
-            currentRefType = BuildConfig.GIT_REF_TYPE
+            currentRefType = BuildConfig.GIT_REF_TYPE,
+            remoteBranch = targetCommitish,
+            currentBuildChannel = BuildConfig.BUILD_CHANNEL,
+            currentReleaseTag = BuildConfig.BUILD_RELEASE_TAG
+        )
+        AppLogger.i(
+            TAG,
+            "Release check evaluated: remoteTag=$tagName, remoteBranch=$targetCommitish, remoteCommit=${releaseCommitSha.take(7)}, " +
+                "remoteTs=$effectiveReleaseTs, currentTs=${BuildConfig.GIT_COMMIT_TIMESTAMP}, isNewer=$isNewer"
         )
         if (isNewer) {
             return UpdateCheckResult.UpdateAvailable(
@@ -475,7 +565,11 @@ object AppUpdateManager {
     }
 
     private fun checkActionUpdate(variant: AppPackageVariant, currentVersion: String): UpdateCheckResult {
-        val queryBranch = resolveActionQueryBranch(BuildConfig.GIT_BRANCH, BuildConfig.GIT_REF_TYPE)
+        val queryBranch = resolveActionQueryBranch(
+            currentBranch = BuildConfig.GIT_BRANCH,
+            currentRefType = BuildConfig.GIT_REF_TYPE,
+            currentReleaseTag = BuildConfig.BUILD_RELEASE_TAG
+        )
         val encodedBranch = URLEncoder.encode(queryBranch, "UTF-8")
         val runsUrl = URL("https://api.github.com/repos/$GITHUB_REPO/actions/workflows/build-signed-apk.yml/runs?branch=$encodedBranch&status=success&per_page=5")
         val runsConn = (runsUrl.openConnection() as HttpURLConnection).apply {
@@ -548,7 +642,15 @@ object AppUpdateManager {
             currentCommitSha = currentCommitSha,
             remoteCommitTimestamp = remoteCommitTs,
             currentCommitTimestamp = BuildConfig.GIT_COMMIT_TIMESTAMP,
-            currentRefType = BuildConfig.GIT_REF_TYPE
+            currentRefType = BuildConfig.GIT_REF_TYPE,
+            currentBuildChannel = BuildConfig.BUILD_CHANNEL,
+            remoteBranch = headBranch,
+            currentBranch = queryBranch
+        )
+        AppLogger.i(
+            TAG,
+            "Action check evaluated: queryBranch=$queryBranch, remoteRun=#$runNumber, remoteBranch=$headBranch, " +
+                "remoteCommit=${headSha.take(7)}, remoteTs=$remoteCommitTs, currentTs=${BuildConfig.GIT_COMMIT_TIMESTAMP}, isNewer=$isNewer"
         )
 
         val artifactName = matchingArtifact.getString("name")

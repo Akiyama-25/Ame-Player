@@ -37,6 +37,9 @@ jobs:
     name: Build and test release variant
     needs: wake-runner
     runs-on: [self-hosted, android-builder]
+    env:
+      AME_BUILD_CHANNEL: action
+      AME_GIT_BRANCH: ${{ github.head_ref || github.ref_name }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4

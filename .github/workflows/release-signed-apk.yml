@@ -10,6 +10,16 @@ on:
         description: Version tag to build and publish (for example release-0.2 or v1.0.0)
         required: true
         type: string
+      use_current_ref:
+        description: Build from the dispatched branch/ref even if the tag already exists (for overwriting an existing release)
+        required: false
+        default: false
+        type: boolean
+      preserve_release_notes:
+        description: Keep existing release notes unchanged when overwriting an existing release
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -40,6 +50,8 @@ jobs:
     outputs:
       tag: ${{ steps.ref.outputs.tag }}
       safe_tag: ${{ steps.ref.outputs.safe_tag }}
+      commit_branch: ${{ steps.source_meta.outputs.commit_branch }}
+      commit_sha: ${{ steps.source_meta.outputs.commit_sha }}
     runs-on: [self-hosted, android-builder]
     steps:
       - name: Select release ref
@@ -67,21 +79,57 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Checkout target tag if it exists
+      - name: Checkout target tag if it exists and resolve commit branch
+        id: source_meta
         env:
           TARGET_TAG: ${{ steps.ref.outputs.tag }}
+          USE_CURRENT_REF: ${{ inputs.use_current_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF_NAME: ${{ github.ref_name }}
+          EVENT_REF_TYPE: ${{ github.ref_type }}
         run: |
           set -euo pipefail
           git fetch --tags --force
-          if git rev-parse -q --verify "refs/tags/$TARGET_TAG" >/dev/null; then
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$USE_CURRENT_REF" = "true" ]; then
+            echo "use_current_ref=true: building from dispatched ref ($EVENT_REF_NAME @ $(git rev-parse --short HEAD)) for tag '$TARGET_TAG'."
+          elif git rev-parse -q --verify "refs/tags/$TARGET_TAG" >/dev/null; then
             echo "Checking out existing tag: $TARGET_TAG"
             git checkout "refs/tags/$TARGET_TAG"
           elif git rev-parse -q --verify "origin/$TARGET_TAG" >/dev/null; then
             echo "Checking out existing branch/ref: $TARGET_TAG"
             git checkout "$TARGET_TAG"
           else
-            echo "Tag '$TARGET_TAG' does not exist yet; building from current ref ($GITHUB_REF_NAME) and creating release tag on publish."
+            echo "Tag '$TARGET_TAG' does not exist yet; building from current ref ($EVENT_REF_NAME) and creating release tag on publish."
           fi
+
+          COMMIT_SHA="$(git rev-parse HEAD)"
+          COMMIT_BRANCH=""
+          if [ "$EVENT_REF_TYPE" = "branch" ] && [ -n "$EVENT_REF_NAME" ]; then
+            if git merge-base --is-ancestor "$COMMIT_SHA" "refs/remotes/origin/$EVENT_REF_NAME" 2>/dev/null || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              COMMIT_BRANCH="$EVENT_REF_NAME"
+            fi
+          fi
+          if [ -z "$COMMIT_BRANCH" ]; then
+            DEFAULT_BRANCH="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)"
+            if [ -n "$DEFAULT_BRANCH" ] && git merge-base --is-ancestor "$COMMIT_SHA" "refs/remotes/origin/$DEFAULT_BRANCH" 2>/dev/null; then
+              COMMIT_BRANCH="$DEFAULT_BRANCH"
+            fi
+          fi
+          if [ -z "$COMMIT_BRANCH" ]; then
+            COMMIT_BRANCH="$(git for-each-ref --contains="$COMMIT_SHA" --format='%(refname:short)' refs/remotes/origin | grep -v '^origin/HEAD$' | sed 's|^origin/||' | head -n 1 || true)"
+          fi
+          if [ -z "$COMMIT_BRANCH" ]; then
+            COMMIT_BRANCH="main"
+          fi
+
+          echo "Resolved release build metadata: tag=$TARGET_TAG, commit_branch=$COMMIT_BRANCH, commit_sha=$COMMIT_SHA"
+          echo "commit_branch=$COMMIT_BRANCH" >> "$GITHUB_OUTPUT"
+          echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+          echo "AME_BUILD_CHANNEL=release" >> "$GITHUB_ENV"
+          echo "AME_GIT_BRANCH=$COMMIT_BRANCH" >> "$GITHUB_ENV"
+          echo "AME_RELEASE_TAG=$TARGET_TAG" >> "$GITHUB_ENV"
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -294,12 +342,57 @@ jobs:
           merge-multiple: true
           path: dist
 
+      - name: Check existing release and prepare tag
+        id: existing_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.build-sign.outputs.tag }}
+          COMMIT_BRANCH: ${{ needs.build-sign.outputs.commit_branch }}
+          COMMIT_SHA: ${{ needs.build-sign.outputs.commit_sha }}
+          PRESERVE_NOTES: ${{ inputs.preserve_release_notes }}
+        run: |
+          set -euo pipefail
+          HTTP_CODE="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}")"
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Existing release found for tag '$TAG'; preserving tag and overwriting assets."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "target_commitish=" >> "$GITHUB_OUTPUT"
+            if [ "$PRESERVE_NOTES" = "false" ]; then
+              echo "generate_notes=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "generate_notes=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "No existing release for tag '$TAG' (HTTP $HTTP_CODE); creating new release."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "target_commitish=$COMMIT_BRANCH" >> "$GITHUB_OUTPUT"
+            echo "generate_notes=true" >> "$GITHUB_OUTPUT"
+
+            TAG_HTTP="$(curl -sS -o /dev/null -w '%{http_code}' \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}")"
+            if [ "$TAG_HTTP" != "200" ] && [ -n "$COMMIT_SHA" ]; then
+              echo "Pinning new tag '$TAG' to built commit $COMMIT_SHA..."
+              curl -fsS -X POST \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                "https://api.github.com/repos/${GITHUB_REPOSITORY}/git/refs" \
+                -d "{\"ref\":\"refs/tags/${TAG}\",\"sha\":\"${COMMIT_SHA}\"}" >/dev/null
+            fi
+          fi
+
       - name: Publish release and signed APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.build-sign.outputs.tag }}
           name: Ame-Player ${{ needs.build-sign.outputs.tag }}
-          generate_release_notes: true
+          target_commitish: ${{ steps.existing_release.outputs.target_commitish }}
+          generate_release_notes: ${{ steps.existing_release.outputs.generate_notes == 'true' }}
           files: |
             dist/*.apk
             dist/SHA256SUMS.txt

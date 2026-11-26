@@ -335,6 +335,148 @@ class AppUpdateManagerTest {
     }
 
     @Test
+    fun testInstalledReleaseBuildOnActionChannelDoesNotLoopEvenIfTagCommitDiffers() {
+        // Installed Release APK embeds commit branch "main", buildChannel="release", releaseTag="release-0.6"
+        // Even if remote tag release-0.6 points to a newer docs/skip-ci commit, it must NOT re-prompt release-0.6
+        assertFalse(
+            AppUpdateManager.isNewerReleaseBuild(
+                remoteTag = "release-0.6",
+                remoteCommitSha = "988127411ccaf15c8f3afac7d26c1323b88d0777",
+                remoteCommitTimestamp = 1795665270L,
+                currentVersion = "release-0.6",
+                currentCommitSha = "33391af724b129fee544427e5af4144c821b48df",
+                currentCommitTimestamp = 1795663848L,
+                currentBranch = "main",
+                currentRefType = "branch",
+                remoteBranch = "main",
+                currentBuildChannel = "release",
+                currentReleaseTag = "release-0.6"
+            )
+        )
+
+        // Next Release tag (release-0.7) IS still detected as newer
+        assertTrue(
+            AppUpdateManager.isNewerReleaseBuild(
+                remoteTag = "release-0.7",
+                remoteCommitSha = "deadbeef1234567890",
+                remoteCommitTimestamp = 1795700000L,
+                currentVersion = "release-0.6",
+                currentCommitSha = "33391af724b129fee544427e5af4144c821b48df",
+                currentCommitTimestamp = 1795663848L,
+                currentBranch = "main",
+                currentRefType = "branch",
+                remoteBranch = "main",
+                currentBuildChannel = "release",
+                currentReleaseTag = "release-0.6"
+            )
+        )
+
+        // Release build's runNumber (#7) must NOT be compared against Action workflow's runNumber (#110)
+        assertFalse(
+            AppUpdateManager.isNewerActionBuild(
+                remoteRunNumber = 110,
+                remoteHeadSha = "33391af724b129fee544427e5af4144c821b48df",
+                currentRunNumber = 7,
+                currentCommitSha = "aaaaaaa1234567890",
+                remoteCommitTimestamp = 1795663848L,
+                currentCommitTimestamp = 1795665000L,
+                currentRefType = "branch",
+                currentBuildChannel = "release",
+                remoteBranch = "main",
+                currentBranch = "main"
+            )
+        )
+        // Even if timestamps are equal/missing, Release build must not treat Action runNumber #110 > #7 as newer
+        assertFalse(
+            AppUpdateManager.isNewerActionBuild(
+                remoteRunNumber = 110,
+                remoteHeadSha = "33391af724b129fee544427e5af4144c821b48df",
+                currentRunNumber = 7,
+                currentCommitSha = "aaaaaaa1234567890",
+                remoteCommitTimestamp = 0L,
+                currentCommitTimestamp = 0L,
+                currentRefType = "branch",
+                currentBuildChannel = "release",
+                remoteBranch = "main",
+                currentBranch = "main"
+            )
+        )
+
+        // A genuinely newer Action commit on the same commit branch IS still detected
+        assertTrue(
+            AppUpdateManager.isNewerActionBuild(
+                remoteRunNumber = 111,
+                remoteHeadSha = "bbbbbbb1234567890",
+                currentRunNumber = 7,
+                currentCommitSha = "aaaaaaa1234567890",
+                remoteCommitTimestamp = 1795670000L,
+                currentCommitTimestamp = 1795665000L,
+                currentRefType = "branch",
+                currentBuildChannel = "release",
+                remoteBranch = "main",
+                currentBranch = "main"
+            )
+        )
+    }
+
+    @Test
+    fun testCommitBranchIsUsedAsDetectionBasisForReleaseAndAction() {
+        // Release build built from a feature branch embeds that commit branch and queries it for Action updates
+        assertEquals(
+            "dev/audio",
+            AppUpdateManager.resolveActionQueryBranch(
+                currentBranch = "dev/audio",
+                currentRefType = "branch",
+                currentReleaseTag = "release-0.6"
+            )
+        )
+        // Action build on a different branch ignores Release on main when Action branch is up to date
+        val mainRelease = fakeUpdate(UpdateChannel.RELEASE, "release-0.6", branch = "main")
+        val devUpToDate = UpdateCheckResult.UpToDate(UpdateChannel.ACTION, AppPackageVariant.STANDARD, "release-0.6")
+        assertEquals(
+            devUpToDate,
+            AppUpdateManager.selectActionChannelUpdate(
+                releaseResult = mainRelease,
+                actionResult = devUpToDate,
+                variant = AppPackageVariant.STANDARD,
+                currentVersion = "release-0.6",
+                currentBranch = "dev/audio"
+            )
+        )
+        // Action build on a different commit branch does not treat same-version main Release as newer
+        assertFalse(
+            AppUpdateManager.isNewerReleaseBuild(
+                remoteTag = "release-0.6",
+                remoteCommitSha = "c0f13d9d6b1c25907f62a9707b991c048fe2d426",
+                remoteCommitTimestamp = 1795665000L,
+                currentVersion = "release-0.6",
+                currentCommitSha = "efdd9ee",
+                currentCommitTimestamp = 1795660000L,
+                currentBranch = "dev/audio",
+                currentRefType = "branch",
+                remoteBranch = "main",
+                currentBuildChannel = "action",
+                currentReleaseTag = ""
+            )
+        )
+        // Action build on main does not treat a newer run from another branch as newer
+        assertFalse(
+            AppUpdateManager.isNewerActionBuild(
+                remoteRunNumber = 120,
+                remoteHeadSha = "ccccccc1234567890",
+                currentRunNumber = 110,
+                currentCommitSha = "33391af",
+                remoteCommitTimestamp = 1795680000L,
+                currentCommitTimestamp = 1795660000L,
+                currentRefType = "branch",
+                currentBuildChannel = "action",
+                remoteBranch = "dev/audio",
+                currentBranch = "main"
+            )
+        )
+    }
+
+    @Test
     fun testProactiveStartupUpdateCheckLifecycle() = runBlocking {
         ThemePrefs.updateChannel = UpdateChannel.ACTION
         ThemePrefs.autoCheckUpdate = true
