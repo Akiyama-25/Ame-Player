@@ -8,28 +8,22 @@
 </div>
 
 <p align="center">
-  <img src="assets/Screenshot_2026-11-17-13-05-54-142_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-17-13-06-07-283_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-17-13-06-37-325_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-17-13-06-54-447_Akari.NCM.player.jpg" width="22%" />
-</p>
-<p align="center">
-  <img src="assets/Screenshot_2026-11-17-13-07-20-266_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-17-13-07-36-391_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-17-13-08-39-588_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-17-13-09-47-672_Akari.NCM.player.jpg" width="22%" />
-</p>
-<p align="center">
-  <img src="assets/Screenshot_2026-11-17-13-09-58-927_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-17-13-10-08-104_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-17-13-10-56-259_lockscreen.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-17-13-13-03-538_com.miui.home-edit.jpg" width="22%" />
-</p>
-<p align="center">
-  <img src="assets/Screenshot_2026-11-25-20-31-06-056_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-25-20-32-26-305_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-26-08-51-41-616_Akari.NCM.player.jpg" width="22%" />
-  <img src="assets/Screenshot_2026-11-26-08-54-47-405_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-17-13-05-54-142_Akari.NCM.player.jpg" width="200" alt="Screenshot 1" />
+  <img src="assets/Screenshot_2026-11-17-13-06-07-283_Akari.NCM.player.jpg" width="200" alt="Screenshot 2" />
+  <img src="assets/Screenshot_2026-11-17-13-06-37-325_Akari.NCM.player.jpg" width="200" alt="Screenshot 3" />
+  <img src="assets/Screenshot_2026-11-17-13-06-54-447_Akari.NCM.player.jpg" width="200" alt="Screenshot 4" />
+  <img src="assets/Screenshot_2026-11-17-13-07-20-266_Akari.NCM.player.jpg" width="200" alt="Screenshot 5" />
+  <img src="assets/Screenshot_2026-11-17-13-07-36-391_Akari.NCM.player.jpg" width="200" alt="Screenshot 6" />
+  <img src="assets/Screenshot_2026-11-17-13-08-39-588_Akari.NCM.player.jpg" width="200" alt="Screenshot 7" />
+  <img src="assets/Screenshot_2026-11-17-13-09-47-672_Akari.NCM.player.jpg" width="200" alt="Screenshot 8" />
+  <img src="assets/Screenshot_2026-11-17-13-09-58-927_Akari.NCM.player.jpg" width="200" alt="Screenshot 9" />
+  <img src="assets/Screenshot_2026-11-17-13-10-08-104_Akari.NCM.player.jpg" width="200" alt="Screenshot 10" />
+  <img src="assets/Screenshot_2026-11-17-13-10-56-259_lockscreen.jpg" width="200" alt="Screenshot 11" />
+  <img src="assets/Screenshot_2026-11-17-13-13-03-538_com.miui.home-edit.jpg" width="200" alt="Screenshot 12" />
+  <img src="assets/Screenshot_2026-11-25-20-31-06-056_Akari.NCM.player.jpg" width="200" alt="Screenshot 13" />
+  <img src="assets/Screenshot_2026-11-25-20-32-26-305_Akari.NCM.player.jpg" width="200" alt="Screenshot 14" />
+  <img src="assets/Screenshot_2026-11-26-08-51-41-616_Akari.NCM.player.jpg" width="200" alt="Screenshot 15" />
+  <img src="assets/Screenshot_2026-11-26-08-54-47-405_Akari.NCM.player.jpg" width="200" alt="Screenshot 16" />
 </p>
 
 > HyperOS 上岛效果不代表实际效果，如需达到，请在设备安装 LSPosed 后，使用 [Hyper Helper](https://github.com/HowieHChen/XiaomiHelper) 修改。
