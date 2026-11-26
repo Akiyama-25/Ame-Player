@@ -25,6 +25,12 @@
   <img src="assets/Screenshot_2026-11-17-13-10-56-259_lockscreen.jpg" width="22%" />
   <img src="assets/Screenshot_2026-11-17-13-13-03-538_com.miui.home-edit.jpg" width="22%" />
 </p>
+<p align="center">
+  <img src="assets/Screenshot_2026-11-25-20-31-06-056_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-25-20-32-26-305_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-26-08-51-41-616_Akari.NCM.player.jpg" width="22%" />
+  <img src="assets/Screenshot_2026-11-26-08-54-47-405_Akari.NCM.player.jpg" width="22%" />
+</p>
 
 > HyperOS 上岛效果不代表实际效果，如需达到，请在设备安装 LSPosed 后，使用 [Hyper Helper](https://github.com/HowieHChen/XiaomiHelper) 修改。
 
