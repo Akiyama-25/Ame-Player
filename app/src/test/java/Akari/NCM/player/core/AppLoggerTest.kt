@@ -116,6 +116,8 @@ class AppLoggerTest {
         assertTrue(logExport!!.exists())
         assertEquals("log", logExport.extension)
         val rawLogText = logExport.readText()
+        assertTrue(rawLogText.startsWith("=== Ame Player Build Info ==="))
+        assertTrue(rawLogText.contains("Build Branch: ${Akari.NCM.player.BuildConfig.GIT_BRANCH}"))
         assertTrue(rawLogText.contains("First exportable log line"))
         assertTrue(rawLogText.contains("Second exportable error line"))
 
@@ -126,6 +128,7 @@ class AppLoggerTest {
         assertEquals("md", mdExport.extension)
         val mdText = mdExport.readText()
         assertTrue(mdText.contains("# Ame Player 运行日志"))
+        assertTrue(mdText.contains("- 提交分支: ${Akari.NCM.player.BuildConfig.GIT_BRANCH}"))
         assertTrue(mdText.contains("- 当前设置等级: VERBOSE"))
         assertTrue(mdText.contains("```log"))
         assertTrue(mdText.contains("First exportable log line"))
@@ -149,6 +152,8 @@ class AppLoggerTest {
             }
         }
         assertEquals(1, entryCount)
+        assertTrue(unzippedContent.startsWith("=== Ame Player Build Info ==="))
+        assertTrue(unzippedContent.contains("Build Branch: ${Akari.NCM.player.BuildConfig.GIT_BRANCH}"))
         assertTrue(unzippedContent.contains("First exportable log line"))
         assertTrue(unzippedContent.contains("Second exportable error line"))
     }

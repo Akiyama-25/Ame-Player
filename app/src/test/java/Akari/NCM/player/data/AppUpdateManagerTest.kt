@@ -216,6 +216,72 @@ class AppUpdateManagerTest {
     }
 
     @Test
+    fun testResolveActionQueryBranch() {
+        assertEquals("main", AppUpdateManager.resolveActionQueryBranch("main", "branch"))
+        assertEquals("dev/audio", AppUpdateManager.resolveActionQueryBranch("refs/heads/dev/audio", "branch"))
+        // Tag / unknown / detached HEAD builds fall back to main
+        assertEquals("main", AppUpdateManager.resolveActionQueryBranch("release-0.6", "tag"))
+        assertEquals("main", AppUpdateManager.resolveActionQueryBranch("unknown", "branch"))
+        assertEquals("main", AppUpdateManager.resolveActionQueryBranch("HEAD", "branch"))
+    }
+
+    @Test
+    fun testIsNewerReleaseBuildUsesCommitAndBranchNotJustVersionName() {
+        // Installed Action branch build already has versionName=release-0.6, then Release tag release-0.6 is published on a newer commit
+        assertTrue(
+            AppUpdateManager.isNewerReleaseBuild(
+                remoteTag = "release-0.6",
+                remoteCommitSha = "c0f13d9d6b1c25907f62a9707b991c048fe2d426",
+                remoteCommitTimestamp = 1795663000L,
+                currentVersion = "release-0.6",
+                currentCommitSha = "efdd9eed1d472f990a131507f73ccf00d16511a8",
+                currentCommitTimestamp = 1795660000L,
+                currentBranch = "main",
+                currentRefType = "branch"
+            )
+        )
+        // Installed Action branch build moved AHEAD of Release tag release-0.6 (newer commit timestamp) -> do not downgrade
+        assertFalse(
+            AppUpdateManager.isNewerReleaseBuild(
+                remoteTag = "release-0.6",
+                remoteCommitSha = "c0f13d9d6b1c25907f62a9707b991c048fe2d426",
+                remoteCommitTimestamp = 1795663000L,
+                currentVersion = "release-0.6",
+                currentCommitSha = "aaaaaaa1234567890",
+                currentCommitTimestamp = 1795669000L,
+                currentBranch = "main",
+                currentRefType = "branch"
+            )
+        )
+        // Exact same commit SHA -> UpToDate
+        assertFalse(
+            AppUpdateManager.isNewerReleaseBuild(
+                remoteTag = "release-0.6",
+                remoteCommitSha = "c0f13d9d6b1c25907f62a9707b991c048fe2d426",
+                remoteCommitTimestamp = 1795663000L,
+                currentVersion = "release-0.6",
+                currentCommitSha = "c0f13d9",
+                currentCommitTimestamp = 1795663000L,
+                currentBranch = "main",
+                currentRefType = "branch"
+            )
+        )
+        // Older Release tag (release-0.5.1 < release-0.6) -> UpToDate
+        assertFalse(
+            AppUpdateManager.isNewerReleaseBuild(
+                remoteTag = "release-0.5.1",
+                remoteCommitSha = "876ecc0d636388c348b9b7d7e1f31903964db090",
+                remoteCommitTimestamp = 1795200000L,
+                currentVersion = "release-0.6",
+                currentCommitSha = "efdd9ee",
+                currentCommitTimestamp = 1795660000L,
+                currentBranch = "main",
+                currentRefType = "branch"
+            )
+        )
+    }
+
+    @Test
     fun testIsNewerActionBuildDeduplicatesMatchingCommitSha() {
         // Same commit SHA should not be treated as newer even if runNumber differs across workflows
         assertFalse(
@@ -242,6 +308,28 @@ class AppUpdateManagerTest {
                 remoteHeadSha = "2f263700c2bdfd215c1446c8db5e6c684e63630c",
                 currentRunNumber = 107,
                 currentCommitSha = "1e15269"
+            )
+        )
+        // Different commit with older timestamp than installed build -> not newer
+        assertFalse(
+            AppUpdateManager.isNewerActionBuild(
+                remoteRunNumber = 108,
+                remoteHeadSha = "2f263700c2bdfd215c1446c8db5e6c684e63630c",
+                currentRunNumber = null,
+                currentCommitSha = "1e15269",
+                remoteCommitTimestamp = 1795660000L,
+                currentCommitTimestamp = 1795665000L
+            )
+        )
+        // Different commit with newer timestamp -> newer even without runNumber
+        assertTrue(
+            AppUpdateManager.isNewerActionBuild(
+                remoteRunNumber = 109,
+                remoteHeadSha = "c0f13d9d6b1c25907f62a9707b991c048fe2d426",
+                currentRunNumber = null,
+                currentCommitSha = "efdd9ee",
+                remoteCommitTimestamp = 1795665000L,
+                currentCommitTimestamp = 1795660000L
             )
         )
     }

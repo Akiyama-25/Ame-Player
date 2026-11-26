@@ -1,5 +1,6 @@
 package Akari.NCM.player.core
 
+import Akari.NCM.player.BuildConfig
 import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
@@ -237,6 +238,31 @@ object AppLogger {
         }
     }
 
+    internal fun buildExportHeader(context: Context): String {
+        val versionName = runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull().orEmpty().ifBlank { BuildConfig.VERSION_NAME }
+        val branch = BuildConfig.GIT_BRANCH.trim().ifBlank { "unknown" }
+        val refType = BuildConfig.GIT_REF_TYPE.trim().ifBlank { "branch" }
+        val commitSha = BuildConfig.GIT_COMMIT_SHA.trim().ifBlank { "unknown" }
+        val runNumber = BuildConfig.GITHUB_RUN_NUMBER.trim()
+        val exportTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+
+        return buildString {
+            appendLine("=== Ame Player Build Info ===")
+            appendLine("Package: ${context.packageName}")
+            appendLine("Version: $versionName (${BuildConfig.VERSION_CODE})")
+            appendLine("Build Branch: $branch ($refType)")
+            appendLine("Commit SHA: $commitSha")
+            if (runNumber.isNotBlank()) {
+                appendLine("Build Run: #$runNumber")
+            }
+            appendLine("Export Time: $exportTime")
+            appendLine("=============================")
+            appendLine()
+        }
+    }
+
     fun exportToFormat(context: Context, format: ExportFormat): File? {
         val dir = File(context.cacheDir, "logs")
         if (!dir.exists()) {
@@ -244,11 +270,19 @@ object AppLogger {
         }
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val content = getLogContent()
+        val plainHeader = buildExportHeader(context)
+        val versionName = runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull().orEmpty().ifBlank { BuildConfig.VERSION_NAME }
+        val branch = BuildConfig.GIT_BRANCH.trim().ifBlank { "unknown" }
+        val refType = BuildConfig.GIT_REF_TYPE.trim().ifBlank { "branch" }
+        val commitSha = BuildConfig.GIT_COMMIT_SHA.trim().ifBlank { "unknown" }
+        val runNumber = BuildConfig.GITHUB_RUN_NUMBER.trim()
 
         return when (format) {
             ExportFormat.LOG -> {
                 val outFile = File(dir, "ame_player_log_$timestamp.log")
-                outFile.writeText(content)
+                outFile.writeText(plainHeader + content)
                 outFile
             }
             ExportFormat.MD -> {
@@ -256,6 +290,13 @@ object AppLogger {
                 val mdContent = buildString {
                     appendLine("# Ame Player 运行日志")
                     appendLine()
+                    appendLine("- 安装包版本: $versionName (${BuildConfig.VERSION_CODE})")
+                    appendLine("- 提交分支: $branch ($refType)")
+                    appendLine("- 提交 SHA: $commitSha")
+                    if (runNumber.isNotBlank()) {
+                        appendLine("- 构建编号: #$runNumber")
+                    }
+                    appendLine("- 包名: ${context.packageName}")
                     appendLine("- 导出时间: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}")
                     appendLine("- 当前设置等级: ${_currentLevel.value.label}")
                     appendLine("- 大小限制: ${_maxFileSizeKb.value} KB")
@@ -271,7 +312,7 @@ object AppLogger {
             }
             ExportFormat.ZIP -> {
                 val outFile = File(dir, "ame_player_log_$timestamp.zip")
-                val logText = content
+                val logText = plainHeader + content
                 try {
                     ZipOutputStream(FileOutputStream(outFile)).use { zos ->
                         val entry = ZipEntry("ame_player_log_$timestamp.log")

@@ -30,14 +30,53 @@ android {
         versionCode = 6
         versionName = "release-0.6"
 
+        fun escapeBuildConfigString(value: String): String =
+            value.replace("\\", "\\\\").replace("\"", "\\\"")
+
         val gitCommitSha = runCatching {
             val proc = ProcessBuilder("git", "rev-parse", "--short", "HEAD").start()
             proc.inputStream.bufferedReader().readText().trim()
+        }.getOrDefault("").ifBlank {
+            System.getenv("GITHUB_SHA")?.trim()?.take(7) ?: ""
+        }
+        val gitCommitFullSha = runCatching {
+            val proc = ProcessBuilder("git", "rev-parse", "HEAD").start()
+            proc.inputStream.bufferedReader().readText().trim()
+        }.getOrDefault("").ifBlank {
+            System.getenv("GITHUB_SHA")?.trim() ?: ""
+        }
+        val exactGitTag = runCatching {
+            val proc = ProcessBuilder("git", "describe", "--tags", "--exact-match").start()
+            val out = proc.inputStream.bufferedReader().readText().trim()
+            if (proc.waitFor() == 0 && out.isNotBlank()) out else ""
         }.getOrDefault("")
-        val buildRunNumber = System.getenv("GITHUB_RUN_NUMBER") ?: ""
+        val gitBranch = listOfNotNull(
+            System.getenv("GITHUB_HEAD_REF")?.trim()?.ifBlank { null },
+            System.getenv("GITHUB_REF_NAME")?.trim()?.ifBlank { null },
+            runCatching {
+                val proc = ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD").start()
+                proc.inputStream.bufferedReader().readText().trim()
+            }.getOrNull()?.takeIf { it.isNotBlank() && it != "HEAD" },
+            exactGitTag.ifBlank { null }
+        ).firstOrNull()
+            ?.removePrefix("refs/heads/")
+            ?.removePrefix("refs/tags/")
+            ?.trim()
+            ?: "unknown"
+        val gitRefType = System.getenv("GITHUB_REF_TYPE")?.trim()?.ifBlank { null }
+            ?: if (exactGitTag.isNotBlank()) "tag" else "branch"
+        val gitCommitTimestamp = runCatching {
+            val proc = ProcessBuilder("git", "show", "-s", "--format=%ct", "HEAD").start()
+            proc.inputStream.bufferedReader().readText().trim().toLongOrNull() ?: 0L
+        }.getOrDefault(0L)
+        val buildRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.trim() ?: ""
 
-        buildConfigField("String", "GIT_COMMIT_SHA", "\"$gitCommitSha\"")
-        buildConfigField("String", "GITHUB_RUN_NUMBER", "\"$buildRunNumber\"")
+        buildConfigField("String", "GIT_COMMIT_SHA", "\"${escapeBuildConfigString(gitCommitSha)}\"")
+        buildConfigField("String", "GIT_COMMIT_FULL_SHA", "\"${escapeBuildConfigString(gitCommitFullSha)}\"")
+        buildConfigField("String", "GIT_BRANCH", "\"${escapeBuildConfigString(gitBranch)}\"")
+        buildConfigField("String", "GIT_REF_TYPE", "\"${escapeBuildConfigString(gitRefType)}\"")
+        buildConfigField("long", "GIT_COMMIT_TIMESTAMP", "${gitCommitTimestamp}L")
+        buildConfigField("String", "GITHUB_RUN_NUMBER", "\"${escapeBuildConfigString(buildRunNumber)}\"")
 
         externalNativeBuild {
             cmake {
