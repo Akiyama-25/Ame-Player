@@ -1,5 +1,6 @@
 package Akari.NCM.player
 
+import Akari.NCM.player.data.AppUpdateManager
 import Akari.NCM.player.player.AmePlayerEngine
 import Akari.NCM.player.player.AmePlaybackService
 import Akari.NCM.player.ui.screen.MainScreen
@@ -10,11 +11,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import Akari.NCM.player.core.AppLogger
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -56,6 +59,10 @@ class MainActivity : ComponentActivity() {
         }
         
         Akari.NCM.player.data.ThemePrefs.init(this)
+
+        lifecycleScope.launch {
+            AppUpdateManager.checkUpdateOnStartup(applicationContext)
+        }
 
         if (intent?.getBooleanExtra("open_player", false) == true) {
             openPlayerRequests.value++

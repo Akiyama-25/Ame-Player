@@ -37,6 +37,7 @@ object ThemePrefs {
     private const val KEY_PLAYBACK_FADE_ENABLED = "playback_fade_enabled"
     private const val KEY_PLAYBACK_FADE_DURATION_MS = "playback_fade_duration_ms"
     private const val KEY_UPDATE_CHANNEL = "update_channel"
+    private const val KEY_AUTO_CHECK_UPDATE = "auto_check_update"
     private const val KEY_LAST_PLAYBACK_PLAYLIST_JSON = "last_playback_playlist_json"
     private const val KEY_LAST_PLAYBACK_INDEX = "last_playback_index"
     private const val KEY_LAST_PLAYBACK_SOURCE_TYPE = "last_playback_source_type"
@@ -129,6 +130,9 @@ object ThemePrefs {
     private val _updateChannelFlow = MutableStateFlow(UpdateChannel.RELEASE)
     val updateChannelFlow: StateFlow<UpdateChannel> = _updateChannelFlow.asStateFlow()
 
+    private val _autoCheckUpdateFlow = MutableStateFlow(true)
+    val autoCheckUpdateFlow: StateFlow<Boolean> = _autoCheckUpdateFlow.asStateFlow()
+
     fun init(context: Context) {
         prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
         _themeFlow.value = themeMode
@@ -157,6 +161,7 @@ object ThemePrefs {
         _playbackFadeEnabledFlow.value = playbackFadeEnabled
         _playbackFadeDurationMsFlow.value = playbackFadeDurationMs
         _updateChannelFlow.value = updateChannel
+        _autoCheckUpdateFlow.value = autoCheckUpdate
     }
 
     var themeMode: String
@@ -413,6 +418,15 @@ object ThemePrefs {
                 prefs.edit().putString(KEY_UPDATE_CHANNEL, value.key).apply()
             }
             _updateChannelFlow.value = value
+        }
+
+    var autoCheckUpdate: Boolean
+        get() = if (::prefs.isInitialized) prefs.getBoolean(KEY_AUTO_CHECK_UPDATE, true) else _autoCheckUpdateFlow.value
+        set(value) {
+            if (::prefs.isInitialized) {
+                prefs.edit().putBoolean(KEY_AUTO_CHECK_UPDATE, value).apply()
+            }
+            _autoCheckUpdateFlow.value = value
         }
 
     var lastPlaybackPlaylistJson: String

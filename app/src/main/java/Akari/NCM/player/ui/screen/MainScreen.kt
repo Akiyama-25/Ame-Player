@@ -6,6 +6,7 @@ import Akari.NCM.player.core.OnlinePlaylistTarget
 import Akari.NCM.player.core.PlayableMedia
 import Akari.NCM.player.core.PlaylistSourceType
 import Akari.NCM.player.core.VipTier
+import Akari.NCM.player.data.AppUpdateManager
 import Akari.NCM.player.data.AudioDownloadManager
 import Akari.NCM.player.data.AutoDownloadTriggerResult
 import Akari.NCM.player.data.CustomPlaylist
@@ -28,6 +29,7 @@ import Akari.NCM.player.ui.component.PredictiveBackEasing
 import Akari.NCM.player.ui.component.SaltLandscapePlayQueueSheet
 import Akari.NCM.player.ui.component.SaltPlayQueueView
 import Akari.NCM.player.ui.component.SongActionBottomSheet
+import Akari.NCM.player.ui.component.UpdateAvailableDialog
 import Akari.NCM.player.ui.component.predictiveBackBackground
 import Akari.NCM.player.ui.component.predictiveBackForeground
 import Akari.NCM.player.ui.component.rememberPlayerCoverPalette
@@ -1548,6 +1550,14 @@ fun MainScreen(
                     )
                 )
             }
+        )
+    }
+
+    val pendingStartupUpdate by AppUpdateManager.pendingStartupUpdate.collectAsState()
+    pendingStartupUpdate?.let { startupUpdate ->
+        UpdateAvailableDialog(
+            res = startupUpdate,
+            onDismiss = { AppUpdateManager.dismissStartupUpdate() }
         )
     }
 }

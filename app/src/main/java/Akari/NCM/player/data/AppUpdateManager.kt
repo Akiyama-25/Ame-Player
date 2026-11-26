@@ -4,11 +4,17 @@ import Akari.NCM.player.BuildConfig
 import Akari.NCM.player.core.AppLogger
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicBoolean
 
 enum class AppPackageVariant(
     val packageName: String,
@@ -70,7 +76,9 @@ sealed class UpdateCheckResult {
         val downloadUrl: String,
         val webUrl: String,
         val fileSize: Long = 0L,
-        val fileName: String = ""
+        val fileName: String = "",
+        val buildBranch: String = "",
+        val commitSha: String = ""
     ) : UpdateCheckResult()
 
     data class UpToDate(
@@ -88,6 +96,61 @@ object AppUpdateManager {
     private const val TAG = "AppUpdateManager"
     private const val GITHUB_REPO = "Akiyama-25/Ame-Player"
 
+    private val startupCheckTriggered = AtomicBoolean(false)
+    private val _pendingStartupUpdate = MutableStateFlow<UpdateCheckResult.UpdateAvailable?>(null)
+    val pendingStartupUpdate: StateFlow<UpdateCheckResult.UpdateAvailable?> = _pendingStartupUpdate.asStateFlow()
+
+    fun dismissStartupUpdate() {
+        _pendingStartupUpdate.value = null
+    }
+
+    suspend fun checkUpdateOnStartup(
+        context: Context,
+        force: Boolean = false,
+        checker: suspend (Context, UpdateChannel) -> UpdateCheckResult = ::checkUpdate
+    ): UpdateCheckResult.UpdateAvailable? {
+        if (!ThemePrefs.autoCheckUpdate) {
+            AppLogger.i(TAG, "Proactive startup update check skipped: autoCheckUpdate is disabled")
+            return null
+        }
+        if (!force && !startupCheckTriggered.compareAndSet(false, true)) {
+            return _pendingStartupUpdate.value
+        }
+
+        val channel = ThemePrefs.updateChannel
+        AppLogger.i(TAG, "Starting proactive startup update check: channel=${channel.name}")
+        val result = runCatching {
+            checker(context, channel)
+        }.getOrElse { e ->
+            AppLogger.w(TAG, "Proactive startup update check failed silently: ${e.message}")
+            return null
+        }
+
+        return when (result) {
+            is UpdateCheckResult.UpdateAvailable -> {
+                _pendingStartupUpdate.value = result
+                result
+            }
+            is UpdateCheckResult.UpToDate -> {
+                AppLogger.i(TAG, "Proactive startup update check: already up to date (${result.currentVersion})")
+                null
+            }
+            is UpdateCheckResult.Error -> {
+                AppLogger.w(TAG, "Proactive startup update check error (silent): ${result.message}")
+                null
+            }
+        }
+    }
+
+    internal fun resetStartupCheckForTest() {
+        startupCheckTriggered.set(false)
+        _pendingStartupUpdate.value = null
+    }
+
+    internal fun setPendingStartupUpdateForTest(update: UpdateCheckResult.UpdateAvailable?) {
+        _pendingStartupUpdate.value = update
+    }
+
     suspend fun checkUpdate(context: Context, channel: UpdateChannel): UpdateCheckResult = withContext(Dispatchers.IO) {
         val variant = AppPackageVariant.fromContext(context)
         val currentVersion = runCatching {
@@ -99,11 +162,116 @@ object AppUpdateManager {
         try {
             when (channel) {
                 UpdateChannel.RELEASE -> checkReleaseUpdate(variant, currentVersion)
-                UpdateChannel.ACTION -> checkActionUpdate(variant, currentVersion)
+                UpdateChannel.ACTION -> checkActionChannelUpdate(variant, currentVersion)
             }
         } catch (e: Exception) {
             AppLogger.e(TAG, "Check update failed: ${e.message}", e)
             UpdateCheckResult.Error(e.message ?: "检查更新网络异常，请重试")
+        }
+    }
+
+    private suspend fun checkActionChannelUpdate(
+        variant: AppPackageVariant,
+        currentVersion: String
+    ): UpdateCheckResult = coroutineScope {
+        val releaseDeferred = async(Dispatchers.IO) {
+            runCatching { checkReleaseUpdate(variant, currentVersion) }
+                .getOrElse { e ->
+                    AppLogger.w(TAG, "Release channel check during Action check failed: ${e.message}")
+                    UpdateCheckResult.Error(e.message ?: "GitHub Release 检查异常")
+                }
+        }
+        val actionDeferred = async(Dispatchers.IO) {
+            runCatching { checkActionUpdate(variant, currentVersion) }
+                .getOrElse { e ->
+                    AppLogger.w(TAG, "Action channel check failed: ${e.message}")
+                    UpdateCheckResult.Error(e.message ?: "GitHub Actions 检查异常")
+                }
+        }
+
+        val releaseResult = releaseDeferred.await()
+        val actionResult = actionDeferred.await()
+        selectActionChannelUpdate(releaseResult, actionResult, variant, currentVersion)
+    }
+
+    internal fun normalizeBranchName(branch: String): String =
+        branch.trim().removePrefix("refs/heads/").trim()
+
+    internal fun isSameBuildBranch(
+        releaseBranch: String,
+        actionBranch: String,
+        actionCommitSha: String = ""
+    ): Boolean {
+        val normRelease = normalizeBranchName(releaseBranch)
+        val normAction = normalizeBranchName(actionBranch)
+        if (normRelease.isNotBlank() && normAction.isNotBlank() &&
+            normRelease.equals(normAction, ignoreCase = true)
+        ) {
+            return true
+        }
+        val normSha = actionCommitSha.trim()
+        if (normRelease.isNotBlank() && normSha.isNotBlank() &&
+            (normSha.startsWith(normRelease, ignoreCase = true) ||
+                normRelease.startsWith(normSha, ignoreCase = true))
+        ) {
+            return true
+        }
+        return false
+    }
+
+    internal fun selectActionChannelUpdate(
+        releaseResult: UpdateCheckResult,
+        actionResult: UpdateCheckResult,
+        variant: AppPackageVariant,
+        currentVersion: String
+    ): UpdateCheckResult {
+        return when {
+            releaseResult is UpdateCheckResult.UpdateAvailable &&
+                actionResult is UpdateCheckResult.UpdateAvailable -> {
+                if (isSameBuildBranch(releaseResult.buildBranch, actionResult.buildBranch, actionResult.commitSha)) {
+                    AppLogger.i(
+                        TAG,
+                        "Action channel: both Release (${releaseResult.newVersion}, branch=${releaseResult.buildBranch}) " +
+                            "and Action (${actionResult.newVersion}, branch=${actionResult.buildBranch}) available on same branch; prioritizing Release"
+                    )
+                    releaseResult
+                } else {
+                    AppLogger.i(
+                        TAG,
+                        "Action channel: Release (branch=${releaseResult.buildBranch}) and Action (branch=${actionResult.buildBranch}) differ; using Action"
+                    )
+                    actionResult
+                }
+            }
+            releaseResult is UpdateCheckResult.UpdateAvailable -> releaseResult
+            actionResult is UpdateCheckResult.UpdateAvailable -> actionResult
+            actionResult is UpdateCheckResult.UpToDate ->
+                UpdateCheckResult.UpToDate(UpdateChannel.ACTION, variant, currentVersion)
+            actionResult is UpdateCheckResult.Error -> actionResult
+            releaseResult is UpdateCheckResult.UpToDate ->
+                UpdateCheckResult.UpToDate(UpdateChannel.ACTION, variant, currentVersion)
+            else -> releaseResult
+        }
+    }
+
+    internal fun isNewerActionBuild(
+        remoteRunNumber: Int,
+        remoteHeadSha: String,
+        currentRunNumber: Int?,
+        currentCommitSha: String
+    ): Boolean {
+        val cleanCurrentSha = currentCommitSha.trim()
+        val cleanRemoteSha = remoteHeadSha.trim()
+        if (cleanCurrentSha.isNotBlank() && cleanRemoteSha.isNotBlank() &&
+            (cleanRemoteSha.startsWith(cleanCurrentSha, ignoreCase = true) ||
+                cleanCurrentSha.startsWith(cleanRemoteSha, ignoreCase = true))
+        ) {
+            return false
+        }
+        return when {
+            currentRunNumber != null && currentRunNumber > 0 -> remoteRunNumber > currentRunNumber
+            cleanCurrentSha.isNotBlank() && cleanRemoteSha.isNotBlank() -> true
+            else -> true
         }
     }
 
@@ -145,6 +313,7 @@ object AppUpdateManager {
         val body = latestRelease.optString("body", "暂无更新日志")
         val publishedAt = latestRelease.optString("published_at", "")
         val htmlUrl = latestRelease.optString("html_url", "https://github.com/$GITHUB_REPO/releases")
+        val targetCommitish = normalizeBranchName(latestRelease.optString("target_commitish", ""))
         val assets = latestRelease.optJSONArray("assets") ?: JSONArray()
 
         var matchingAsset: JSONObject? = null
@@ -175,7 +344,8 @@ object AppUpdateManager {
                 downloadUrl = matchingAsset.getString("browser_download_url"),
                 webUrl = htmlUrl,
                 fileSize = matchingAsset.optLong("size", 0L),
-                fileName = matchingAsset.getString("name")
+                fileName = matchingAsset.getString("name"),
+                buildBranch = targetCommitish
             )
         } else {
             return UpdateCheckResult.UpToDate(UpdateChannel.RELEASE, variant, currentVersion)
@@ -207,6 +377,7 @@ object AppUpdateManager {
         val latestRun = workflowRuns.getJSONObject(0)
         val runId = latestRun.getLong("id")
         val runNumber = latestRun.getInt("run_number")
+        val headBranch = normalizeBranchName(latestRun.optString("head_branch", ""))
         val headSha = latestRun.optString("head_sha", "")
         val headCommit = latestRun.optJSONObject("head_commit")
         val commitMsg = headCommit?.optString("message", "")?.lines()?.firstOrNull() ?: "CI 测试构建"
@@ -245,11 +416,7 @@ object AppUpdateManager {
 
         val currentRunNum = BuildConfig.GITHUB_RUN_NUMBER.toIntOrNull()
         val currentCommitSha = BuildConfig.GIT_COMMIT_SHA
-        val isNewer = when {
-            currentRunNum != null && currentRunNum > 0 -> runNumber > currentRunNum
-            currentCommitSha.isNotBlank() && headSha.isNotBlank() -> !headSha.startsWith(currentCommitSha)
-            else -> true
-        }
+        val isNewer = isNewerActionBuild(runNumber, headSha, currentRunNum, currentCommitSha)
 
         val artifactName = matchingArtifact.getString("name")
         val directDownloadUrl = "https://nightly.link/$GITHUB_REPO/workflows/build-signed-apk.yml/main/$artifactName.zip"
@@ -266,7 +433,9 @@ object AppUpdateManager {
                 downloadUrl = directDownloadUrl,
                 webUrl = runHtmlUrl,
                 fileSize = matchingArtifact.optLong("size_in_bytes", 0L),
-                fileName = "$artifactName.zip"
+                fileName = "$artifactName.zip",
+                buildBranch = headBranch,
+                commitSha = headSha
             )
         } else {
             return UpdateCheckResult.UpToDate(UpdateChannel.ACTION, variant, currentVersion)

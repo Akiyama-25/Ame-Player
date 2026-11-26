@@ -21,6 +21,7 @@ import Akari.NCM.player.data.UserSessionManager
 import Akari.NCM.player.ui.component.AdaptiveButtonGroup
 import Akari.NCM.player.ui.component.AdaptiveButtonSpec
 import Akari.NCM.player.ui.component.ExpressiveButtonStyle
+import Akari.NCM.player.ui.component.UpdateResultDialog
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -186,6 +187,7 @@ fun SettingsScreen(
     val importedFonts by CustomFontManager.importedFontsFlow.collectAsState()
 
     val updateChannel by ThemePrefs.updateChannelFlow.collectAsState()
+    val autoCheckUpdate by ThemePrefs.autoCheckUpdateFlow.collectAsState()
     var showUpdateChannelDialog by remember { mutableStateOf(false) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
@@ -879,6 +881,38 @@ fun SettingsScreen(
                             ) {
                                 Text("切换", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
+                        }
+
+                        SettingsInnerDivider()
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { ThemePrefs.autoCheckUpdate = !autoCheckUpdate }
+                                .padding(horizontal = 18.dp, vertical = 12.dp)
+                                .testTag("setting_auto_check_update"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "启动时自动检查更新",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "应用启动时主动检测新版本，发现更新时弹窗提示",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = autoCheckUpdate,
+                                onCheckedChange = { ThemePrefs.autoCheckUpdate = it },
+                                modifier = Modifier.testTag("switch_auto_check_update")
+                            )
                         }
 
                         SettingsInnerDivider()
@@ -2049,7 +2083,11 @@ fun SettingsScreen(
                             Column {
                                 Text(text = ch.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                                 Text(
-                                    text = if (ch == UpdateChannel.RELEASE) "稳定正式版本，直接下载官方发布的完整安装包" else "自动化构建产物，包含最新提交的开发测试特性",
+                                    text = if (ch == UpdateChannel.RELEASE) {
+                                        "稳定正式版本，直接下载官方发布的完整安装包"
+                                    } else {
+                                        "同时检测 Release 与 Action 通道，构建分支相同时优先使用 Release，否则获取最新测试构建"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -2073,161 +2111,10 @@ fun SettingsScreen(
     }
 
     if (showUpdateResultDialog && updateResult != null) {
-        when (val res = updateResult!!) {
-            is UpdateCheckResult.UpdateAvailable -> {
-                AlertDialog(
-                    onDismissRequest = { showUpdateResultDialog = false },
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.NewReleases, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (res.channel == UpdateChannel.RELEASE) "发现新版本" else "发现新测试构建", fontWeight = FontWeight.Bold)
-                        }
-                    },
-                    text = {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = "绑定包名: ${res.variant.packageName} (${res.variant.displayName})",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "当前版本: ${res.currentVersion}  →  最新版本: ${res.newVersion}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
-                            if (res.publishDate.isNotBlank()) {
-                                val sizeText = if (res.fileSize > 0) " · 大小: ${"%.1f".format(res.fileSize / 1024f / 1024f)} MB" else ""
-                                Text(
-                                    text = "发布时间: ${res.publishDate}$sizeText",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            HorizontalDivider()
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "更新说明:",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 160.dp)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                                    .padding(8.dp)
-                                    .verticalScroll(rememberScrollState())
-                            ) {
-                                Text(
-                                    text = res.releaseNotes,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        AdaptiveButtonGroup(
-                            buttons = listOf(
-                                AdaptiveButtonSpec(
-                                    text = "下载更新",
-                                    onClick = {
-                                        showUpdateResultDialog = false
-                                        try {
-                                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.downloadUrl)).apply {
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            }
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "无法打开浏览器下载: ${e.message}", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    style = ExpressiveButtonStyle.FILLED
-                                ),
-                                AdaptiveButtonSpec(
-                                    text = "查看网页",
-                                    onClick = {
-                                        try {
-                                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.webUrl)).apply {
-                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            }
-                                            context.startActivity(intent)
-                                        } catch (_: Exception) {}
-                                    },
-                                    style = ExpressiveButtonStyle.TONAL
-                                ),
-                                AdaptiveButtonSpec(
-                                    text = "稍后",
-                                    onClick = { showUpdateResultDialog = false },
-                                    style = ExpressiveButtonStyle.TEXT
-                                )
-                            )
-                        )
-                    }
-                )
-            }
-            is UpdateCheckResult.UpToDate -> {
-                AlertDialog(
-                    onDismissRequest = { showUpdateResultDialog = false },
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("已是最新版本", fontWeight = FontWeight.Bold)
-                        }
-                    },
-                    text = {
-                        Text(
-                            text = "当前应用 (${res.currentVersion} · ${res.variant.displayName})\n包名 [${res.variant.packageName}] 在「${res.channel.label}」通道已是最新，无需更新。",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    },
-                    confirmButton = {
-                        AdaptiveButtonGroup(
-                            buttons = listOf(
-                                AdaptiveButtonSpec(
-                                    text = "好的",
-                                    onClick = { showUpdateResultDialog = false },
-                                    style = ExpressiveButtonStyle.FILLED
-                                )
-                            )
-                        )
-                    }
-                )
-            }
-            is UpdateCheckResult.Error -> {
-                AlertDialog(
-                    onDismissRequest = { showUpdateResultDialog = false },
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("检查更新失败", fontWeight = FontWeight.Bold)
-                        }
-                    },
-                    text = {
-                        Text(text = res.message, style = MaterialTheme.typography.bodyMedium)
-                    },
-                    confirmButton = {
-                        AdaptiveButtonGroup(
-                            buttons = listOf(
-                                AdaptiveButtonSpec(
-                                    text = "确定",
-                                    onClick = { showUpdateResultDialog = false },
-                                    style = ExpressiveButtonStyle.FILLED
-                                )
-                            )
-                        )
-                    }
-                )
-            }
-        }
+        UpdateResultDialog(
+            result = updateResult!!,
+            onDismiss = { showUpdateResultDialog = false }
+        )
     }
 }
 
